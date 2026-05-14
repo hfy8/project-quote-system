@@ -385,10 +385,7 @@ def _generate_version_pdf(pdf_path, quotation_id, version_no, data, totals, quot
     
     pdf.ln(5)
     
-    # 物料及费用清单
-    pdf.set_font('SimHei', 'B', 11)
-    pdf.cell(0, 8, '物料及费用清单', 0, 1)
-    
+    # 物料及费用清单 (PDF)
     if module_groups:
         col_widths = [22, 38, 26, 20, 22, 12, 26, 24]  # 总约190
         headers = ['模块', '项目', '规格', '分类/品牌', '单价', '数量', '小计', '合计']
@@ -574,7 +571,7 @@ def export_word(quotation_id):
     currency_symbol = get_currency_symbol(currency)
     
     # 转换最终报价
-    grand_total_converted = convert_currency(grand_total_cny, currency, exchange_rates)
+    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
     
     doc = Document()
     doc = Document()
@@ -762,7 +759,7 @@ def export_excel(quotation_id):
     currency_symbol = get_currency_symbol(currency)
     
     # 转换最终报价
-    grand_total_converted = convert_currency(grand_total_cny, currency, exchange_rates)
+    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
     
     doc = Document()
     
@@ -920,7 +917,7 @@ def export_pdf(quotation_id):
     currency_symbol = get_currency_symbol(currency)
     
     # 转换最终报价
-    grand_total_converted = convert_currency(grand_total_cny, currency, exchange_rates)
+    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
     
     doc = Document()
     module_groups = []
@@ -1005,10 +1002,7 @@ def export_pdf(quotation_id):
     
     pdf.ln(5)
     
-    # 物料及费用清单
-    pdf.set_font('SimHei', 'B', 11)
-    pdf.cell(0, 8, '物料及费用清单', 0, 1)
-    
+    # 物料及费用清单 (PDF)
     if module_groups:
         col_widths = [22, 38, 26, 20, 22, 12, 26, 24]  # 总约190
         headers = ['模块', '项目', '规格', '分类/品牌', '单价', '数量', '小计', '合计']
@@ -1602,10 +1596,7 @@ def export_version_pdf(quotation_id, version_no):
     
     pdf.ln(5)
     
-    # 物料及费用清单
-    pdf.set_font('SimHei', 'B', 11)
-    pdf.cell(0, 8, '物料及费用清单', 0, 1)
-    
+    # 物料及费用清单 (PDF)
     if module_groups:
         col_widths = [22, 38, 26, 20, 22, 12, 26, 24]  # 总约190
         headers = ['模块', '项目', '规格', '分类/品牌', '单价', '数量', '小计', '合计']

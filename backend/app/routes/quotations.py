@@ -1,7 +1,7 @@
 import json
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
-from app import db
+from app import db, create_app
 from app.models import Quotation, QuotationParticipant, User, Module, ModuleMaterial, OtherFee, FeeRate, VersionSnapshot
 from app.utils.permissions import check_permission, check_any_permission
 from app.utils.logger import log_operation, log_operation_manual
@@ -250,15 +250,38 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
     db.session.add(version)
     db.session.flush()  # 获取 version.id
     
-    # 生成版本文件
-    try:
-        file_paths = generate_version_files(quotation.id, new_version_no, snapshot_data)
-        version.word_file = file_paths.get('word')
-        version.pdf_file = file_paths.get('pdf')
-    except Exception as e:
-        print(f"生成版本文件失败: {e}")
+    # 保存需要的数据用于异步生成（避免 ORM 对象在 flush 后 detached）
+    async_quotation_id = quotation.id
+    async_snapshot_data = json.dumps(snapshot_data, ensure_ascii=False)
+    async_version_no = new_version_no
     
-    db.session.commit()
+    # 生成版本文件（异步，不阻塞响应）
+    try:
+        from threading import Thread
+        
+        def generate_files_async():
+            try:
+                app = create_app()
+                with app.app_context():
+                    # 在新 app context 中查询版本记录
+                    ver = VersionSnapshot.query.filter_by(
+                        quotation_id=async_quotation_id,
+                        version_no=async_version_no
+                    ).first()
+                    if ver:
+                        file_paths = generate_version_files(async_quotation_id, async_version_no, async_snapshot_data)
+                        ver.word_file = file_paths.get('word')
+                        ver.pdf_file = file_paths.get('pdf')
+                        db.session.commit()
+            except Exception as e:
+                print(f"异步生成版本文件失败: {e}")
+        
+        thread = Thread(target=generate_files_async)
+        thread.daemon = True
+        thread.start()
+    except Exception as e:
+        print(f"启动文件生成线程失败: {e}")
+    
     return version
 
 

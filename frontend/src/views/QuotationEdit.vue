@@ -428,14 +428,14 @@
         <!-- 版本 -->
         <el-tab-pane v-if="isEdit" label="版本" name="versions">
           <el-table :data="versions" border style="width: 100%;">
-            <el-table-column prop="version" label="版本号" />
+            <el-table-column prop="version_no" label="版本号" width="80" />
             <el-table-column prop="created_at" label="创建时间" />
             <el-table-column prop="creator_name" label="创建人" />
-            <el-table-column prop="status" label="状态" />
-            <el-table-column prop="comment" label="备注" />
-            <el-table-column label="操作" width="100">
+            <el-table-column prop="operation_type" label="操作类型" />
+            <el-table-column prop="remark" label="备注" show-overflow-tooltip />
+            <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" @click="viewVersion(row)">查看</el-button>
+                <el-button size="small" type="warning" @click="exportVersion(row, 'pdf')">PDF</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -1230,8 +1230,13 @@ async function loadVersions() {
 
 // 查看版本
 function viewVersion(version) {
-  ElMessage.info(`查看版本 ${version.version}`)
-  // 可以跳转到版本详情页
+  ElMessage.info(`查看版本 V${version.version} - ${version.remark || '无备注'}`)
+  // TODO: 可以打开版本详情弹窗
+}
+
+// 导出特定版本
+function exportVersion(version, format) {
+  window.open(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${format}`, '_blank')
 }
 
 // 导出文件

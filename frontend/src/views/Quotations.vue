@@ -107,6 +107,12 @@
 
     <!-- 版本历史对话框 -->
     <el-dialog v-model="versionDialogVisible" title="版本历史" width="900px">
+      <div class="version-dialog-toolbar">
+        <el-button type="primary" @click="openVersionCompare" :disabled="versions.length < 2">
+          🔍 版本对比
+        </el-button>
+        <span v-if="versions.length < 2" class="toolbar-hint">至少需要2个版本才能对比</span>
+      </div>
       <el-table :data="versions" stripe v-if="versions.length > 0" max-height="350">
         <el-table-column prop="version_no" label="版本号" width="100" align="center">
           <template #default="{ row }">
@@ -147,6 +153,13 @@
         <pre class="snapshot-data">{{ JSON.stringify(selectedVersion.snapshot_data, null, 2) }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 版本对比弹窗 -->
+    <VersionCompare
+      v-model:visible="versionCompareVisible"
+      :versions="versions"
+      :quotation-id="currentQuotationId"
+    />
   </div>
 </template>
 
@@ -157,6 +170,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { quotationsAPI } from '../api/quotations'
 import { useAuthStore } from '../stores/auth'
 import { usePermission } from '../composables/usePermission'
+import VersionCompare from './VersionCompare.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -206,9 +220,15 @@ const pagination = reactive({
 // 版本历史相关
 const versionDialogVisible = ref(false)
 const versionDetailDialogVisible = ref(false)
+const versionCompareVisible = ref(false)
 const versions = ref([])
 const selectedVersion = ref(null)
 const currentQuotationId = ref(null)
+
+// 打开版本对比
+const openVersionCompare = () => {
+  versionCompareVisible.value = true
+}
 
 const formatType = (type) => {
   const types = { single: '单项', line: '线体' }
@@ -723,5 +743,20 @@ onMounted(() => {
   max-height: 400px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* 版本对话框工具栏 */
+.version-dialog-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border-light);
+}
+
+.toolbar-hint {
+  font-size: 13px;
+  color: #909399;
 }
 </style>

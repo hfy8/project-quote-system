@@ -29,7 +29,17 @@ def create_version(quotation_id):
     # 构建快照数据
     quotation = Quotation.query.get(quotation_id)
     snapshot_data = {
-        'quotation': quotation.to_dict(),
+        'quotation': {
+            'name': quotation.name,
+            'type': quotation.type,
+            'scheme_no': quotation.scheme_no,
+            'tax_rate': quotation.tax_rate,
+            'currency': quotation.currency,
+            'business_owner_id': quotation.business_owner_id,
+            'business_owner_name': quotation.business_owner.real_name if quotation.business_owner else None,
+            'creator_id': quotation.creator_id,
+            'creator_name': quotation.creator.real_name if quotation.creator else None,
+        },
         'modules': [m.to_dict() for m in quotation.modules],
         'fees': [f.to_dict() for f in quotation.fees],
     }
@@ -55,8 +65,23 @@ def get_version(version_id):
     if not version:
         return jsonify({'error': '版本不存在'}), 404
 
+    snapshot = json.loads(version.snapshot_data)
     result = version.to_dict()
-    result['snapshot_data'] = json.loads(version.snapshot_data)
+    # 确保快照数据包含 quotation, modules, fees 顶层结构
+    # 旧格式: {name, type, modules, fees} - 需要包装
+    # 新格式: {quotation, modules, fees} - 直接使用
+    if 'quotation' not in snapshot:
+        if 'modules' in snapshot or 'fees' in snapshot:
+            # 旧格式：modules和fees在顶层，需要包装到quotation下
+            snapshot = {
+                'quotation': snapshot,
+                'modules': snapshot.get('modules', []),
+                'fees': snapshot.get('fees', [])
+            }
+        else:
+            # 无法识别的格式
+            snapshot = {'quotation': snapshot, 'modules': [], 'fees': []}
+    result['snapshot_data'] = snapshot
     return jsonify(result), 200
 
 
@@ -96,7 +121,52 @@ def compare_versions(version_id, other_id):
     if not version1 or not version2:
         return jsonify({'error': '版本不存在'}), 404
 
-    return jsonify({
-        'version1': json.loads(version1.snapshot_data),
-        'version2': json.loads(version2.snapshot_data),
-    }), 200
+    def normalize(snapshot):
+        """统一快照数据格式：确保 {quotation, modules, fees} 顶层结构"""
+        if 'quotation' in snapshot:
+            return snapshot
+        if 'modules' in snapshot or 'fees' in snapshot:
+            return {
+                'quotation': snapshot,
+                'modules': snapshot.get('modules', []),
+                'fees': snapshot.get('fees', [])
+            }
+        return {'quotation': snapshot, 'modules': [], 'fees': []}
+
+    v1_data = normalize(json.loads(version1.snapshot_data))
+    v2_data = normalize(json.loads(version2.snapshot_data))
+    
+    # 补充物料详情（旧快照可能只有 material_id）
+    from app.models import Material
+    material_cache = {}
+    
+    def enrich_material(mat_data):
+        """为物料补充 name/spec/brand/unit_price"""
+        if not mat_data:
+            return mat_data
+        mat_id = mat_data.get('material_id')
+        if not mat_id:
+            return mat_data
+        if mat_id not in material_cache:
+            mat = Material.query.get(mat_id)
+            if mat:
+                material_cache[mat_id] = {
+                    'material_name': mat.name,
+                    'spec': mat.spec,
+                    'brand': mat.brand,
+                    'unit_price': float(mat.unit_price) if mat.unit_price else 0,
+                    'unit': mat.unit,
+                }
+            else:
+                material_cache[mat_id] = {'material_name': f'物料{mat_id}', 'spec': '-', 'brand': '-', 'unit_price': 0, 'unit': ''}
+        return {**mat_data, **material_cache[mat_id]}
+    
+    def enrich_module(mod):
+        if 'materials' in mod:
+            mod['materials'] = [enrich_material(m) for m in mod['materials']]
+        return mod
+    
+    v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
+    v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
+    
+    return jsonify({'version1': v1_data, 'version2': v2_data}), 200

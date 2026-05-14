@@ -31,4 +31,5 @@ class VersionSnapshot(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'word_file': self.word_file,
             'pdf_file': self.pdf_file,
+            'creator_name': self.operator.username if self.operator else None,
         }
