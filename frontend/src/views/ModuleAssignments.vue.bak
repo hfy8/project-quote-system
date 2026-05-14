@@ -1,0 +1,372 @@
+<template>
+  <div class="module-assignments">
+    <el-card>
+      <template #header>
+        <div class="card-header">
+          <span>我的模块分配</span>
+        </div>
+      </template>
+
+      <el-table :data="assignedModules" v-loading="loading" stripe>
+        <el-table-column prop="module_name" label="模块名称" min-width="120" />
+        <el-table-column prop="module_code" label="模块编码" width="120" />
+        <el-table-column prop="quotation_name" label="所属报价单" min-width="150" />
+        <el-table-column prop="quotation_scheme_no" label="方案号" width="150" />
+        <el-table-column prop="material_count" label="物料数量" width="100" align="center" />
+        <el-table-column label="操作" width="150" fixed="right">
+          <template #default="{ row }">
+            <el-button type="primary" size="small" @click="openMaterialDialog(row)">
+              维护物料
+            </el-button>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="您还没有被分配的模块" />
+        </template>
+      </el-table>
+    </el-card>
+
+    <!-- 物料维护弹窗 -->
+    <el-dialog v-model="dialogVisible" :title="`维护物料 - ${currentModule?.module_name || ''}`" width="900px">
+      <div v-if="currentModule">
+        <div class="module-info">
+          <span>报价单：{{ currentModule.quotation_name }}</span>
+          <span style="margin-left: 20px;">方案号：{{ currentModule.quotation_scheme_no }}</span>
+        </div>
+
+        <!-- 物料列表 -->
+        <el-table :data="moduleMaterials" border style="margin-top: 16px;">
+          <el-table-column prop="material_name" label="物料名称" min-width="120" />
+          <el-table-column prop="specification" label="规格" min-width="100" />
+          <el-table-column prop="brand" label="品牌" width="100" />
+          <el-table-column prop="unit" label="单位" width="80" />
+          <el-table-column prop="unit_price" label="单价" width="100" align="right" />
+          <el-table-column prop="quantity" label="数量" width="100" align="center">
+            <template #default="{ row }">
+              <el-input-number
+                v-model="row.quantity"
+                :min="1"
+                size="small"
+                @change="updateQuantity(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="小计" width="120" align="right">
+            <template #default="{ row }">
+              {{ ((parseFloat(row.unit_price) || 0) * (parseInt(row.quantity) || 0)).toFixed(2) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="80">
+            <template #default="{ row }">
+              <el-button type="danger" size="small" @click="removeMaterial(row)">
+                删除
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <!-- 物料合计 -->
+        <div class="material-total">
+          物料合计：{{ materialsTotal.toFixed(2) }} 元
+        </div>
+
+        <!-- 添加物料 -->
+        <div class="add-material-section">
+          <el-divider>添加物料</el-divider>
+          
+          <!-- 搜索过滤 -->
+          <el-form inline style="margin-bottom: 12px;">
+            <el-form-item label="物料名称">
+              <el-input v-model="materialFilters.name" placeholder="输入物料名称" clearable style="width: 160px;" />
+            </el-form-item>
+            <el-form-item label="品牌">
+              <el-input v-model="materialFilters.brand" placeholder="输入品牌" clearable style="width: 120px;" />
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="searchMaterials">搜索</el-button>
+              <el-button @click="resetFilters">重置</el-button>
+            </el-form-item>
+          </el-form>
+          
+          <!-- 物料选择表格 -->
+          <el-table 
+            :data="paginatedMaterials" 
+            border 
+            max-height="250"
+            style="margin-bottom: 12px;"
+          >
+            <el-table-column prop="name" label="物料名称" min-width="140" />
+            <el-table-column prop="code" label="编码" width="100" />
+            <el-table-column prop="spec" label="规格" min-width="100" />
+            <el-table-column prop="brand" label="品牌" width="100" />
+            <el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column prop="unit_price" label="单价" width="90" align="right" />
+            <el-table-column label="操作" width="80" fixed="right">
+              <template #default="{ row }">
+                <el-button 
+                  type="primary" 
+                  size="small" 
+                  :disabled="isMaterialAdded(row.id)"
+                  @click="addMaterial(row)"
+                >
+                  {{ isMaterialAdded(row.id) ? '已添加' : '添加' }}
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          
+          <!-- 分页 -->
+          <el-pagination
+            v-model:current-page="materialPagination.page"
+            v-model:page-size="materialPagination.pageSize"
+            :total="materialPagination.total"
+            :page-sizes="[5, 10, 20]"
+            layout="total, sizes, prev, pager, next"
+            small
+            style="text-align: right;"
+          />
+          
+          <!-- 添加数量 -->
+          <div v-if="selectedMaterialForAdd" style="margin-top: 12px; text-align: right;">
+            <span style="margin-right: 8px;">已选：{{ selectedMaterialForAdd.name }}</span>
+            <el-input-number v-model="addQuantity" :min="1" size="small" />
+            <el-button type="primary" size="small" style="margin-left: 8px;" @click="confirmAddMaterial">确认添加</el-button>
+            <el-button size="small" style="margin-left: 4px;" @click="cancelAddMaterial">取消</el-button>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox, ElEmpty } from 'element-plus'
+import request from '@/api/request'
+
+const assignedModules = ref([])
+const loading = ref(false)
+const dialogVisible = ref(false)
+const currentModule = ref(null)
+const moduleMaterials = ref([])
+const availableMaterials = ref([])
+const selectedMaterialId = ref(null)
+const addQuantity = ref(1)
+const selectedMaterialForAdd = ref(null)
+
+// 物料搜索和分页
+const materialFilters = ref({ name: '', brand: '' })
+const materialPagination = ref({ page: 1, pageSize: 10, total: 0 })
+const allMaterials = ref([])
+
+const materialsTotal = computed(() => {
+  return moduleMaterials.value.reduce((sum, m) => {
+    const price = parseFloat(m.unit_price) || 0
+    const qty = parseInt(m.quantity) || 0
+    return sum + (price * qty)
+  }, 0)
+})
+
+// 分页后的物料数据
+const paginatedMaterials = computed(() => {
+  const start = (materialPagination.value.page - 1) * materialPagination.value.pageSize
+  const end = start + materialPagination.value.pageSize
+  return filteredMaterials.value.slice(start, end)
+})
+
+// 过滤后的物料数据
+const filteredMaterials = computed(() => {
+  let result = allMaterials.value
+  if (materialFilters.value.name) {
+    const name = materialFilters.value.name.toLowerCase()
+    result = result.filter(m => (m.name || '').toLowerCase().includes(name))
+  }
+  if (materialFilters.value.brand) {
+    const brand = materialFilters.value.brand.toLowerCase()
+    result = result.filter(m => (m.brand || '').toLowerCase().includes(brand))
+  }
+  return result
+})
+
+// 检查物料是否已添加
+function isMaterialAdded(materialId) {
+  return moduleMaterials.value.some(m => m.material_id === materialId || m.id === materialId)
+}
+
+onMounted(() => {
+  fetchAssignedModules()
+})
+
+async function fetchAssignedModules() {
+  loading.value = true
+  try {
+    const res = await request.get('/quotations/my-assigned-modules')
+    assignedModules.value = res.data || res || []
+  } catch (error) {
+    console.error('获取分配的模块失败:', error)
+    assignedModules.value = []
+  } finally {
+    loading.value = false
+  }
+}
+
+async function openMaterialDialog(module) {
+  currentModule.value = module
+  dialogVisible.value = true
+  await Promise.all([
+    fetchModuleMaterials(module.id),
+    fetchAvailableMaterials()
+  ])
+}
+
+async function fetchModuleMaterials(moduleId) {
+  try {
+    const res = await request.get(`/modules/${moduleId}/materials`)
+    moduleMaterials.value = res.data || res || []
+  } catch (error) {
+    ElMessage.error('加载物料失败')
+  }
+}
+
+async function fetchAvailableMaterials() {
+  try {
+    const res = await request.get('/materials?status=active&limit=1000')
+    const data = res.data || res || []
+    allMaterials.value = data
+    materialPagination.value.total = data.length
+  } catch (error) {
+    allMaterials.value = []
+  }
+}
+
+function searchMaterials() {
+  materialPagination.value.page = 1
+}
+
+function resetFilters() {
+  materialFilters.value = { name: '', brand: '' }
+  materialPagination.value.page = 1
+}
+
+function addMaterial(row) {
+  selectedMaterialForAdd.value = row
+  addQuantity.value = 1
+}
+
+function confirmAddMaterial() {
+  if (!selectedMaterialForAdd.value) return
+  selectedMaterialId.value = selectedMaterialForAdd.value.id
+  performAddMaterial()
+}
+
+function cancelAddMaterial() {
+  selectedMaterialForAdd.value = null
+  addQuantity.value = 1
+  selectedMaterialId.value = null
+}
+
+async function performAddMaterial() {
+  if (!selectedMaterialId.value) {
+    ElMessage.warning('请选择物料')
+    return
+  }
+  try {
+    await request.post(`/modules/${currentModule.value.id}/materials`, {
+      material_id: selectedMaterialId.value,
+      quantity: addQuantity.value
+    })
+    ElMessage.success('物料已添加')
+    // 重新获取列表
+    await fetchModuleMaterials(currentModule.value.id)
+    // 清空选择
+    cancelAddMaterial()
+  } catch (error) {
+    ElMessage.error('添加物料失败')
+  }
+}
+
+async function handleLegacyAdd() {
+  if (!selectedMaterialId.value) {
+    ElMessage.warning('请选择物料')
+    return
+  }
+  await performAddMaterial()
+}
+
+async function updateQuantity(row) {
+  try {
+    await request.put(`/module_materials/${row.id}`, {
+      quantity: row.quantity
+    })
+    ElMessage.success('数量已更新')
+  } catch (error) {
+    ElMessage.error('更新数量失败')
+  }
+}
+
+async function removeMaterial(row) {
+  try {
+    await ElMessageBox.confirm('确定要删除该物料吗？', '提示', { type: 'warning' })
+    await request.delete(`/module_materials/${row.id}`)
+    ElMessage.success('已删除')
+    // 重新获取列表
+    moduleMaterials.value = moduleMaterials.value.filter(m => m.id !== row.id)
+  } catch (error) {
+    if (error !== 'cancel') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+async function addMaterial() {
+  if (!selectedMaterialId.value) {
+    ElMessage.warning('请选择物料')
+    return
+  }
+  try {
+    await request.post(`/modules/${currentModule.value.id}/materials`, {
+      material_id: selectedMaterialId.value,
+      quantity: addQuantity.value
+    })
+    ElMessage.success('物料已添加')
+    // 重新获取列表
+    await fetchModuleMaterials(currentModule.value.id)
+    // 清空选择
+    selectedMaterialId.value = null
+    addQuantity.value = 1
+  } catch (error) {
+    ElMessage.error('添加物料失败')
+  }
+}
+</script>
+
+<style scoped>
+.module-assignments {
+  padding: 16px;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.module-info {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 4px;
+  color: #606266;
+}
+
+.material-total {
+  text-align: right;
+  margin-top: 16px;
+  font-size: 16px;
+  font-weight: bold;
+  color: #409eff;
+}
+
+.add-material-section {
+  margin-top: 16px;
+}
+</style>
