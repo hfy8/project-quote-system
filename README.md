@@ -1,98 +1,67 @@
 # 项目报价系统
 
-基于 Vue3 + Flask 的企业级项目报价管理系统，支持报价单管理、物料配置、费用计算、版本控制等功能。
+基于 Vue3 + Flask 的企业级项目报价管理系统，支持报价单管理、物料配置、费用计算、版本控制、变更审批、消息通知等功能。
 
 ## 功能特性
 
 ### 核心功能
-- **报价单管理** - 创建、编辑、归档报价单，支持版本管理
-- **物料管理** - 物料分类、价格维护、参数配置
-- **费用管理** - 厂内/厂外费用配置，税率管理
-- **汇率管理** - 多币种汇率配置
+- **报价单管理** - 创建、编辑、归档报价单，支持版本历史
+- **模块管理** - 报价单下的模块划分，成员任务分配
+- **物料管理** - 物料库维护，支持分类检索
+- **费用管理** - 厂内/厂外费用配置，支持费用类型自定义
+- **费用系数** - 大件/普通件/其他件分类系数配置
+- **汇率管理** - 多币种汇率配置与转换
 - **变更申请** - 物料/费用变更审批流程
+- **版本控制** - 报价单版本快照，支持回退
 - **消息通知** - 实时消息推送，变更提醒
-- **权限管理** - 基于角色的权限控制
+- **权限管理** - 基于角色的权限控制 (RBAC)
 - **操作日志** - 完整的操作审计追踪
+- **数据同步** - 从 SQL Server 同步员工/部门/职位数据
 
 ### 技术亮点
 - JWT 无状态认证
 - RESTful API 设计
 - 响应式表格滚动
-- 清新商务风 UI
+- 清新商务风 UI (#0D9488 主色调)
+- 消息自动清理（定时任务）
 
 ## 技术栈
 
 ### 前端
-- **框架**: Vue 3 (Composition API)
-- **构建**: Vite
-- **UI**: Element Plus
-- **状态**: Pinia
-- **路由**: Vue Router
-- **HTTP**: Axios
+| 技术 | 版本 | 说明 |
+|-----|------|------|
+| Vue 3 | 3.4.21 | 前端框架 |
+| Vite | 5.1.6 | 构建工具 |
+| Element Plus | 2.6.1 | UI 组件库 |
+| Pinia | 2.1.7 | 状态管理 |
+| Vue Router | 4.3 | 路由管理 |
+| Axios | 1.6.7 | HTTP 客户端 |
+| Sass | 1.71.1 | CSS 预处理器 |
 
 ### 后端
-- **框架**: Flask
-- **ORM**: SQLAlchemy
-- **认证**: Flask-JWT-Extended
-- **数据库**: PostgreSQL / SQL Server
-- **任务**: APScheduler
+| 技术 | 版本 | 说明 |
+|-----|------|------|
+| Python | 3.12 | 编程语言 |
+| Flask | 3.0 | Web 框架 |
+| SQLAlchemy | 2.0 | ORM |
+| Flask-JWT-Extended | 4.6 | JWT 认证 |
+| APScheduler | 4.6 | 定时任务 |
+| python-docx | 1.1 | Word 文档生成 |
+| openpyxl | 3.1 | Excel 操作 |
 
-## 项目结构
-
-```
-project-quote-system/
-├── frontend/                 # Vue3 前端项目
-│   ├── src/
-│   │   ├── api/             # API 接口封装
-│   │   │   ├── auth.js
-│   │   │   ├── quotations.js
-│   │   │   ├── materials.js
-│   │   │   ├── messages.js
-│   │   │   └── ...
-│   │   ├── components/       # 公共组件
-│   │   │   ├── Layout.vue   # 页面布局
-│   │   │   └── Sidebar.vue  # 侧边栏
-│   │   ├── views/           # 页面视图
-│   │   │   ├── Quotations.vue
-│   │   │   ├── Materials.vue
-│   │   │   ├── Fees.vue
-│   │   │   └── ...
-│   │   ├── stores/          # Pinia 状态管理
-│   │   ├── router/          # 路由配置
-│   │   └── utils/           # 工具函数
-│   ├── package.json
-│   └── vite.config.js
-│
-├── backend/                  # Flask 后端项目
-│   ├── app/
-│   │   ├── models/          # 数据模型
-│   │   │   ├── quotation.py
-│   │   │   ├── material.py
-│   │   │   ├── module.py
-│   │   │   ├── message.py
-│   │   │   └── ...
-│   │   ├── routes/          # API 路由
-│   │   │   ├── auth.py
-│   │   │   ├── quotations.py
-│   │   │   ├── materials.py
-│   │   │   └── ...
-│   │   ├── services/        # 业务逻辑
-│   │   ├── utils/          # 工具函数
-│   │   └── tasks/          # 定时任务
-│   ├── versions/            # 报价单版本文件
-│   ├── run.py              # 启动入口
-│   └── requirements.txt
-│
-├── SPEC.md                  # 项目规格说明
-└── README.md
-```
+### 数据库
+| 数据库 | 用途 |
+|-------|------|
+| PostgreSQL | 主数据库 |
+| SQL Server | 同步数据源 (RSHRIS) |
 
 ## 快速开始
 
 ### 环境要求
 - Node.js >= 16
 - Python >= 3.9
-- PostgreSQL >= 13 或 SQL Server
+- PostgreSQL >= 13
+- SQL Server (可选，用于数据同步)
 
 ### 后端部署
 
@@ -109,7 +78,7 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 
 # 配置环境变量
-# 编辑 .env 文件或设置以下环境变量:
+# 设置以下环境变量:
 # DATABASE_URL=postgresql://user:pass@localhost:5432/quote_db
 # SECRET_KEY=your-secret-key
 # SQL_SERVER_HOST=192.168.100.70
@@ -151,169 +120,103 @@ npm run build
 |-----|--------|------|
 | 管理员 | admin | admin123 |
 
-## API 文档
+## 页面导航
 
-### 认证接口
-
-| 方法 | 路径 | 说明 |
+| 路径 | 页面 | 说明 |
 |-----|------|------|
-| POST | /api/auth/login | 用户登录 |
-| POST | /api/auth/logout | 用户登出 |
-| GET | /api/auth/me | 获取当前用户信息 |
-| POST | /api/auth/change-password | 修改密码 |
-
-### 报价单接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/quotations | 获取报价单列表 |
-| POST | /api/quotations | 创建报价单 |
-| GET | /api/quotations/:id | 获取报价单详情 |
-| PUT | /api/quotations/:id | 更新报价单 |
-| PUT | /api/quotations/:id/archive | 归档报价单 |
-| GET | /api/quotations/:id/versions | 获取版本列表 |
-| POST | /api/quotations/:id/versions | 创建新版本 |
-
-### 物料接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/materials | 获取物料列表 |
-| POST | /api/materials | 创建物料 |
-| PUT | /api/materials/:id | 更新物料 |
-| DELETE | /api/materials/:id | 删除物料 |
-
-### 消息接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/messages | 获取消息列表 |
-| GET | /api/messages/unread-count | 获取未读消息数 |
-| PUT | /api/messages/:id/read | 标记已读 |
-| PUT | /api/messages/read-all | 全部已读 |
-
-### 费用接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/fees | 获取费用列表 |
-| POST | /api/fees | 创建费用 |
-| PUT | /api/fees/:id | 更新费用 |
-| GET | /api/fee-rates | 获取费用配置 |
-| PUT | /api/fee-rates | 更新费用配置 |
-
-### 汇率接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/exchange-rates | 获取汇率列表 |
-| PUT | /api/exchange-rates | 更新汇率 |
-
-### 变更申请接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/change-requests | 获取变更申请列表 |
-| POST | /api/change-requests | 创建变更申请 |
-| PUT | /api/change-requests/:id/approve | 批准申请 |
-| PUT | /api/change-requests/:id/reject | 拒绝申请 |
-
-### 用户权限接口
-
-| 方法 | 路径 | 说明 |
-|-----|------|------|
-| GET | /api/users | 获取用户列表 |
-| GET | /api/roles | 获取角色列表 |
-| GET | /api/permissions | 获取权限列表 |
-| GET | /api/logs | 获取操作日志 |
-
-## 数据模型
-
-### 报价单 (Quotation)
-- id, name, customer_name, status
-- created_by, created_at
-- archived_at, version
-
-### 报价模块 (Module)
-- id, quotation_id, name
-- business_负责人, technician_负责人
-- internal_total, external_total
-
-### 物料 (Material)
-- id, code, name, unit_price
-- category, supplier
-
-### 消息 (Message)
-- id, sender_id, recipient_id
-- title, content, type
-- related_id, related_type
-- is_read, created_at
-
-### 变更申请 (ChangeRequest)
-- id, quotation_id, module_id
-- type, status
-- applicant_id, reviewer_id
-- changes, created_at
+| /login | 登录 | 用户登录 |
+| /dashboard | 工作台 | 首页概览 |
+| /quotations | 报价单 | 报价单列表 |
+| /quotations/new | 新建报价单 | 创建报价单 |
+| /quotations/:id | 报价单详情 | 编辑报价单 |
+| /change-requests | 变更申请 | 变更审批 |
+| /materials | 原材料库 | 物料管理 |
+| /fee-types | 费用类型 | 费用类型配置 |
+| /fees | 费用管理 | 费用配置 |
+| /fee-rates | 费用系数 | 大件/普通件/其他件系数 |
+| /exchange-rates | 汇率配置 | 货币汇率 |
+| /users | 用户管理 | 用户管理 |
+| /roles | 角色管理 | 角色权限 |
+| /logs | 操作日志 | 审计日志 |
+| /my-assignments | 我的任务 | 模块任务分配 |
 
 ## 消息类型
 
-| 类型 | 说明 | 触发时机 |
-|-----|------|---------|
-| module_member_added | 成员加入 | 添加成员到模块 |
-| change_request_submitted | 变更提交 | 提交变更申请 |
-| change_request_approved | 变更批准 | 审批通过 |
-| change_request_rejected | 变更拒绝 | 审批拒绝 |
-| version_updated | 版本更新 | 创建新版本 |
+| 类型 | 触发时机 | 接收人 |
+|-----|---------|-------|
+| module_member_added | 添加成员到模块 | 被添加成员 |
+| change_request_submitted | 成员提交变更 | 业务员 |
+| change_request_approved | 变更批准 | 申请人 |
+| change_request_rejected | 变更拒绝 | 申请人 |
+| version_updated | 版本更新 | 相关成员 |
 
-## 费用字段说明
+## 费用字段规范
 
 | 字段 | 说明 |
 |-----|------|
 | internal | 厂内费用 |
 | external | 厂外费用 |
 
-## 权限说明
-
-系统采用基于角色的权限控制 (RBAC)，主要权限包括：
-
-| 权限 | 说明 |
-|-----|------|
-| quotation.view | 查看报价单 |
-| quotation.create | 创建报价单 |
-| quotation.edit | 编辑报价单 |
-| quotation.delete | 删除报价单 |
-| quotation.archive | 归档报价单 |
-| material.view | 查看物料 |
-| material.edit | 编辑物料 |
-| fee.edit | 编辑费用 |
-| change_request.approve | 审批变更 |
-| user.edit | 管理用户 |
-
-## 开发指南
-
-### 添加新的 API
-
-1. 在 `backend/app/routes/` 创建路由文件
-2. 注册蓝图到 `backend/app/routes/__init__.py`
-3. 在 `frontend/src/api/` 创建前端 API 封装
-
-### 添加新的数据模型
-
-1. 在 `backend/app/models/` 创建模型文件
-2. 更新 `backend/app/models/__init__.py` 导出
-3. 执行数据库迁移
-
-### 前端页面开发
-
-1. 在 `frontend/src/views/` 创建 Vue 组件
-2. 在 `frontend/src/router/index.js` 添加路由
-3. 配置权限映射
-
 ## 定时任务
 
-系统自动执行以下定时任务：
-- **消息清理**: 每天凌晨 3:00，清理已读超过 30 天或未读超过 60 天的消息
-- **数据同步**: 从 SQL Server 同步员工/部门/职位数据
+| 任务 | 周期 | 说明 |
+|-----|------|------|
+| 消息清理 | 每天 03:00 | 清理已读30天/未读60天消息 |
+| 数据同步 | 每天 00:00 | 同步员工/部门/职位数据 |
+
+## API 概览
+
+### 认证
+- `POST /api/auth/login` - 登录
+- `POST /api/auth/logout` - 登出
+- `GET /api/auth/me` - 当前用户
+- `POST /api/auth/change-password` - 修改密码
+
+### 报价单
+- `GET /api/quotations` - 列表
+- `POST /api/quotations` - 创建
+- `GET /api/quotations/:id` - 详情
+- `PUT /api/quotations/:id` - 更新
+- `PUT /api/quotations/:id/archive` - 归档
+
+### 模块
+- `GET /api/quotations/:qid/modules` - 列表
+- `POST /api/quotations/:qid/modules` - 创建
+- `GET /api/modules/:id/participants` - 成员
+
+### 消息
+- `GET /api/messages` - 列表
+- `GET /api/messages/unread-count` - 未读数
+- `PUT /api/messages/:id/read` - 标记已读
+
+## 项目结构
+
+```
+project-quote-system/
+├── backend/
+│   ├── app/
+│   │   ├── models/          # 17个数据模型
+│   │   ├── routes/          # 17个API蓝图
+│   │   ├── services/        # 业务逻辑
+│   │   ├── utils/           # 工具函数
+│   │   └── tasks/           # 定时任务
+│   ├── versions/            # 版本文件存储
+│   ├── run.py               # 启动入口
+│   └── requirements.txt
+│
+├── frontend/
+│   ├── src/
+│   │   ├── api/             # 16个API模块
+│   │   ├── components/      # 布局组件
+│   │   ├── views/           # 17个页面
+│   │   ├── stores/          # Pinia状态
+│   │   └── router/          # 路由配置
+│   ├── package.json
+│   └── vite.config.js
+│
+├── SPEC.md                  # 技术规格说明
+└── README.md                # 本文件
+```
 
 ## 许可证
 
