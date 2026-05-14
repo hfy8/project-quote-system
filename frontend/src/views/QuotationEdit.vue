@@ -777,14 +777,16 @@ async function loadQuotation() {
   }
   try {
     const data = await api.get(`/quotations/${quotationId.value}`)
+    // 已归档的报价单不允许编辑，重定向回列表
+    if (data.status === 'approved') {
+      ElMessage.warning('已归档的报价单无法编辑，如需修改请先撤销归档')
+      router.push('/quotations')
+      return
+    }
     quotation.value = data
     // 设置默认显示货币为报价单币种
     selectedCurrency.value = data.currency || 'CNY'
     console.log('Quotation loaded:', data)
-    // 如果报价单已归档，加载待审核数量
-    if (data.status === 'approved') {
-      loadPendingReviewCount()
-    }
   } catch (error) {
     console.error('Load quotation error:', error)
     ElMessage.error('加载报价单失败: ' + (error.message || '未知错误'))

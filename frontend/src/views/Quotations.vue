@@ -50,7 +50,7 @@
       >
         <el-table-column prop="name" label="项目名称" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <div class="project-name" @click="handleEdit(row.id)">
+            <div class="project-name" :class="{ disabled: row.status === 'approved' }" @click="handleEdit(row)">
               {{ row.name }}
             </div>
           </template>
@@ -84,7 +84,7 @@
               <button v-if="row.status === 'draft'" class="action-btn archive" @click="handleArchive(row)">归档</button>
               <button v-if="row.status === 'approved'" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
               <button v-if="row.status === 'approved'" class="action-btn version" @click="handleViewVersions(row)">版本</button>
-              <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row.id)">编辑</button>
+              <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row)">编辑</button>
               <button class="action-btn delete" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</button>
             </div>
           </template>
@@ -183,7 +183,7 @@ const canCreate = computed(() => {
 
 // 是否有编辑报价单权限
 const canEdit = (row) => {
-  // 已归档的报价单不能编辑
+  // 已归档的报价单不能编辑（但可以导出报表）
   if (row.status === 'approved') return false
   const userId = authStore.userInfo?.id
   if (hasPermission('quotation.edit')) {
@@ -193,8 +193,19 @@ const canEdit = (row) => {
   return false
 }
 
+// 编辑报价单（检查归档状态）
+const handleEdit = (row) => {
+  if (row.status === 'approved') {
+    ElMessage.warning('已归档的报价单无法编辑，如需修改请先撤销归档')
+    return
+  }
+  router.push(`/quotations/${row.id}`)
+}
+
 // 是否有删除报价单权限
 const canDelete = (row) => {
+  // 已归档的报价单不能删除
+  if (row.status === 'approved') return false
   if (hasPermission('quotation.delete')) {
     if (hasPermission('role.admin')) return true
     return row.created_by === authStore.userInfo?.id
@@ -271,9 +282,6 @@ const fetchData = async () => {
   }
 }
 
-const handleEdit = (id) => {
-  router.push(`/quotations/${id}`)
-}
 
 const handleSizeChange = (size) => {
   pagination.pageSize = size
@@ -506,6 +514,15 @@ onMounted(() => {
   flex-direction: column;
   gap: 2px;
   cursor: pointer;
+}
+
+.project-name.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.project-name.disabled:hover .name-text {
+  color: inherit;
 }
 
 .project-name:hover .name-text {
