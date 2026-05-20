@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from app import db
 from app.models import OtherFee, FeeType
+from app.utils.permissions import check_permission
+
 
 fee_bp = Blueprint('fees', __name__)
 
@@ -74,6 +76,7 @@ def get_fee_types():
 
 @fee_bp.route('/fee-types', methods=['POST'])
 @jwt_required()
+@check_permission('fee_type.create')
 def create_fee_type():
     """创建费用类型"""
     data = request.get_json()
@@ -89,6 +92,7 @@ def create_fee_type():
 
 @fee_bp.route('/fee-types/<int:fee_type_id>', methods=['PUT'])
 @jwt_required()
+@check_permission('fee_type.edit')
 def update_fee_type(fee_type_id):
     """更新费用类型"""
     fee_type = FeeType.query.get(fee_type_id)
@@ -106,6 +110,7 @@ def update_fee_type(fee_type_id):
 
 @fee_bp.route('/fee-types/<int:fee_type_id>', methods=['DELETE'])
 @jwt_required()
+@check_permission('fee_type.delete')
 def delete_fee_type(fee_type_id):
     """删除费用类型"""
     fee_type = FeeType.query.get(fee_type_id)

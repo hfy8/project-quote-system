@@ -301,6 +301,7 @@ const menuItems = computed(() => {
     { path: '/exchange-rates', label: '汇率配置', icon: '💱', permission: 'exchange_rate.view' },
     { path: '/users', label: '用户管理', icon: '👤', permission: 'user.view' },
     { path: '/roles', label: '角色管理', icon: '👥', permission: 'role.view' },
+    { path: '/participant-type-permissions', label: '参与人权限', icon: '🔐', permission: 'role.view' },
     { path: '/logs', label: '操作日志', icon: '📝', permission: 'log.view' }
   ]
   return items.filter(item => !item.permission || hasPermission(item.permission))

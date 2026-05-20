@@ -4,6 +4,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from sqlalchemy import desc
 from app import db
 from app.models.operation_log import OperationLog
+from app.utils.permissions import check_permission, has_permission
+
 
 logs_bp = Blueprint('logs', __name__)
 

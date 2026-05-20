@@ -1,10 +1,9 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from app import db
-from app.models import User
+from app.models import User, Role
 from app.utils.logger import log_operation_manual
 from app.models.operation_log import Action, Module
-from app.utils.permissions import get_user_permissions
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -14,6 +13,17 @@ def get_client_ip():
     if request.headers.get('X-Forwarded-For'):
         return request.headers.get('X-Forwarded-For').split(',')[0].strip()
     return request.remote_addr or '127.0.0.1'
+
+
+def get_user_permissions_from_db(role_code):
+    """从DB获取用户权限"""
+    role = Role.query.filter_by(code=role_code).first()
+    if not role:
+        return []
+    # admin 特殊处理
+    if role.code == 'admin':
+        return ['*']
+    return [p.code for p in role.permissions]
 
 
 @auth_bp.route('/login', methods=['POST'])
@@ -43,9 +53,8 @@ def login():
         detail=f'用户 "{user.username}" 登录成功'
     )
 
-    # 返回用户信息，使用角色对应的标准权限
     user_data = user.to_dict()
-    user_data['permissions'] = get_user_permissions(user.role)
+    user_data['permissions'] = get_user_permissions_from_db(user.role)
 
     return jsonify({
         'access_token': access_token,
@@ -80,7 +89,9 @@ def get_current_user():
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': '用户不存在'}), 404
-    return jsonify(user.to_dict()), 200
+    user_data = user.to_dict()
+    user_data['permissions'] = get_user_permissions_from_db(user.role)
+    return jsonify(user_data), 200
 
 
 @auth_bp.route('/change-password', methods=['POST'])

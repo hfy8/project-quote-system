@@ -3,6 +3,8 @@ from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import VersionSnapshot, Quotation
 import json
+from app.utils.permissions import check_permission
+
 
 version_bp = Blueprint('versions', __name__)
 
@@ -17,6 +19,7 @@ def get_versions(quotation_id):
 
 @version_bp.route('/quotations/<int:quotation_id>/versions', methods=['POST'])
 @jwt_required()
+@check_permission('version.create')
 def create_version(quotation_id):
     """创建版本快照"""
     user_id = get_jwt_identity()

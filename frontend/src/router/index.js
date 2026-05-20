@@ -4,6 +4,7 @@ import Login from '../views/Login.vue'
 import Dashboard from '../views/Dashboard.vue'
 import Quotations from '../views/Quotations.vue'
 import QuotationEdit from '../views/QuotationEdit.vue'
+import QuotationView from '../views/QuotationView.vue'
 import Materials from '../views/Materials.vue'
 import FeeTypes from '../views/FeeTypes.vue'
 import Logs from '../views/Logs.vue'
@@ -13,10 +14,11 @@ import SystemSettings from '../views/SystemSettings.vue'
 import FeeRatesConfig from '../views/FeeRatesConfig.vue'
 import ExchangeRatesConfig from '../views/ExchangeRatesConfig.vue'
 import ModuleAssignments from '../views/ModuleAssignments.vue'
+import ParticipantTypePermissions from '../views/ParticipantTypePermissions.vue'
 import Layout from '../components/Layout.vue'
 
-// 路由权限映射 - 与后端 ROLE_PERMISSIONS 保持一致
-const routePermissions = {
+// 路由权限映射 - 与后端权限码一致
+const routePermissionMap = {
   'Dashboard': 'dashboard.view',
   'Quotations': 'quotation.view',
   'QuotationNew': 'quotation.create',
@@ -29,7 +31,10 @@ const routePermissions = {
   'SystemSettings': 'system.view',
   'FeeRatesConfig': 'fee_rate.view',
   'ExchangeRatesConfig': 'exchange_rate.view',
-  'ModuleAssignments': null,
+  'ModuleAssignments': null,         // 所有人可访问
+  'QuotationAssignmentView': null,  // 所有人可访问
+  'ParticipantTypePermissions': 'participant_type_permission.view',
+  'ChangeRequests': 'quotation.view',
 }
 
 // 权限检查函数 - 支持通配符匹配
@@ -85,6 +90,11 @@ const routes = [
         component: QuotationEdit
       },
       {
+        path: 'quotations/:id/view',
+        name: 'QuotationView',
+        component: QuotationView
+      },
+      {
         path: 'change-requests',
         name: 'ChangeRequests',
         component: () => import('../views/ChangeRequests.vue')
@@ -134,7 +144,17 @@ const routes = [
         name: 'ModuleAssignments',
         component: ModuleAssignments,
         permission: null
-      }
+      },
+      {
+        path: 'my-assignments/quotations/:id/view',
+        name: 'QuotationAssignmentView',
+        component: QuotationView
+      },
+      {
+        path: 'participant-type-permissions',
+        name: 'ParticipantTypePermissions',
+        component: ParticipantTypePermissions
+      },
     ]
   }
 ]
@@ -160,18 +180,18 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  // 检查权限
-  const requiredPermission = routePermissions[to.name]
-  if (requiredPermission) {
-    const authStore = useAuthStore()
-    const userPermissions = authStore.userInfo?.permissions || []
+  // 动态权限检查：从 authStore 获取用户权限
+  const authStore = useAuthStore()
+  const userPermissions = authStore.userInfo?.permissions || []
+  const routeName = to.name
 
-    // 使用通配符匹配
-    if (!hasPermission(userPermissions, requiredPermission)) {
-      // 没有权限，重定向到首页
-      next('/dashboard')
-      return
-    }
+  // 路由需要的权限（无 mapping 说明无需权限）
+  const required = routePermissionMap[routeName]
+
+  if (required && !hasPermission(userPermissions, required)) {
+    // 无权限，重定向到首页
+    next('/dashboard')
+    return
   }
 
   next()

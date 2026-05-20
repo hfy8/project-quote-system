@@ -121,6 +121,7 @@ def create_change_request():
 
 @change_request_bp.route('/<int:request_id>/approve', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.edit')
 def approve_change_request(request_id):
     """批准变更申请"""
     user_id = get_jwt_identity()
@@ -265,6 +266,7 @@ def approve_change_request(request_id):
 
 @change_request_bp.route('/<int:request_id>/reject', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.edit')
 def reject_change_request(request_id):
     """拒绝变更申请"""
     user_id = get_jwt_identity()

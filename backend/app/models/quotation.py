@@ -14,6 +14,7 @@ class Quotation(db.Model):
     business_owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     tax_rate = db.Column(db.Float, default=0.13, comment='税率')  # 默认13%增值税
+    profit_rate = db.Column(db.Float, default=0.0, comment='对外利润率，如 0.15 表示 15%')  # 对外利润率
     currency = db.Column(db.String(10), default='CNY', comment='币种')  # CNY/USD/EUR
     current_version = db.Column(db.Integer, default=1, comment='当前版本号')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -26,6 +27,7 @@ class Quotation(db.Model):
     modules = db.relationship('Module', backref='quotation', cascade='all, delete-orphan')
     fees = db.relationship('OtherFee', backref='quotation', cascade='all, delete-orphan')
     versions = db.relationship('VersionSnapshot', backref='quotation', cascade='all, delete-orphan')
+    coefficients = db.Column(db.JSON, default=dict, comment='费用系数配置：{large, standard, other}')
 
     def to_dict(self):
         return {
@@ -39,10 +41,12 @@ class Quotation(db.Model):
             'creator_id': self.creator_id,
             'creator_name': self.creator.real_name if self.creator else None,
             'tax_rate': self.tax_rate,
+            'profit_rate': self.profit_rate if self.profit_rate is not None else 0.0,
             'currency': self.currency,
             'current_version': self.current_version,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'coefficients': self.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0},
         }
 
 
@@ -53,6 +57,8 @@ class QuotationParticipant(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    participant_type = db.Column(db.String(20), nullable=False, default='project', comment='参与类型: project/agency/electrical 项目/机构/电气')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='quotation_participations')
 
@@ -61,5 +67,7 @@ class QuotationParticipant(db.Model):
             'id': self.id,
             'quotation_id': self.quotation_id,
             'user_id': self.user_id,
+            'participant_type': self.participant_type,
             'user': self.user.to_dict() if self.user else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }

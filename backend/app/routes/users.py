@@ -19,7 +19,6 @@ def get_roles():
 
 @user_bp.route('', methods=['GET'])
 @jwt_required()
-@check_any_permission('user.*', 'user.view')
 def get_users():
     """获取用户列表（分页、过滤）"""
     page = request.args.get('page', 1, type=int)

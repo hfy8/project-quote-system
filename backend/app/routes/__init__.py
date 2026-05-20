@@ -17,6 +17,8 @@ module_participant_bp = Blueprint('module_participants', __name__)
 sync_bp = Blueprint('sync', __name__)
 change_request_bp = Blueprint('change_requests', __name__)
 messages_bp = Blueprint('messages', __name__)
+labor_hours_bp = Blueprint('labor_hours', __name__)
+ptp_bp = Blueprint('participant_type_permissions', __name__)
 
 # 导入各模块路由
 from app.routes.auth import auth_bp
@@ -35,3 +37,5 @@ from app.routes.module_participants import module_participant_bp
 from app.routes.sync import sync_bp
 from app.routes.change_requests import change_request_bp
 from app.routes.messages import messages_bp
+from app.routes.labor_hours import labor_hours_bp
+from app.routes.participant_type_permissions import ptp_bp

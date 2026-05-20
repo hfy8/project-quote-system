@@ -60,25 +60,14 @@
                 <el-option label="17%" :value="0.17" />
               </el-select>
             </el-form-item>
-            <el-form-item label="对外利润率">
-              <el-input-number
-                v-model="quotation.profit_rate"
-                :precision="2" :step="0.01" :min="0" :max="10"
-                placeholder="如 0.15 表示 15%"
-                @change="isEdit && saveProfitRate()"
-              />
-            </el-form-item>
-            <el-form-item v-if="!isEdit">
-              <el-button type="primary" @click="saveBasic">创建报价单</el-button>
-            </el-form-item>
-            <el-form-item v-else>
+            <el-form-item v-if="isEdit">
               <el-alert title="基本信息已保存，无法修改" type="info" :closable="false" show-icon />
             </el-form-item>
           </el-form>
         </el-tab-pane>
 
         <!-- 模块管理 -->
-        <el-tab-pane v-if="isEdit" label="模块管理" name="modules">
+        <el-tab-pane v-if="permissions.tabs?.includes('modules')" label="模块管理" name="modules">
           <div class="module-actions">
             <el-button type="primary" @click="showAddModule">添加模块</el-button>
           </div>
@@ -112,18 +101,16 @@
         </el-tab-pane>
 
         <!-- 参与人员 -->
-        <el-tab-pane v-if="isEdit" label="参与人员" name="participants">
-          <div class="participant-actions">
-            <el-button type="primary" @click="showAddParticipantDialog">+ 添加人员</el-button>
-          </div>
-
-          <el-table :data="quotationParticipants" border style="width: 100%; margin-top: 16px;">
+        <el-tab-pane v-if="permissions.tabs?.includes('participants')" label="参与人员" name="participants">
+          <el-table :data="quotationParticipants" border style="width: 100%;">
             <el-table-column prop="user.real_name" label="姓名" />
             <el-table-column prop="user.username" label="用户名" />
             <el-table-column label="参与类型" width="150">
               <template #default="{ row }">
                 <el-select v-model="row.participant_type" placeholder="选择类型" size="small" @change="updateParticipantType(row)">
-                  <el-option v-for="t in participantTypes" :key="t.type" :label="t.type_name + ' (' + t.type + ')'" :value="t.type" />
+                  <el-option label="项目" value="project" />
+                  <el-option label="机构" value="agency" />
+                  <el-option label="电气" value="electrical" />
                 </el-select>
               </template>
             </el-table-column>
@@ -152,7 +139,7 @@
         </el-tab-pane>
 
         <!-- 费用系数 -->
-        <el-tab-pane v-if="isEdit" label="费用系数" name="coefficients">
+        <el-tab-pane v-if="permissions.tabs?.includes('coefficients')" label="费用系数" name="coefficients">
           <div class="coefficient-card">
             <div class="coefficient-header">
               <div class="coefficient-title">
@@ -196,7 +183,7 @@
         </el-tab-pane>
 
         <!-- 物料清单 -->
-        <el-tab-pane v-if="isEdit" label="物料清单" name="materials">
+        <el-tab-pane v-if="permissions.tabs?.includes('materials')" label="物料清单" name="materials">
           <!-- 已归档警告 -->
           <el-alert v-if="isArchived" title="报价单已归档，物料变更需要提交审核" type="warning" :closable="false" show-icon style="margin-bottom: 16px;">
             <template #default>
@@ -329,7 +316,7 @@
         </el-tab-pane>
 
         <!-- 费用 -->
-        <el-tab-pane v-if="isEdit" label="费用" name="fees">
+        <el-tab-pane v-if="permissions.tabs?.includes('fees')" label="费用" name="fees">
           <div class="fee-actions">
             <el-button type="primary" @click="showAddFee">添加费用</el-button>
           </div>
@@ -381,7 +368,7 @@
         </el-tab-pane>
 
         <!-- 人力工时 -->
-        <el-tab-pane v-if="isEdit" label="人力工时" name="labor">
+        <el-tab-pane v-if="permissions.tabs?.includes('labor')" label="人力工时" name="labor">
           <div class="labor-header">
             <el-button type="primary" @click="showAddLabor">+ 添加工时</el-button>
           </div>
@@ -399,7 +386,7 @@
                 <span v-else>{{ row.hours }} h</span>
               </template>
             </el-table-column>
-            <el-table-column prop="unit_price" label="单价 (元/h)" width="140">
+            <el-table-column prop="unit_price" label="单价 (元/h)" width="140" v-if="!isMyAssignments">
               <template #default="{ row }">
                 <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 110px;" />
                 <span v-else>{{ row.unit_price.toFixed(2) }}</span>
@@ -435,10 +422,10 @@
               <el-form-item label="工时">
                 <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" />
               </el-form-item>
-              <el-form-item label="单价 (元/h)">
+              <el-form-item label="单价 (元/h)" v-if="!isMyAssignments">
                 <el-input-number v-model="laborForm.unit_price" :min="0" :precision="2" style="width: 100%;" />
               </el-form-item>
-              <el-form-item label="合计">
+              <el-form-item label="合计" v-if="!isMyAssignments">
                 <span>{{ (laborForm.hours * laborForm.unit_price).toFixed(2) }} 元</span>
               </el-form-item>
             </el-form>
@@ -450,7 +437,7 @@
         </el-tab-pane>
 
         <!-- 汇总 -->
-        <el-tab-pane v-if="isEdit" label="汇总" name="summary">
+        <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
           <div v-loading="summaryLoading">
             <div class="summary-header">
               <div class="summary-currency">
@@ -479,21 +466,6 @@
               <div class="summary-card">
                 <div class="summary-label">小计</div>
                 <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">对外利润率</div>
-                <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">含利润小计</div>
-                <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">实际利润</div>
-                <div class="summary-value highlight">
-                  <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
-                  <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
-                </div>
               </div>
               <div class="summary-card">
                 <div class="summary-label">税率</div>
@@ -547,13 +519,10 @@
             </el-table>
 
             <h3 style="margin-top: 24px;">费用明细</h3>
-            <el-table :data="feesIncludingLabor" border style="width: 100%; margin-top: 8px;">
+            <el-table :data="summary?.fees" border style="width: 100%; margin-top: 8px;">
               <el-table-column prop="fee_type" label="费用类型" />
-              <el-table-column prop="location" label="位置/工时">
-                <template #default="{ row }">
-                  <span v-if="row.hours !== undefined">{{ row.hours }}h</span>
-                  <span v-else>{{ getLocationLabel(row.location) }}</span>
-                </template>
+              <el-table-column prop="location" label="位置">
+                <template #default="{ row }">{{ getLocationLabel(row.location) }}</template>
               </el-table-column>
               <el-table-column prop="amount" label="金额" />
               <el-table-column prop="description" label="描述" />
@@ -562,7 +531,7 @@
         </el-tab-pane>
 
         <!-- 版本 -->
-        <el-tab-pane v-if="isEdit" label="版本" name="versions">
+        <el-tab-pane v-if="permissions.tabs?.includes('versions')" label="版本" name="versions">
           <el-table :data="versions" border style="width: 100%;">
             <el-table-column prop="version_no" label="版本号" width="80" />
             <el-table-column prop="created_at" label="创建时间" />
@@ -578,7 +547,7 @@
         </el-tab-pane>
 
         <!-- 导出 -->
-        <el-tab-pane v-if="isEdit" label="导出" name="export">
+        <el-tab-pane v-if="permissions.tabs?.includes('export')" label="导出" name="export">
           <div class="export-grid">
             <div class="export-item" @click="exportFile('word')">
               <span class="export-icon">📝</span>
@@ -609,6 +578,7 @@ import changeRequestsAPI from '../api/changeRequests'
 
 const route = useRoute()
 const router = useRouter()
+const isMyAssignments = computed(() => route.path.includes('/my-assignments/'))
 
 console.log('Route params:', route.params)
 console.log('Route path:', route.path)
@@ -627,7 +597,7 @@ const permissions = ref({
   can_edit_materials: true,
   can_edit_modules: true,
   can_edit_fees: true,
-  tabs: []
+  tabs: ['modules', 'participants', 'coefficients', 'materials', 'fees', 'labor', 'summary']
 })
 const modules = ref([])
 const moduleMaterials = ref([])
@@ -703,41 +673,6 @@ const convertedSummary = computed(() => {
     grand_total: summary.value.grand_total * factor
   }
 })
-
-// 费用明细表格：费用 + 人力工时合并展示
-const feesIncludingLabor = computed(() => {
-  const feeList = summary.value?.fees || []
-  const laborRows = (summary.value?.labor_hours || []).map(l => ({
-    fee_type: l.name || '人力工时',
-    location: null,
-    amount: l.total,
-    hours: l.hours,
-    description: `${l.hours}h × ${l.unit_price}`
-  }))
-  return [...feeList, ...laborRows]
-})
-
-const participantTypes = ref([])
-
-async function loadParticipantTypes() {
-  try {
-    const res = await request.get('/participant-type-permissions')
-    const list = res || []
-    // 提取所有不同的 participant_type，返回对象数组
-    const typeMap = {}
-    for (const p of list) {
-      if (!typeMap[p.participant_type]) {
-        typeMap[p.participant_type] = {
-          type: p.participant_type,
-          type_name: p.type_name || p.participant_type
-        }
-      }
-    }
-    participantTypes.value = Object.values(typeMap)
-  } catch (e) {
-    console.error('加载参与类型失败', e)
-  }
-}
 
 async function loadExchangeRates(skipCurrencyInit = false) {
   try {
@@ -1232,18 +1167,6 @@ async function saveBasic() {
   }
 }
 
-// 保存利润率
-async function saveProfitRate() {
-  try {
-    await api.put(`/quotations/${quotationId.value}`, {
-      profit_rate: quotation.value.profit_rate
-    })
-    ElMessage.success('利润率已保存')
-  } catch (error) {
-    ElMessage.error('保存利润率失败')
-  }
-}
-
 // 加载模块
 async function loadModules() {
   try {
@@ -1628,7 +1551,6 @@ onMounted(async () => {
   await loadUsers()
   await loadBusinessUsers()
   await loadFeeTypes()
-  await loadParticipantTypes()
   if (isEdit.value) {
     await loadQuotation()  // 先加载报价单，获取币种
     await loadExchangeRates(true)  // 跳过货币初始化，使用报价单币种

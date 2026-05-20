@@ -166,6 +166,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { hasPermission } from '../router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { quotationsAPI } from '../api/quotations'
 import { useAuthStore } from '../stores/auth'
@@ -174,7 +175,6 @@ import VersionCompare from './VersionCompare.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
-const { hasPermission } = usePermission()
 
 // 是否有创建报价单权限
 const canCreate = computed(() => {
@@ -186,9 +186,9 @@ const canEdit = (row) => {
   // 已归档的报价单不能编辑（但可以导出报表）
   if (row.status === 'approved') return false
   const userId = authStore.userInfo?.id
-  if (hasPermission('quotation.edit')) {
-    if (hasPermission('role.admin')) return true
-    return row.creator_id === userId
+  if (authStore.userInfo?.role === 'admin' || hasPermission('quotation.edit')) {
+    if (authStore.userInfo?.role === 'admin') return true
+    return row.business_owner_id === userId  // 看负责人，不是创建人
   }
   return false
 }
@@ -206,9 +206,9 @@ const handleEdit = (row) => {
 const canDelete = (row) => {
   // 已归档的报价单不能删除
   if (row.status === 'approved') return false
-  if (hasPermission('quotation.delete')) {
-    if (hasPermission('role.admin')) return true
-    return row.created_by === authStore.userInfo?.id
+  if (authStore.userInfo?.role === 'admin' || hasPermission('quotation.delete')) {
+    if (authStore.userInfo?.role === 'admin') return true
+    return row.business_owner_id === authStore.userInfo?.id  // 看负责人
   }
   return false
 }

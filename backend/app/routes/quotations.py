@@ -2,7 +2,7 @@ import json
 from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db, create_app
-from app.models import Quotation, QuotationParticipant, User, Module, ModuleMaterial, OtherFee, FeeRate, VersionSnapshot
+from app.models import Quotation, QuotationParticipant, User, Module, ModuleMaterial, OtherFee, FeeRate, VersionSnapshot, LaborHour, ParticipantTypePermission
 from app.utils.permissions import check_permission, check_any_permission
 from app.utils.logger import log_operation, log_operation_manual
 from app.models.operation_log import Action, Module as LogModule
@@ -56,6 +56,7 @@ def get_quotations():
 
 @quotation_bp.route('', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.create')
 @check_any_permission('quotation.create', 'quotation.*')
 def create_quotation():
     """创建报价单"""
@@ -71,6 +72,7 @@ def create_quotation():
         creator_id=user_id,
         business_owner_id=data.get('business_owner_id'),
         tax_rate=data.get('tax_rate', 0.13),
+        profit_rate=data.get('profit_rate', 0.0),
         currency=data.get('currency', 'CNY')
     )
     db.session.add(quotation)
@@ -105,8 +107,77 @@ def get_quotation(quotation_id):
     return jsonify(quotation.to_dict()), 200
 
 
+@quotation_bp.route('/<quotation_id>/permissions', methods=['GET'])
+@jwt_required()
+def get_quotation_permissions(quotation_id):
+    """获取当前用户对该报价单的操作权限（按参与人员类型）"""
+    user_id = get_jwt_identity()
+    try:
+        quotation = Quotation.query.get(int(quotation_id))
+    except (ValueError, TypeError):
+        quotation = None
+    if not quotation:
+        return jsonify({'error': '报价单不存在'}), 404
+
+    # 查找当前用户在报价单中的参与记录
+    participant = QuotationParticipant.query.filter_by(
+        quotation_id=quotation.id,
+        user_id=user_id
+    ).first()
+
+# 如果是创建者（业务负责人），拥有全部权限（读 project 的全部 tab）
+    if quotation.business_owner_id == user_id:
+        all_tabs = [p.tab_name for p in ParticipantTypePermission.query.filter_by(
+            participant_type='project', is_disabled=False).all()]
+        return jsonify({
+            'participant_type': 'owner',
+            'can_edit_coefficients': True,
+            'can_edit_participants': True,
+            'can_edit_materials': True,
+            'can_edit_modules': True,
+            'can_edit_fees': True,
+            'tabs': all_tabs
+        }), 200
+
+    # 如果不是参与人，仅能查看
+    if not participant:
+        return jsonify({
+            'participant_type': None,
+            'can_edit_coefficients': False,
+            'can_edit_participants': False,
+            'can_edit_materials': False,
+            'can_edit_modules': False,
+            'can_edit_fees': False,
+            'tabs': ['summary']
+        }), 200
+
+    # 按参与类型从数据库读取可用 tab
+    ptype = participant.participant_type
+    perms = ParticipantTypePermission.query.filter_by(
+        participant_type=ptype, is_disabled=False).order_by(
+        ParticipantTypePermission.sort_order).all()
+    tabs = [p.tab_name for p in perms]
+
+    can_edit_materials = 'materials' in tabs
+    can_edit_modules = 'modules' in tabs
+    can_edit_fees = 'fees' in tabs
+    can_edit_participants = 'participants' in tabs
+    can_edit_coefficients = 'coefficients' in tabs
+
+    return jsonify({
+        'participant_type': ptype,
+        'can_edit_coefficients': can_edit_coefficients,
+        'can_edit_participants': can_edit_participants,
+        'can_edit_materials': can_edit_materials,
+        'can_edit_modules': can_edit_modules,
+        'can_edit_fees': can_edit_fees,
+        'tabs': tabs
+    }), 200
+
+
 @quotation_bp.route('/<quotation_id>', methods=['PUT'])
 @jwt_required()
+@check_permission('quotation.edit')
 @check_any_permission('quotation.edit', 'quotation.*')
 def update_quotation(quotation_id):
     """更新报价单"""
@@ -120,8 +191,11 @@ def update_quotation(quotation_id):
     quotation.scheme_no = data.get('scheme_no', quotation.scheme_no)
     quotation.business_owner_id = data.get('business_owner_id', quotation.business_owner_id)
     quotation.tax_rate = data.get('tax_rate', quotation.tax_rate)
+    quotation.profit_rate = data.get('profit_rate', quotation.profit_rate)
     if 'currency' in data:
         quotation.currency = data.get('currency')
+    if 'coefficients' in data:
+        quotation.coefficients = data.get('coefficients')
 
     db.session.commit()
     return jsonify(quotation.to_dict()), 200
@@ -129,6 +203,7 @@ def update_quotation(quotation_id):
 
 @quotation_bp.route('/<quotation_id>', methods=['DELETE'])
 @jwt_required()
+@check_permission('quotation.delete')
 @check_any_permission('quotation.delete', 'quotation.*')
 def delete_quotation(quotation_id):
     """删除报价单"""
@@ -153,6 +228,7 @@ def delete_quotation(quotation_id):
 
 @quotation_bp.route('/<int:quotation_id>/status', methods=['PUT'])
 @jwt_required()
+@check_permission('quotation.edit')
 def update_status(quotation_id):
     """更新报价单状态"""
     quotation = Quotation.query.get(quotation_id)
@@ -217,6 +293,7 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
         'type': quotation.type,
         'scheme_no': quotation.scheme_no,
         'tax_rate': float(quotation.tax_rate) if quotation.tax_rate else 0,
+        'profit_rate': float(quotation.profit_rate) if quotation.profit_rate else 0,
         'business_owner_id': quotation.business_owner_id,
         'modules': [{
             'id': m.id,
@@ -234,7 +311,13 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
             'location': f.location,
             'amount': float(f.amount) if f.amount else 0,
             'description': f.description
-        } for f in fees]
+        } for f in fees],
+        'labor_hours': [{
+            'name': l.name,
+            'hours': float(l.hours) if l.hours else 0,
+            'unit_price': float(l.unit_price) if l.unit_price else 0,
+            'total': float(l.total) if l.total else 0
+        } for l in LaborHour.query.filter_by(quotation_id=quotation.id).all()]
     }
     
     new_version_no = max_version + 1
@@ -320,6 +403,7 @@ def get_version_detail(quotation_id, version_no):
 
 @quotation_bp.route('/<int:quotation_id>/archive', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.edit')
 def archive_quotation(quotation_id):
     """归档报价单（发布版本）"""
     quotation = Quotation.query.get(quotation_id)
@@ -371,6 +455,7 @@ def archive_quotation(quotation_id):
 
 @quotation_bp.route('/<int:quotation_id>/unarchive', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.edit')
 def unarchive_quotation(quotation_id):
     """撤销归档"""
     quotation = Quotation.query.get(quotation_id)
@@ -407,20 +492,40 @@ def get_participants(quotation_id):
 
 @quotation_bp.route('/<int:quotation_id>/participants', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.edit')
 def add_participant(quotation_id):
     """添加报价单参与人员"""
     data = request.get_json()
     participant = QuotationParticipant(
         quotation_id=quotation_id,
-        user_id=data.get('user_id')
+        user_id=data.get('user_id'),
+        participant_type=data.get('participant_type', 'project')
     )
     db.session.add(participant)
     db.session.commit()
     return jsonify(participant.to_dict()), 201
 
 
+@quotation_bp.route('/<int:quotation_id>/participants/<int:user_id>', methods=['PUT'])
+@jwt_required()
+@check_permission('quotation.edit')
+def update_participant_type(quotation_id, user_id):
+    """更新报价单参与人员类型"""
+    data = request.get_json()
+    participant = QuotationParticipant.query.filter_by(
+        quotation_id=quotation_id,
+        user_id=user_id
+    ).first()
+    if not participant:
+        return jsonify({'error': '参与人员不存在'}), 404
+    participant.participant_type = data.get('participant_type', participant.participant_type)
+    db.session.commit()
+    return jsonify(participant.to_dict()), 200
+
+
 @quotation_bp.route('/<int:quotation_id>/participants/<int:user_id>', methods=['DELETE'])
 @jwt_required()
+@check_permission('quotation.edit')
 def remove_participant(quotation_id, user_id):
     """移除报价单参与人员"""
     participant = QuotationParticipant.query.filter_by(
@@ -438,6 +543,7 @@ def remove_participant(quotation_id, user_id):
 
 @quotation_bp.route('/<int:quotation_id>/copy', methods=['POST'])
 @jwt_required()
+@check_permission('quotation.create')
 def copy_quotation(quotation_id):
     """复制报价单"""
     original = Quotation.query.get(quotation_id)
@@ -505,10 +611,17 @@ def get_quotation_summary(quotation_id):
 
     modules = Module.query.filter_by(quotation_id=quotation_id).all()
     fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
+    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
 
-    # 获取所有费用系数
-    fee_rates = {r.category: r.rate for r in FeeRate.query.all()}
-    default_rate = fee_rates.get('默认', 1.0)
+    # 获取费用系数（优先使用报价单私有系数，否则用全局配置）
+    coeff = None
+    if quotation.coefficients:
+        coeff = quotation.coefficients
+        fee_rates = coeff
+        default_rate = 1.0
+    else:
+        fee_rates = {r.category: float(r.rate) for r in FeeRate.query.all()}
+        default_rate = fee_rates.get('默认', 1.0)
 
     module_summaries = []
     total_material = 0
@@ -526,8 +639,11 @@ def get_quotation_summary(quotation_id):
                 module_amount += amount
                 
                 # 获取物料分类对应的费用系数
-                category = mm.material.category or '其他件'
-                rate = fee_rates.get(category, default_rate)
+                category = mm.material.category or 'standard'
+                if quotation.coefficients:
+                    rate = float(quotation.coefficients.get(category, 1.0))
+                else:
+                    rate = float(fee_rates.get(category, default_rate))
                 amount_with_rate = amount * rate
                 module_amount_with_rate += amount_with_rate
                 
@@ -550,9 +666,13 @@ def get_quotation_summary(quotation_id):
         })
 
     total_fees = sum(float(f.amount or 0) for f in fees)
-    subtotal = total_with_rates + total_fees
-    tax_amount = subtotal * (quotation.tax_rate or 0)
-    grand_total = subtotal + tax_amount
+    total_labor = sum(float(l.total or 0) for l in labor_hours)
+    fees_total = total_fees + total_labor  # 费用合计含人力工时
+    subtotal = total_with_rates + fees_total
+    profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
+    subtotal_with_profit = subtotal * (1 + profit_rate)
+    tax_amount = subtotal_with_profit * (quotation.tax_rate or 0)
+    grand_total = subtotal_with_profit + tax_amount
 
     return jsonify({
         'quotation': quotation.to_dict(),
@@ -560,46 +680,89 @@ def get_quotation_summary(quotation_id):
         'fees': [f.to_dict() for f in fees],
         'material_total': round(total_material, 2),
         'material_total_with_rates': round(total_with_rates, 2),
-        'fees_total': round(total_fees, 2),
+        'fees_total': round(fees_total, 2),
+        'labor_total': round(total_labor, 2),
+        'labor_hours': [l.to_dict() for l in labor_hours],
         'fee_rates': fee_rates,
         'rate_details': [{'category': k, **v} for k, v in rate_details.items()],
         'subtotal': round(subtotal, 2),
+        'profit_rate': profit_rate,
+        'subtotal_with_profit': round(subtotal_with_profit, 2),
         'tax_rate': quotation.tax_rate or 0,
         'tax_amount': round(tax_amount, 2),
         'grand_total': round(grand_total, 2)
     }), 200
 
 
-@quotation_bp.route('/my-assigned-modules', methods=['GET'])
+@quotation_bp.route('/my-assignments', methods=['GET'])
 @jwt_required()
-def get_my_assigned_modules():
-    """获取当前用户被分配的模块（作为模块参与者）"""
+def get_my_assignments():
+    """获取当前用户参与的报价单（按报价单级别参与）"""
     user_id = get_jwt_identity()
     user = User.query.get(user_id)
     if not user:
         return jsonify({'error': '用户不存在'}), 401
-    
+
+    # 获取用户作为报价单参与人的所有报价单
+    participant_records = QuotationParticipant.query.filter_by(user_id=user_id).all()
+
+    result = []
+    for p in participant_records:
+        quotation = Quotation.query.get(p.quotation_id)
+        if not quotation:
+            continue
+
+        # 获取该报价单的模块数量和物料数量
+        module_count = Module.query.filter_by(quotation_id=quotation.id).count()
+        material_count = db.session.query(db.func.count(ModuleMaterial.id)).join(Module).filter(
+            Module.quotation_id == quotation.id
+        ).scalar() or 0
+
+        result.append({
+            'quotation_id': quotation.id,
+            'quotation_name': quotation.name,
+            'quotation_scheme_no': quotation.scheme_no,
+            'quotation_status': quotation.status,
+            'participant_type': p.participant_type,
+            'business_owner_name': quotation.business_owner.real_name if quotation.business_owner else None,
+            'module_count': module_count,
+            'material_count': material_count,
+            'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
+        })
+
+    return jsonify(result), 200
+
+
+@quotation_bp.route('/my-assigned-modules', methods=['GET'])
+@jwt_required()
+def get_my_assigned_modules():
+    """获取当前用户被分配的模块（作为模块参与者）【保留兼容】"""
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 401
+
     # 获取用户作为模块参与者的所有模块
     from app.models.module import ModuleParticipant, Module
-    
+
     # 先获取用户参与的所有模块ID
     participant_records = ModuleParticipant.query.filter_by(user_id=user_id).all()
     module_ids = [p.module_id for p in participant_records]
-    
+
     if not module_ids:
         return jsonify([]), 200
-    
+
     # 获取这些模块的详情（包含所属报价单信息）
     modules = Module.query.filter(Module.id.in_(module_ids)).all()
-    
+
     result = []
     for mod in modules:
         # 获取模块物料数量
         material_count = ModuleMaterial.query.filter_by(module_id=mod.id).count()
-        
+
         # 获取报价单信息
         quotation = Quotation.query.get(mod.quotation_id)
-        
+
         result.append({
             'id': mod.id,
             'module_name': mod.name,
@@ -610,5 +773,5 @@ def get_my_assigned_modules():
             'quotation_status': quotation.status if quotation else None,
             'material_count': material_count
         })
-    
+
     return jsonify(result), 200

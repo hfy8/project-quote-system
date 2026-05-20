@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models.exchange_rate import ExchangeRate
+from app.utils.permissions import check_permission
 
 exchange_rate_bp = Blueprint('exchange_rates', __name__, url_prefix='/api/exchange_rates')
 
@@ -79,6 +80,7 @@ def create_exchange_rate():
 
 @exchange_rate_bp.route('/<int:rate_id>', methods=['PUT'])
 @jwt_required()
+@check_permission('exchange_rate.edit')
 def update_exchange_rate(rate_id):
     """更新汇率配置"""
     from app.utils.logger import log_operation

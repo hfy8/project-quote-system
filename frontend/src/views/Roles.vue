@@ -131,7 +131,7 @@
           </el-tab-pane>
         </el-tabs>
         <div v-if="form.permissions.includes('*')" class="super-perm-hint">
-          超级管理员拥有所有权限
+          超级管理员拥有全部权限，无需勾选
         </div>
       </div>
       <template #footer>
@@ -178,43 +178,87 @@ const rules = {
   code: [{ required: true, message: '请输入角色代码', trigger: 'blur' }]
 }
 
-// 权限分组
+// 权限分组（与后端 ALL_PERMISSIONS 对齐）
 const permissionGroups = ref([
+  { name: '首页', permissions: [
+    { code: 'dashboard.view', name: '查看首页' },
+  ]},
   { name: '报价单', permissions: [
-    { code: 'quotation.*', name: '报价单管理' },
+    { code: 'quotation.view', name: '查看报价单' },
     { code: 'quotation.create', name: '创建报价单' },
     { code: 'quotation.edit', name: '编辑报价单' },
     { code: 'quotation.delete', name: '删除报价单' },
-    { code: 'quotation.approve', name: '审批报价单' },
     { code: 'quotation.export', name: '导出报价单' },
   ]},
-  { name: '物料', permissions: [
-    { code: 'material.*', name: '物料管理' },
+  { name: '原材料', permissions: [
+    { code: 'material.view', name: '查看物料' },
     { code: 'material.create', name: '创建物料' },
     { code: 'material.edit', name: '编辑物料' },
     { code: 'material.delete', name: '删除物料' },
+    { code: 'material.import', name: '导入物料' },
+  ]},
+  { name: '费用类型', permissions: [
+    { code: 'fee_type.view', name: '查看费用类型' },
+    { code: 'fee_type.create', name: '创建费用类型' },
+    { code: 'fee_type.edit', name: '编辑费用类型' },
+    { code: 'fee_type.delete', name: '删除费用类型' },
+  ]},
+  { name: '费用系数', permissions: [
+    { code: 'fee_rate.view', name: '查看系数' },
+    { code: 'fee_rate.edit', name: '编辑系数' },
+  ]},
+  { name: '汇率', permissions: [
+    { code: 'exchange_rate.view', name: '查看汇率' },
+    { code: 'exchange_rate.edit', name: '编辑汇率' },
   ]},
   { name: '模块', permissions: [
-    { code: 'module.*', name: '模块管理' },
+    { code: 'module.view', name: '查看模块' },
+    { code: 'module.create', name: '创建模块' },
+    { code: 'module.edit', name: '编辑模块' },
+    { code: 'module.delete', name: '删除模块' },
+  ]},
+  { name: '版本', permissions: [
+    { code: 'version.view', name: '查看版本' },
+    { code: 'version.create', name: '创建版本' },
+    { code: 'version.edit', name: '编辑版本' },
   ]},
   { name: '用户', permissions: [
-    { code: 'user.*', name: '用户管理' },
+    { code: 'user.view', name: '查看用户' },
+    { code: 'user.create', name: '创建用户' },
+    { code: 'user.edit', name: '编辑用户' },
+    { code: 'user.delete', name: '删除用户' },
+    { code: 'user.reset_password', name: '重置密码' },
   ]},
   { name: '角色', permissions: [
-    { code: 'role.*', name: '角色管理' },
+    { code: 'role.view', name: '查看角色' },
+    { code: 'role.create', name: '创建角色' },
+    { code: 'role.edit', name: '编辑角色' },
+    { code: 'role.delete', name: '删除角色' },
   ]},
-  { name: '报表', permissions: [
-    { code: 'report.*', name: '报表管理' },
+  { name: '日志', permissions: [
+    { code: 'log.view', name: '查看日志' },
   ]},
   { name: '系统', permissions: [
-    { code: 'system.*', name: '系统设置' },
+    { code: 'system.view', name: '查看设置' },
+    { code: 'system.edit', name: '编辑设置' },
+  ]},
+  { name: '我的分配', permissions: [
+    { code: 'module_assignment.view', name: '查看我的分配' },
+    { code: 'module_assignment.edit', name: '编辑我的分配' },
+  ]},
+  { name: '参与人权限', permissions: [
+    { code: 'participant_type_permission.view', name: '查看参与人权限' },
+    { code: 'participant_type_permission.edit', name: '编辑参与人权限' },
   ]},
 ])
 
 const formatPermission = (perm) => {
   if (perm === '*') return '全部权限'
-  const group = permissionGroups.value.find(g => g.permissions.some(p => p.code === perm))
-  return group?.permissions.find(p => p.code === perm)?.name || perm
+  for (const group of permissionGroups.value) {
+    const found = group.permissions.find(p => p.code === perm)
+    if (found) return found.name
+  }
+  return perm
 }
 
 const fetchData = async () => {

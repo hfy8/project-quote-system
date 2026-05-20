@@ -9,7 +9,6 @@ material_bp = Blueprint('materials', __name__)
 
 @material_bp.route('', methods=['GET'])
 @jwt_required()
-@check_any_permission('material.view', 'material.*')
 def get_materials():
     """获取物料列表"""
     keyword = request.args.get('keyword', '')

@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 from app import db
 from app.models.fee_rate import FeeRate
+from app.utils.permissions import check_permission
+
 
 fee_rate_bp = Blueprint('fee_rates', __name__, url_prefix='/api/fee_rates')
 
@@ -31,6 +33,7 @@ def create_fee_rate():
 
 @fee_rate_bp.route('/<int:rate_id>', methods=['PUT'])
 @jwt_required()
+@check_permission('fee_rate.edit')
 def update_fee_rate(rate_id):
     """更新费用系数配置"""
     rate = FeeRate.query.get(rate_id)

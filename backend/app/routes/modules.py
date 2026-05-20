@@ -2,6 +2,8 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db
 from app.models import Module, ModuleParticipant, Material, ModuleMaterial
+from app.utils.permissions import check_permission
+
 
 module_bp = Blueprint('modules', __name__)
 
@@ -16,6 +18,7 @@ def get_modules(quotation_id):
 
 @module_bp.route('/quotations/<int:quotation_id>/modules', methods=['POST'])
 @jwt_required()
+@check_permission('module.create')
 def create_module(quotation_id):
     """创建模块"""
     data = request.get_json()
@@ -42,6 +45,7 @@ def get_module(module_id):
 
 @module_bp.route('/modules/<int:module_id>', methods=['PUT'])
 @jwt_required()
+@check_permission('module.edit')
 def update_module(module_id):
     """更新模块"""
     module = Module.query.get(module_id)
@@ -58,6 +62,7 @@ def update_module(module_id):
 
 @module_bp.route('/modules/<int:module_id>', methods=['DELETE'])
 @jwt_required()
+@check_permission('module.delete')
 def delete_module(module_id):
     """删除模块"""
     module = Module.query.get(module_id)

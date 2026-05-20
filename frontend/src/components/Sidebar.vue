@@ -6,58 +6,74 @@
         <span class="nav-icon">🏠</span>
         <span class="nav-text">首页</span>
       </router-link>
-      <router-link to="/quotations" class="nav-item" :class="{ active: isActive('/quotations') }">
+      <router-link to="/quotations" class="nav-item" :class="{ active: isActive('/quotations') }" v-if="canView('quotation.view')">
         <span class="nav-icon">📋</span>
         <span class="nav-text">报价单管理</span>
       </router-link>
-      <router-link to="/materials" class="nav-item" :class="{ active: isActive('/materials') }">
+      <router-link to="/materials" class="nav-item" :class="{ active: isActive('/materials') }" v-if="canView('material.view')">
         <span class="nav-icon">📦</span>
         <span class="nav-text">原材料库</span>
       </router-link>
-      <router-link to="/fee-types" class="nav-item" :class="{ active: isActive('/fee-types') }">
+      <router-link to="/fee-types" class="nav-item" :class="{ active: isActive('/fee-types') }" v-if="canView('fee_type.view')">
         <span class="nav-icon">💰</span>
         <span class="nav-text">费用类型</span>
       </router-link>
+      <router-link to="/my-assignments" class="nav-item" :class="{ active: isActive('/my-assignments') }" v-if="canView('module_assignment.view')">
+        <span class="nav-icon">📌</span>
+        <span class="nav-text">我的分配</span>
+      </router-link>
     </div>
 
-    <div class="nav-section">
+    <div class="nav-section" v-if="canView('user.view') || canView('role.view') || canView('fee_rate.view') || canView('exchange_rate.view') || canView('log.view')">
       <div class="nav-section-title">系统管理</div>
-      <router-link to="/users" class="nav-item" :class="{ active: isActive('/users') }">
+      <router-link to="/users" class="nav-item" :class="{ active: isActive('/users') }" v-if="canView('user.view')">
         <span class="nav-icon">👤</span>
         <span class="nav-text">用户管理</span>
       </router-link>
-      <router-link to="/roles" class="nav-item" :class="{ active: isActive('/roles') }">
+      <router-link to="/roles" class="nav-item" :class="{ active: isActive('/roles') }" v-if="canView('role.view')">
         <span class="nav-icon">👥</span>
         <span class="nav-text">角色管理</span>
       </router-link>
-      <router-link to="/fee-rates" class="nav-item" :class="{ active: isActive('/fee-rates') }">
+      <router-link to="/fee-rates" class="nav-item" :class="{ active: isActive('/fee-rates') }" v-if="canView('fee_rate.view')">
         <span class="nav-icon">📊</span>
         <span class="nav-text">费用系数</span>
       </router-link>
-      <router-link to="/exchange-rates" class="nav-item" :class="{ active: isActive('/exchange-rates') }">
+      <router-link to="/exchange-rates" class="nav-item" :class="{ active: isActive('/exchange-rates') }" v-if="canView('exchange_rate.view')">
         <span class="nav-icon">💱</span>
         <span class="nav-text">汇率配置</span>
       </router-link>
-      <router-link to="/logs" class="nav-item" :class="{ active: isActive('/logs') }">
+      <router-link to="/logs" class="nav-item" :class="{ active: isActive('/logs') }" v-if="canView('log.view')">
         <span class="nav-icon">📝</span>
         <span class="nav-text">操作日志</span>
       </router-link>
     </div>
 
-    <div class="nav-section">
+    <div class="nav-section" v-if="canView('system.view') || canView('participant_type_permission.view')">
       <div class="nav-section-title">设置</div>
-      <router-link to="/system" class="nav-item" :class="{ active: isActive('/system') }">
+      <router-link to="/system" class="nav-item" :class="{ active: isActive('/system') }" v-if="canView('system.view')">
         <span class="nav-icon">⚙️</span>
         <span class="nav-text">系统设置</span>
+      </router-link>
+      <router-link to="/participant-type-permissions" class="nav-item" :class="{ active: isActive('/participant-type-permissions') }" v-if="canView('participant_type_permission.view')">
+        <span class="nav-icon">🔐</span>
+        <span class="nav-text">参与人权限</span>
       </router-link>
     </div>
   </nav>
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { useAuthStore } from '../stores/auth'
+import { hasPermission } from '../router'
 
 const route = useRoute()
+const authStore = useAuthStore()
+
+const userPermissions = computed(() => authStore.userInfo?.permissions || [])
+
+const canView = (perm) => hasPermission(userPermissions.value, perm)
 
 const isActive = (path) => {
   if (path === '/dashboard') {

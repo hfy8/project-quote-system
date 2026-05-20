@@ -170,16 +170,16 @@ const canAddUser = computed(() => hasPermission('user.create'))
 
 // 是否有编辑用户权限
 const canEditUser = (row) => {
-  // 不能编辑admin用户
+  // 不能编辑自己（admin用户）
   if (row.role === 'admin') return false
-  return hasPermission('user.edit')
+  return authStore.userInfo?.role === 'admin' || hasPermission('user.edit')
 }
 
 // 是否有重置密码权限
 const canResetPassword = (row) => {
   // 不能重置admin密码
   if (row.role === 'admin') return false
-  return hasPermission('user.reset_password')
+  return authStore.userInfo?.role === 'admin' || hasPermission('user.reset_password')
 }
 
 const loading = ref(false)
