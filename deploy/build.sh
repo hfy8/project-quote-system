@@ -17,6 +17,7 @@ SSH_HOST="10.60.100.1"
 SSH_USER="root"
 SSH_PASS="Fuqiang123##"
 DEPLOY_DIR="/opt/docker-swarm/${PROJECT}"
+BUILD_CONTEXT="$(pwd)"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -42,8 +43,8 @@ login_harbor() {
 build_backend() {
     log_info "构建后端镜像: ${BACKEND_IMAGE}"
     docker build -t ${BACKEND_IMAGE} \
-        -f deploy/Dockerfile.backend \
-        .
+        -f "${BUILD_CONTEXT}/deploy/Dockerfile.backend" \
+        "${BUILD_CONTEXT}"
     log_info "后端镜像构建完成"
 }
 
@@ -53,8 +54,8 @@ build_backend() {
 build_frontend() {
     log_info "构建前端镜像: ${FRONTEND_IMAGE}"
     docker build -t ${FRONTEND_IMAGE} \
-        -f deploy/Dockerfile.frontend \
-        .
+        -f "${BUILD_CONTEXT}/deploy/Dockerfile.frontend" \
+        "${BUILD_CONTEXT}"
     log_info "前端镜像构建完成"
 }
 
@@ -81,7 +82,7 @@ deploy() {
         # 创建部署目录
         mkdir -p ${DEPLOY_DIR}
 
-        # 复制 docker-compose.yml 和配置文件
+        # 复制 docker-compose.yml
         cat > ${DEPLOY_DIR}/docker-compose.yml << 'EOF'
 version: '3.8'
 services:
@@ -106,7 +107,7 @@ services:
     networks:
       - quote-net
     healthcheck:
-      test: [\"CMD\", \"curl\", \"-f\", \"http://localhost:5000/api/quotations\"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/quotations"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -133,7 +134,7 @@ services:
         limits:
           memory: 512M
     healthcheck:
-      test: [\"CMD-SHELL\", \"pg_isready -U postgres\"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -155,7 +156,7 @@ EOF
         cd ${DEPLOY_DIR}
         docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
 
-        log_info '部署完成!'
+        echo '部署完成!'
     "
 
     log_info "部署完成！访问 http://${SSH_HOST}"
