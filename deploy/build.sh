@@ -43,7 +43,7 @@ build_backend() {
     log_info "构建后端镜像: ${BACKEND_IMAGE}"
     docker build -t ${BACKEND_IMAGE} \
         -f deploy/Dockerfile.backend \
-        ./backend
+        .
     log_info "后端镜像构建完成"
 }
 
