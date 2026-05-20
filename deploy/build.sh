@@ -9,12 +9,12 @@ set -e
 
 # 配置
 REGISTRY="10.60.100.2"
-PROJECT="project-quote"
+PROJECT="rstech_saas"
 VERSION=${1:-"v1.0.0"}
 BACKEND_IMAGE="${REGISTRY}/${PROJECT}/backend:${VERSION}"
 FRONTEND_IMAGE="${REGISTRY}/${PROJECT}/frontend:${VERSION}"
 SSH_HOST="10.60.100.1"
-SSH_USER="root"
+SSH_USER="rs"
 SSH_PASS="Fuqiang123##"
 DEPLOY_DIR="/opt/docker-swarm/${PROJECT}"
 BUILD_CONTEXT="$(pwd)"
