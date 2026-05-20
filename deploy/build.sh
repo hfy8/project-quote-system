@@ -33,7 +33,7 @@ log_err() { echo -e "${RED}[ERROR]${NC} $1"; }
 #------------------------------------------
 login_harbor() {
     log_info "登录 Harbor..."
-    echo "Bj6546321" | docker login ${REGISTRY} -u "RS8568" --password-stdin
+    echo "Bj6546321." | docker login ${REGISTRY} -u "RS8568" --password-stdin
 }
 
 #------------------------------------------
@@ -76,7 +76,7 @@ deploy() {
 
     sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
         # 登录 Harbor
-        echo 'Bj6546321' | docker login ${REGISTRY} -u 'RS8568' --password-stdin
+        echo 'Bj6546321.' | docker login ${REGISTRY} -u 'RS8568' --password-stdin
 
         # 创建部署目录
         mkdir -p ${DEPLOY_DIR}
