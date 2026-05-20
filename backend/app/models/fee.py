@@ -36,6 +36,7 @@ class FeeType(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(50), nullable=False)
+    name_en = db.Column(db.String(100), nullable=True, comment='英文名称')
     location = db.Column(db.String(20), nullable=False)  # 厂内/厂外
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -44,6 +45,7 @@ class FeeType(db.Model):
         return {
             'id': self.id,
             'name': self.name,
+            'name_en': self.name_en,
             'location': self.location,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,

@@ -25,6 +25,7 @@ def create_module(quotation_id):
     module = Module(
         quotation_id=quotation_id,
         name=data.get('name'),
+        name_en=data.get('name_en'),
         code=data.get('code'),
         description=data.get('description')
     )
@@ -54,6 +55,7 @@ def update_module(module_id):
 
     data = request.get_json()
     module.name = data.get('name', module.name)
+    module.name_en = data.get('name_en', module.name_en)
     module.code = data.get('code', module.code)
     module.description = data.get('description', module.description)
     db.session.commit()

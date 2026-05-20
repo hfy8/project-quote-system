@@ -85,6 +85,7 @@
 
           <el-table :data="modules" border style="width: 100%; margin-top: 16px;">
             <el-table-column prop="name" label="模块名称" />
+            <el-table-column prop="name_en" label="英文名称" />
             <el-table-column prop="description" label="描述" />
             <el-table-column label="操作" width="180">
               <template #default="{ row }">
@@ -99,6 +100,9 @@
             <el-form :model="moduleForm" label-width="100px">
               <el-form-item label="模块名称">
                 <el-input v-model="moduleForm.name" placeholder="请输入模块名称" />
+              </el-form-item>
+              <el-form-item label="英文名称">
+                <el-input v-model="moduleForm.name_en" placeholder="English name (optional)" />
               </el-form-item>
               <el-form-item label="描述">
                 <el-input v-model="moduleForm.description" type="textarea" rows="3" placeholder="请输入描述" />
@@ -569,9 +573,17 @@
             <el-table-column prop="creator_name" label="创建人" />
             <el-table-column prop="operation_type" label="操作类型" />
             <el-table-column prop="remark" label="备注" show-overflow-tooltip />
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button size="small" type="warning" @click="exportVersion(row, 'pdf')">PDF</el-button>
+                <el-dropdown trigger="click" @command="(cmd) => exportVersion(row, cmd)">
+                  <el-button size="small" type="warning">PDF ▾</el-button>
+                  <template #dropdown>
+                    <el-dropdown-menu>
+                      <el-dropdown-item command="pdf_zh">中文 PDF</el-dropdown-item>
+                      <el-dropdown-item command="pdf_en">English PDF</el-dropdown-item>
+                    </el-dropdown-menu>
+                  </template>
+                </el-dropdown>
               </template>
             </el-table-column>
           </el-table>
@@ -588,10 +600,18 @@
               <span class="export-icon">📊</span>
               <span class="export-label">导出 Excel</span>
             </div>
-            <div class="export-item" @click="exportFile('pdf')">
-              <span class="export-icon">📄</span>
-              <span class="export-label">导出 PDF</span>
-            </div>
+            <el-dropdown @command="(cmd) => exportFile('pdf', cmd)" trigger="click">
+              <div class="export-item" style="cursor:pointer">
+                <span class="export-icon">📄</span>
+                <span class="export-label">导出 PDF ▾</span>
+              </div>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="zh">🇨🇳 中文 PDF</el-dropdown-item>
+                  <el-dropdown-item command="en">🇺🇸 English PDF</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -768,6 +788,7 @@ const moduleDialogTitle = ref('添加模块')
 const moduleForm = reactive({
   id: null,
   name: '',
+  name_en: '',
   description: ''
 })
 
@@ -1259,6 +1280,7 @@ function showAddModule() {
   moduleDialogTitle.value = '添加模块'
   moduleForm.id = null
   moduleForm.name = ''
+  moduleForm.name_en = ''
   moduleForm.description = ''
   moduleDialogVisible.value = true
 }
@@ -1268,6 +1290,7 @@ function editModule(module) {
   moduleDialogTitle.value = '编辑模块'
   moduleForm.id = module.id
   moduleForm.name = module.name
+  moduleForm.name_en = module.name_en || ''
   moduleForm.description = module.description || ''
   moduleDialogVisible.value = true
 }
@@ -1278,12 +1301,14 @@ async function saveModule() {
     if (moduleForm.id) {
       await api.put(`/modules/${moduleForm.id}`, {
         name: moduleForm.name,
+        name_en: moduleForm.name_en,
         description: moduleForm.description
       })
       ElMessage.success('更新成功')
     } else {
       await api.post(`/quotations/${quotationId.value}/modules`, {
         name: moduleForm.name,
+        name_en: moduleForm.name_en,
         description: moduleForm.description
       })
       ElMessage.success('添加成功')
@@ -1590,14 +1615,16 @@ function viewVersion(version) {
 }
 
 // 导出特定版本
-function exportVersion(version, format) {
-  window.open(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${format}`, '_blank')
+function exportVersion(version, cmd) {
+  // cmd: 'pdf_zh' | 'pdf_en'
+  const [fmt, lang] = cmd.split('_')
+  window.open(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${fmt}?lang=${lang}`, '_blank')
 }
 
 // 导出文件
-function exportFile(format) {
-  // 始终传递当前选中的币种参数
-  window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}`, '_blank')
+function exportFile(format, lang = 'zh') {
+  const langParam = (format === 'pdf' && lang) ? `&lang=${lang}` : ''
+  window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}${langParam}`, '_blank')
 }
 
 // 返回列表

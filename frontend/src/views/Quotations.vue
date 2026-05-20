@@ -133,8 +133,15 @@
         <el-table-column label="操作" width="180" align="center">
           <template #default="{ row }">
             <el-button type="primary" size="small" @click="handleViewVersionDetail(row)">查看</el-button>
-            <el-button type="warning" size="small" @click="handleExportVersion(row, 'pdf')">导出PDF</el-button>
-            <!-- <el-button type="success" size="small" @click="handleExportVersion(row, 'word')">导出Word</el-button> -->
+            <el-dropdown trigger="click" @command="(cmd) => handleExportVersion(row, cmd)">
+              <el-button type="warning" size="small">导出PDF ▾</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="pdf_zh">中文 PDF</el-dropdown-item>
+                  <el-dropdown-item command="pdf_en">English PDF</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -379,8 +386,9 @@ const handleViewVersionDetail = async (row) => {
 }
 
 // 导出版本报价单
-const handleExportVersion = (row, format) => {
-  window.open(`/api/quotations/${currentQuotationId.value}/versions/${row.version_no}/export/${format}`, '_blank')
+const handleExportVersion = (row, cmd) => {
+  const [fmt, lang] = cmd.split('_')
+  window.open(`/api/quotations/${currentQuotationId.value}/versions/${row.version_no}/export/${fmt}?lang=${lang}`, '_blank')
 }
 
 onMounted(() => {

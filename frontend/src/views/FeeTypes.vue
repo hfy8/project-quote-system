@@ -29,6 +29,7 @@
         </div>
         <div class="fee-card-body">
           <h3 class="fee-name">{{ item.name }}</h3>
+          <p v-if="item.name_en" class="fee-name-en">{{ item.name_en }}</p>
           <p class="fee-desc">{{ item.description || '暂无描述' }}</p>
         </div>
         <div class="fee-card-footer">
@@ -48,6 +49,9 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="100px" class="dialog-form">
         <el-form-item label="费用名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入费用名称" />
+        </el-form-item>
+        <el-form-item label="英文名称">
+          <el-input v-model="form.name_en" placeholder="English name (optional)" />
         </el-form-item>
         <el-form-item label="位置" prop="location">
           <el-select v-model="form.location" placeholder="请选择" style="width: 100%;">
@@ -92,6 +96,7 @@ const formRef = ref(null)
 const form = reactive({
   id: null,
   name: '',
+  name_en: '',
   location: 'internal',
   description: '',
   is_active: true
@@ -116,7 +121,7 @@ const fetchData = async () => {
 
 const handleAdd = () => {
   dialogTitle.value = '新增费用类型'
-  Object.assign(form, { id: null, name: '', location: 'internal', description: '', is_active: true })
+  Object.assign(form, { id: null, name: '', name_en: '', location: 'internal', description: '', is_active: true })
   dialogVisible.value = true
 }
 
@@ -295,6 +300,12 @@ onMounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
+}
+
+.fee-name-en {
+  font-size: 13px;
+  color: var(--color-text-muted);
   margin-bottom: var(--spacing-xs);
 }
 

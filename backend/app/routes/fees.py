@@ -82,6 +82,7 @@ def create_fee_type():
     data = request.get_json()
     fee_type = FeeType(
         name=data.get('name'),
+        name_en=data.get('name_en'),
         location=data.get('location'),
         is_active=True
     )
@@ -101,6 +102,7 @@ def update_fee_type(fee_type_id):
 
     data = request.get_json()
     fee_type.name = data.get('name', fee_type.name)
+    fee_type.name_en = data.get('name_en', fee_type.name_en)
     fee_type.location = data.get('location', fee_type.location)
     fee_type.is_active = data.get('is_active', fee_type.is_active)
 

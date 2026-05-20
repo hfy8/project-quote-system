@@ -9,6 +9,7 @@ class Module(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
+    name_en = db.Column(db.String(150), nullable=True, comment='英文名称')
     code = db.Column(db.String(50), nullable=True)
     description = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -23,6 +24,7 @@ class Module(db.Model):
             'id': self.id,
             'quotation_id': self.quotation_id,
             'name': self.name,
+            'name_en': self.name_en,
             'code': self.code,
             'description': self.description,
             'total': total,
