@@ -8,3 +8,4 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'postgresql://postgres:mysecretpassword@localhost:5432/quotation_db')
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JWT_ACCESS_TOKEN_EXPIRES = 86400  # 24 hours
+    JSON_AS_ASCII = False  # 关闭 JSON ASCII 转义，支持中文正常输出

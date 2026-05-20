@@ -415,8 +415,8 @@ def _generate_version_pdf(pdf_path, quotation_id, version_no, data, totals, quot
     currency_symbol = get_currency_symbol(currency)
     grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
     
-    # 获取费用系数
-    fee_rates = totals.get('fee_rates', {})
+    # 获取费用系数（优先用快照中的报价单系数，否则用系统费率）
+    fee_rates = data.get('coefficients') or totals.get('fee_rates', {})
     rate_large = fee_rates.get('large', 1.0)
     rate_standard = fee_rates.get('standard', 1.0)
     rate_other = fee_rates.get('other', 1.0)
@@ -443,8 +443,10 @@ def _generate_version_pdf(pdf_path, quotation_id, version_no, data, totals, quot
                     'subtotal': f'¥{item_total:.2f}',
                 })
         if items:
+            module_obj = Module.query.get(module.get('id'))
+            module_name = get_name(module_obj, lang) if module_obj else module.get('name', t('unnamed_module', lang))
             module_groups.append({
-                'name': module.get('name', '未命名模块'),
+                'name': module_name,
                 'items': items,
                 'total': module_total
             })
@@ -580,9 +582,16 @@ def _generate_version_pdf(pdf_path, quotation_id, version_no, data, totals, quot
             pdf.line(x_data, y_start, x_total, y_start)
             pdf.line(x_data, y_bottom, x_total, y_bottom)
             
-            # 文字
-            pdf.set_xy(x_module, y_start + (item_count * row_h - 5) / 2)
-            pdf.cell(col_widths[0], 5, group['name'], 0, 0, 'C')
+            # 文字 - 模块列使用 multi_cell 自动换行
+            text = group['name']
+            line_height = 4
+            lines_wrapped = pdf.multi_cell(col_widths[0], line_height, text, border=0, align='C', split_only=True)
+            text_height = len(lines_wrapped) * line_height
+            cell_height = item_count * row_h
+            y_text = y_start + (cell_height - text_height) / 2
+            pdf.set_xy(x_module, y_text)
+            pdf.multi_cell(col_widths[0], line_height, text, 0, 'C')
+            # 合计列
             pdf.set_xy(x_total, y_start + (item_count * row_h - 5) / 2)
             pdf.cell(col_widths[7], 5, f'¥{group["total"]:.2f}', 0, 0, 'C')
             
@@ -1221,9 +1230,16 @@ def export_pdf(quotation_id):
             pdf.line(x_data, y_start, x_total, y_start)
             pdf.line(x_data, y_bottom, x_total, y_bottom)
             
-            # 文字
-            pdf.set_xy(x_module, y_start + (item_count * row_h - 5) / 2)
-            pdf.cell(col_widths[0], 5, group['name'], 0, 0, 'C')
+            # 文字 - 模块列使用 multi_cell 自动换行
+            text = group['name']
+            line_height = 4
+            lines_wrapped = pdf.multi_cell(col_widths[0], line_height, text, border=0, align='C', split_only=True)
+            text_height = len(lines_wrapped) * line_height
+            cell_height = item_count * row_h
+            y_text = y_start + (cell_height - text_height) / 2
+            pdf.set_xy(x_module, y_text)
+            pdf.multi_cell(col_widths[0], line_height, text, 0, 'C')
+            # 合计列
             pdf.set_xy(x_total, y_start + (item_count * row_h - 5) / 2)
             pdf.cell(col_widths[7], 5, f'¥{group["total"]:.2f}', 0, 0, 'C')
             
@@ -1394,29 +1410,47 @@ def calculate_version_totals(data):
             amount = float(mm.get('unit_price', 0) or 0) * float(mm.get('quantity', 0) or 0)
             category_totals[cat] = category_totals.get(cat, 0) + amount
     
-    # 获取费用系数
-    fee_rates = {fr.category: float(fr.rate) for fr in FeeRate.query.all()}
-    rate_large = fee_rates.get('large', 1.0)
-    rate_standard = fee_rates.get('standard', 1.0)
-    rate_other = fee_rates.get('other', 1.0)
+    # 获取费用系数（优先用快照中的报价单系数，否则用系统费率）
+    coeff = data.get('coefficients')
+    if coeff:
+        rate_large = coeff.get('large', 1.0)
+        rate_standard = coeff.get('standard', 1.0)
+        rate_other = coeff.get('other', 1.0)
+        fee_rates = coeff
+    else:
+        fee_rates = {fr.category: float(fr.rate) for fr in FeeRate.query.all()}
+        rate_large = fee_rates.get('large', 1.0)
+        rate_standard = fee_rates.get('standard', 1.0)
+        rate_other = fee_rates.get('other', 1.0)
     
     material_with_rates = (
         category_totals.get('large', 0) * rate_large +
         category_totals.get('standard', 0) * rate_standard +
         category_totals.get('other', 0) * rate_other
     )
-    
+
     material_total = sum(category_totals.values())
     fees_total = sum(float(fee.get('amount', 0)) for fee in fees)
     labor_total = sum(float(l.get('total', 0)) for l in data.get('labor_hours', []))
     subtotal = material_with_rates + fees_total + labor_total
-    
-    profit_rate = float(data.get('profit_rate', 0)) if data.get('profit_rate') else 0.0
-    subtotal_with_profit = subtotal * (1 + profit_rate)
-    
-    tax_rate = float(data.get('tax_rate', 0)) if data.get('tax_rate') else 0.13
-    tax_amount = subtotal_with_profit * tax_rate
-    grand_total = subtotal_with_profit + tax_amount
+
+    # 获取对外利润率（从报价单或根级获取）
+    profit_rate = 0.0
+    if data.get('profit_rate') is not None:
+        profit_rate = float(data.get('profit_rate', 0))
+    elif data.get('quotation', {}).get('profit_rate') is not None:
+        profit_rate = float(data['quotation'].get('profit_rate', 0))
+    profit_amount = subtotal * profit_rate
+    subtotal_with_profit = subtotal + profit_amount
+
+    # 获取税率（从报价单或根级获取）
+    tax_rate = 0.13
+    if data.get('tax_rate') is not None:
+        tax_rate = float(data.get('tax_rate', 0.13))
+    elif data.get('quotation', {}).get('tax_rate') is not None:
+        tax_rate = float(data['quotation'].get('tax_rate', 0.13))
+    grand_total = subtotal_with_profit * (1 + tax_rate)
+    tax_amount = grand_total - subtotal_with_profit
     
     return {
         'material_total': material_total,
@@ -1425,6 +1459,7 @@ def calculate_version_totals(data):
         'labor_total': labor_total,
         'subtotal': subtotal,
         'profit_rate': profit_rate,
+        'profit_amount': profit_amount,
         'subtotal_with_profit': subtotal_with_profit,
         'tax_rate': tax_rate,
         'tax_amount': tax_amount,

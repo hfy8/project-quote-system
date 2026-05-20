@@ -11,6 +11,7 @@ class MessageService:
     TYPE_CHANGE_REQUEST_APPROVED = 'change_request_approved'
     TYPE_CHANGE_REQUEST_REJECTED = 'change_request_rejected'
     TYPE_VERSION_UPDATED = 'version_updated'
+    TYPE_PARTICIPANT_ADDED = 'participant_added'
     
     @staticmethod
     def send_message(recipient_id, title, content, msg_type, related_id=None, related_type=None, sender_id=None):
@@ -128,6 +129,25 @@ class MessageService:
             title=f'报价单版本更新',
             content=f'"{quotation_name}"已更新到v{version_no}版本',
             msg_type=cls.TYPE_VERSION_UPDATED,
+            related_id=quotation_id,
+            related_type='quotation'
+        )
+
+    @classmethod
+    def notify_participant_added(cls, user_id, quotation_name, participant_type, added_by_name, quotation_id):
+        """通知用户被添加为报价单参与人"""
+        type_map = {
+            'project': '项目',
+            'agency': '机构',
+            'electrical': '电气',
+            'engineer': '工程师'
+        }
+        type_label = type_map.get(participant_type, participant_type)
+        return cls.send_message(
+            recipient_id=user_id,
+            title='你已被添加为报价单参与人',
+            content=f'你已被添加为"{quotation_name}"的{type_label}参与人，由{added_by_name}添加',
+            msg_type=cls.TYPE_PARTICIPANT_ADDED,
             related_id=quotation_id,
             related_type='quotation'
         )

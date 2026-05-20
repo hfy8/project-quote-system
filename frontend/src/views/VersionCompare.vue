@@ -105,11 +105,41 @@
                   {{ getChangeText(data1?.quotation?.business_owner_name, data2?.quotation?.business_owner_name) }}
                 </td>
               </tr>
+              <tr>
+                <td>大件系数</td>
+                <td>{{ data1?.quotation?.coefficients?.large ?? '-' }}</td>
+                <td>{{ data2?.quotation?.coefficients?.large ?? '-' }}</td>
+                <td :class="getCellClass(data1?.quotation?.coefficients?.large, data2?.quotation?.coefficients?.large)">
+                  {{ getChangeText(data1?.quotation?.coefficients?.large, data2?.quotation?.coefficients?.large) }}
+                </td>
+              </tr>
+              <tr>
+                <td>普通件系数</td>
+                <td>{{ data1?.quotation?.coefficients?.standard ?? '-' }}</td>
+                <td>{{ data2?.quotation?.coefficients?.standard ?? '-' }}</td>
+                <td :class="getCellClass(data1?.quotation?.coefficients?.standard, data2?.quotation?.coefficients?.standard)">
+                  {{ getChangeText(data1?.quotation?.coefficients?.standard, data2?.quotation?.coefficients?.standard) }}
+                </td>
+              </tr>
+              <tr>
+                <td>其他件系数</td>
+                <td>{{ data1?.quotation?.coefficients?.other ?? '-' }}</td>
+                <td>{{ data2?.quotation?.coefficients?.other ?? '-' }}</td>
+                <td :class="getCellClass(data1?.quotation?.coefficients?.other, data2?.quotation?.coefficients?.other)">
+                  {{ getChangeText(data1?.quotation?.coefficients?.other, data2?.quotation?.coefficients?.other) }}
+                </td>
+              </tr>
+              <tr>
+                <td>对外利润率</td>
+                <td>{{ data1?.quotation?.profit_rate !== undefined ? (data1.quotation.profit_rate * 100).toFixed(1) + '%' : '-' }}</td>
+                <td>{{ data2?.quotation?.profit_rate !== undefined ? (data2.quotation.profit_rate * 100).toFixed(1) + '%' : '-' }}</td>
+                <td :class="getCellClass(data1?.quotation?.profit_rate, data2?.quotation?.profit_rate)">
+                  {{ getChangeText(data1?.quotation?.profit_rate, data2?.quotation?.profit_rate) }}
+                </td>
+              </tr>
             </tbody>
           </table>
         </div>
-
-        <!-- 模块对比 -->
         <div class="compare-section">
           <h4 class="section-title">📦 模块对比 <span class="count-badge">V1: {{ getModuleCount(data1) }} 个 | V2: {{ getModuleCount(data2) }} 个</span></h4>
           <table class="compare-table">
@@ -194,6 +224,32 @@
           <el-empty v-else description="无费用变化" :image-size="60" />
         </div>
 
+        <!-- 人力工时变化 -->
+        <div class="compare-section">
+          <h4 class="section-title">⏱️ 人力工时变化</h4>
+          <table class="compare-table" v-if="getLaborChanges().length > 0">
+            <thead>
+              <tr>
+                <th>工项名称</th>
+                <th>V1 单价×工时</th>
+                <th>V2 单价×工时</th>
+                <th>变化</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="item in getLaborChanges()" :key="item.key">
+                <tr :class="getLaborRowClass(item)">
+                  <td>{{ item.name }}</td>
+                  <td>{{ formatLaborCell(item, 1) }}</td>
+                  <td>{{ formatLaborCell(item, 2) }}</td>
+                  <td :class="item.changeClass">{{ item.changeText }}</td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+          <el-empty v-else description="无人力工时变化" :image-size="60" />
+        </div>
+
         <!-- 汇总 -->
         <div class="compare-section total-section">
           <h4 class="section-title">📊 费用汇总</h4>
@@ -201,25 +257,33 @@
             <div class="total-item">
               <div class="total-label">物料小计</div>
               <div class="total-values">
-                <span>V1: ¥{{ getMaterialTotal(data1) }}</span>
+                <span>V1: ¥{{ totals1?.material_total_with_rates?.toFixed(2) ?? '-' }}</span>
                 <span class="vs">→</span>
-                <span>V2: ¥{{ getMaterialTotal(data2) }}</span>
+                <span>V2: ¥{{ totals2?.material_total_with_rates?.toFixed(2) ?? '-' }}</span>
               </div>
             </div>
             <div class="total-item">
               <div class="total-label">其他费用</div>
               <div class="total-values">
-                <span>V1: ¥{{ getFeeTotal(data1) }}</span>
+                <span>V1: ¥{{ totals1?.fees_total?.toFixed(2) ?? '-' }}</span>
                 <span class="vs">→</span>
-                <span>V2: ¥{{ getFeeTotal(data2) }}</span>
+                <span>V2: ¥{{ totals2?.fees_total?.toFixed(2) ?? '-' }}</span>
+              </div>
+            </div>
+            <div class="total-item">
+              <div class="total-label">人力工时</div>
+              <div class="total-values">
+                <span>V1: ¥{{ totals1?.labor_total?.toFixed(2) ?? '-' }}</span>
+                <span class="vs">→</span>
+                <span>V2: ¥{{ totals2?.labor_total?.toFixed(2) ?? '-' }}</span>
               </div>
             </div>
             <div class="total-item highlight">
               <div class="total-label">含税总计</div>
               <div class="total-values">
-                <span>V1: ¥{{ getGrandTotal(data1) }}</span>
+                <span>V1: ¥{{ totals1?.grand_total?.toFixed(2) ?? '-' }}</span>
                 <span class="vs">→</span>
-                <span>V2: ¥{{ getGrandTotal(data2) }}</span>
+                <span>V2: ¥{{ totals2?.grand_total?.toFixed(2) ?? '-' }}</span>
               </div>
             </div>
           </div>
@@ -251,6 +315,8 @@ const versionTable = ref(null)
 const selectedVersions = ref([])
 const data1 = ref(null)
 const data2 = ref(null)
+const totals1 = ref(null)
+const totals2 = ref(null)
 const loading = ref(false)
 const showResult = ref(false)
 
@@ -287,6 +353,8 @@ async function doCompare() {
     
     data1.value = parseSnapshotData(result.version1)
     data2.value = parseSnapshotData(result.version2)
+    totals1.value = result.totals1
+    totals2.value = result.totals2
   } catch (error) {
     ElMessage.error('加载对比数据失败')
     showResult.value = false
@@ -461,6 +529,42 @@ function getFeeRowClass(fee) {
   return fee.changeClass === 'cell-added' ? 'row-added' : fee.changeClass === 'cell-removed' ? 'row-removed' : fee.changeClass === 'cell-modified' ? 'row-modified' : ''
 }
 
+// 人力工时相关
+function getLaborChanges() {
+  const changes = []
+  const list1 = data1.value?.labor_hours || []
+  const list2 = data2.value?.labor_hours || []
+  const map1 = new Map(list1.map(l => [l.name, l]))
+  const map2 = new Map(list2.map(l => [l.name, l]))
+  const allNames = [...new Set([...map1.keys(), ...map2.keys()])]
+
+  for (const name of allNames) {
+    const l1 = map1.get(name)
+    const l2 = map2.get(name)
+    const t1 = l1 ? parseFloat(l1.total || 0) : 0
+    const t2 = l2 ? parseFloat(l2.total || 0) : 0
+
+    if (!l1 && l2) {
+      changes.push({ key: name, name, t1, t2, changeClass: 'cell-added', changeText: `+ ¥${t2.toFixed(2)}` })
+    } else if (l1 && !l2) {
+      changes.push({ key: name, name, t1, t2, changeClass: 'cell-removed', changeText: `- ¥${t1.toFixed(2)}` })
+    } else if (t1 !== t2) {
+      const change = t2 - t1
+      changes.push({ key: name, name, t1, t2, changeClass: 'cell-modified', changeText: `${change > 0 ? '+' : ''}¥${change.toFixed(2)}` })
+    }
+  }
+  return changes
+}
+
+function formatLaborCell(item, version) {
+  const t = version === 1 ? item.t1 : item.t2
+  return t ? `¥${t.toFixed(2)}` : '-'
+}
+
+function getLaborRowClass(item) {
+  return item.changeClass === 'cell-added' ? 'row-added' : item.changeClass === 'cell-removed' ? 'row-removed' : item.changeClass === 'cell-modified' ? 'row-modified' : ''
+}
+
 // 汇总
 function getMaterialTotal(data) {
   if (!data?.modules) return '0.00'
@@ -484,9 +588,18 @@ function getFeeTotal(data) {
   return total.toFixed(2)
 }
 
+function getLaborTotal(data) {
+  if (!data?.labor_hours) return '0.00'
+  let total = 0
+  for (const l of data.labor_hours) {
+    total += parseFloat(l.total || 0)
+  }
+  return total.toFixed(2)
+}
+
 function getGrandTotal(data) {
   if (!data?.quotation) return '0.00'
-  const subtotal = parseFloat(getMaterialTotal(data)) + parseFloat(getFeeTotal(data))
+  const subtotal = parseFloat(getMaterialTotal(data)) + parseFloat(getFeeTotal(data)) + parseFloat(getLaborTotal(data))
   const taxRate = parseFloat(data.quotation.tax_rate || 0)
   return (subtotal * (1 + taxRate)).toFixed(2)
 }
@@ -496,6 +609,8 @@ watch(dialogVisible, (val) => {
     selectedVersions.value = []
     data1.value = null
     data2.value = null
+    totals1.value = null
+    totals2.value = null
     showResult.value = false
   }
 })

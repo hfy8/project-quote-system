@@ -254,7 +254,7 @@ const fetchData = async () => {
   try {
     const params = {
       page: pagination.page,
-      pageSize: pagination.pageSize,
+      page_size: pagination.pageSize,
       keyword: keyword.value,
       category: activeCategory.value === 'all' ? '' : activeCategory.value
     }

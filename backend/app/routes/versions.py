@@ -129,12 +129,16 @@ def compare_versions(version_id, other_id):
         if 'quotation' in snapshot:
             return snapshot
         if 'modules' in snapshot or 'fees' in snapshot:
+            coeff = snapshot.get('coefficients')
             return {
                 'quotation': snapshot,
                 'modules': snapshot.get('modules', []),
-                'fees': snapshot.get('fees', [])
+                'fees': snapshot.get('fees', []),
+                'labor_hours': snapshot.get('labor_hours', []),
+                'coefficients': coeff
             }
-        return {'quotation': snapshot, 'modules': [], 'fees': []}
+        coeff = snapshot.get('coefficients')
+        return {'quotation': snapshot, 'modules': [], 'fees': [], 'labor_hours': snapshot.get('labor_hours', []), 'coefficients': coeff}
 
     v1_data = normalize(json.loads(version1.snapshot_data))
     v2_data = normalize(json.loads(version2.snapshot_data))
@@ -171,5 +175,15 @@ def compare_versions(version_id, other_id):
     
     v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
-    
-    return jsonify({'version1': v1_data, 'version2': v2_data}), 200
+
+    # 计算汇总（使用报价单系数，与PDF一致）
+    from app.routes.exports import calculate_version_totals
+    v1_totals = calculate_version_totals(v1_data)
+    v2_totals = calculate_version_totals(v2_data)
+
+    return jsonify({
+        'version1': v1_data,
+        'version2': v2_data,
+        'totals1': v1_totals,
+        'totals2': v2_totals
+    }), 200

@@ -295,6 +295,7 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
         'tax_rate': float(quotation.tax_rate) if quotation.tax_rate else 0,
         'profit_rate': float(quotation.profit_rate) if quotation.profit_rate else 0,
         'business_owner_id': quotation.business_owner_id,
+        'coefficients': quotation.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0},
         'modules': [{
             'id': m.id,
             'name': m.name,
@@ -302,7 +303,8 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
             'materials': [{
                 'material_id': mm.material_id,
                 'quantity': float(mm.quantity),
-                'selected_by_id': mm.selected_by_id
+                'selected_by_id': mm.selected_by_id,
+                'category': mm.material.category if mm.material else 'standard'
             } for mm in ModuleMaterial.query.filter_by(module_id=m.id).all()]
         } for m in modules],
         'fees': [{
@@ -496,6 +498,9 @@ def get_participants(quotation_id):
 def add_participant(quotation_id):
     """添加报价单参与人员"""
     data = request.get_json()
+    current_user_id = get_jwt_identity()
+    current_user = User.query.get(current_user_id)
+
     participant = QuotationParticipant(
         quotation_id=quotation_id,
         user_id=data.get('user_id'),
@@ -503,6 +508,19 @@ def add_participant(quotation_id):
     )
     db.session.add(participant)
     db.session.commit()
+
+    # 发消息通知被添加的人
+    quotation = Quotation.query.get(quotation_id)
+    added_user = User.query.get(data.get('user_id'))
+    if quotation and added_user and current_user:
+        MessageService.notify_participant_added(
+            user_id=added_user.id,
+            quotation_name=quotation.name,
+            participant_type=data.get('participant_type', 'project'),
+            added_by_name=current_user.real_name,
+            quotation_id=quotation_id
+        )
+
     return jsonify(participant.to_dict()), 201
 
 

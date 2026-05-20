@@ -74,6 +74,7 @@
 
           <el-table :data="modules" border style="width: 100%; margin-top: 16px;">
             <el-table-column prop="name" label="模块名称" />
+            <el-table-column prop="name_en" label="英文名称" />
             <el-table-column prop="description" label="描述" />
             <el-table-column label="操作" width="180">
               <template #default="{ row }">
@@ -88,6 +89,9 @@
             <el-form :model="moduleForm" label-width="100px">
               <el-form-item label="模块名称">
                 <el-input v-model="moduleForm.name" placeholder="请输入模块名称" />
+              </el-form-item>
+              <el-form-item label="英文名称">
+                <el-input v-model="moduleForm.name_en" placeholder="English name (optional)" />
               </el-form-item>
               <el-form-item label="描述">
                 <el-input v-model="moduleForm.description" type="textarea" rows="3" placeholder="请输入描述" />
@@ -703,6 +707,7 @@ const moduleDialogTitle = ref('添加模块')
 const moduleForm = reactive({
   id: null,
   name: '',
+  name_en: '',
   description: ''
 })
 
@@ -1182,6 +1187,7 @@ function showAddModule() {
   moduleDialogTitle.value = '添加模块'
   moduleForm.id = null
   moduleForm.name = ''
+  moduleForm.name_en = ''
   moduleForm.description = ''
   moduleDialogVisible.value = true
 }
@@ -1191,6 +1197,7 @@ function editModule(module) {
   moduleDialogTitle.value = '编辑模块'
   moduleForm.id = module.id
   moduleForm.name = module.name
+  moduleForm.name_en = module.name_en || ''
   moduleForm.description = module.description || ''
   moduleDialogVisible.value = true
 }
@@ -1201,12 +1208,14 @@ async function saveModule() {
     if (moduleForm.id) {
       await api.put(`/modules/${moduleForm.id}`, {
         name: moduleForm.name,
+        name_en: moduleForm.name_en,
         description: moduleForm.description
       })
       ElMessage.success('更新成功')
     } else {
       await api.post(`/quotations/${quotationId.value}/modules`, {
         name: moduleForm.name,
+        name_en: moduleForm.name_en,
         description: moduleForm.description
       })
       ElMessage.success('添加成功')
@@ -1238,7 +1247,7 @@ async function deleteModule(id) {
 async function loadAvailableMaterials() {
   try {
     const data = await api.get('/materials')
-    availableMaterials.value = data
+    availableMaterials.value = data.items || data || []
   } catch (error) {
     ElMessage.error('加载物料列表失败')
   }
@@ -1251,8 +1260,9 @@ async function loadModuleMaterials() {
     const allMaterials = []
     for (const mod of modules.value) {
       const data = await api.get(`/modules/${mod.id}/materials`)
-      if (data && data.length > 0) {
-        allMaterials.push(...data.map(m => ({ ...m, module_id: mod.id })))
+      const items = data.items || data || []
+      if (items.length > 0) {
+        allMaterials.push(...items.map(m => ({ ...m, module_id: mod.id })))
       }
     }
     moduleMaterials.value = allMaterials

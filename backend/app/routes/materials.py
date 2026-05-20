@@ -14,6 +14,8 @@ def get_materials():
     keyword = request.args.get('keyword', '')
     category = request.args.get('category')
     status = request.args.get('status')
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 50, type=int)
 
     query = Material.query
     if keyword:
@@ -30,8 +32,14 @@ def get_materials():
     if status:
         query = query.filter_by(status=status)
 
-    materials = query.all()
-    return jsonify([m.to_dict() for m in materials]), 200
+    total = query.count()
+    materials = query.order_by(Material.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify({
+        'items': [m.to_dict() for m in materials],
+        'total': total,
+        'page': page,
+        'page_size': page_size
+    }), 200
 
 
 @material_bp.route('', methods=['POST'])

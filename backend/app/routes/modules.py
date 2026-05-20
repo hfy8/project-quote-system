@@ -18,9 +18,23 @@ def get_modules(quotation_id):
 
 @module_bp.route('/quotations/<int:quotation_id>/modules', methods=['POST'])
 @jwt_required()
-@check_permission('module.create')
 def create_module(quotation_id):
-    """创建模块"""
+    """创建模块 - 需有权限或是报价单参与人"""
+    from app.models import User, QuotationParticipant
+    user_id = get_jwt_identity()
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 401
+    # 检查是否有 module.create 权限
+    from app.utils.permissions import has_permission
+    if not has_permission(user.role, 'module.create'):
+        # 检查是否是报价单参与人
+        participant = QuotationParticipant.query.filter_by(
+            quotation_id=quotation_id, user_id=user_id
+        ).first()
+        if not participant:
+            return jsonify({'error': '没有权限'}), 403
+
     data = request.get_json()
     module = Module(
         quotation_id=quotation_id,
@@ -80,8 +94,17 @@ def delete_module(module_id):
 @jwt_required()
 def get_module_materials(module_id):
     """获取模块物料列表"""
-    materials = ModuleMaterial.query.filter_by(module_id=module_id).all()
-    return jsonify([m.to_dict() for m in materials]), 200
+    page = request.args.get('page', 1, type=int)
+    page_size = request.args.get('page_size', 200, type=int)
+    query = ModuleMaterial.query.filter_by(module_id=module_id)
+    total = query.count()
+    materials = query.offset((page - 1) * page_size).limit(page_size).all()
+    return jsonify({
+        'items': [m.to_dict() for m in materials],
+        'total': total,
+        'page': page,
+        'page_size': page_size
+    }), 200
 
 
 @module_bp.route('/modules/<int:module_id>/materials', methods=['POST'])

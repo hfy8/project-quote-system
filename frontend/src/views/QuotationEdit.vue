@@ -177,7 +177,7 @@
                   <div class="coefficient-item-label">大件系数</div>
                   <div class="coefficient-item-tip">大型设备/材料成本系数</div>
                 </div>
-                <el-input-number v-model="quotation.coefficients.large" :min="0" :max="10" :precision="2" style="width: 140px;" />
+                <el-input-number v-model="quotation.coefficients.large" :min="0" :max="10" :precision="2" :step="0.05" style="width: 140px;" />
               </div>
               <div class="coefficient-item">
                 <div class="coefficient-item-icon standard"><span>通</span></div>
@@ -185,7 +185,7 @@
                   <div class="coefficient-item-label">普通件系数</div>
                   <div class="coefficient-item-tip">标准常规材料成本系数</div>
                 </div>
-                <el-input-number v-model="quotation.coefficients.standard" :min="0" :max="10" :precision="2" style="width: 140px;" />
+                <el-input-number v-model="quotation.coefficients.standard" :min="0" :max="10" :precision="2" :step="0.05" style="width: 140px;" />
               </div>
               <div class="coefficient-item">
                 <div class="coefficient-item-icon other"><span>其</span></div>
@@ -193,7 +193,7 @@
                   <div class="coefficient-item-label">其他件系数</div>
                   <div class="coefficient-item-tip">配件耗材等材料成本系数</div>
                 </div>
-                <el-input-number v-model="quotation.coefficients.other" :min="0" :max="10" :precision="2" style="width: 140px;" />
+                <el-input-number v-model="quotation.coefficients.other" :min="0" :max="10" :precision="2" :step="0.05" style="width: 140px;" />
               </div>
             </div>
           </div>
@@ -1340,7 +1340,7 @@ async function deleteModule(id) {
 async function loadAvailableMaterials() {
   try {
     const data = await api.get('/materials')
-    availableMaterials.value = data
+    availableMaterials.value = data.items || data || []
   } catch (error) {
     ElMessage.error('加载物料列表失败')
   }
@@ -1353,8 +1353,9 @@ async function loadModuleMaterials() {
     const allMaterials = []
     for (const mod of modules.value) {
       const data = await api.get(`/modules/${mod.id}/materials`)
-      if (data && data.length > 0) {
-        allMaterials.push(...data.map(m => ({ ...m, module_id: mod.id })))
+      const items = data.items || data || []
+      if (items.length > 0) {
+        allMaterials.push(...items.map(m => ({ ...m, module_id: mod.id })))
       }
     }
     moduleMaterials.value = allMaterials
