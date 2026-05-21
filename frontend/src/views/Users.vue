@@ -160,7 +160,7 @@ import { useAuthStore } from '../stores/auth'
 import { usePermission } from '../composables/usePermission'
 
 const authStore = useAuthStore()
-const { hasPermission } = usePermission()
+const { can: hasPermission } = usePermission()
 
 // 是否有用户管理权限
 const canManageUser = computed(() => hasPermission('user.edit'))
