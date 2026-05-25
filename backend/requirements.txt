@@ -5,5 +5,7 @@ flask-cors
 python-docx
 openpyxl
 reportlab
+fpdf2>=2.0
+apscheduler
 werkzeug
 psycopg2-binary

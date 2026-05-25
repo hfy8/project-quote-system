@@ -17,9 +17,11 @@ from openpyxl.utils import get_column_letter
 # PDF 导出 - 使用 fpdf2 支持中文
 from fpdf import FPDF
 
-# 中文字体路径
-FONT_REGULAR = '/mnt/c/Windows/Fonts/simhei.ttf'  # 黑体（支持中文）
-FONT_BOLD = '/mnt/c/Windows/Fonts/simhei.ttf'      # 黑体（暂无粗体，用黑体代替）
+# 中文字体路径（相对路径，字体跟随项目）
+import os
+FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts')
+FONT_REGULAR = os.path.join(FONT_DIR, 'simhei.ttf')  # 黑体（支持中文）
+FONT_BOLD = os.path.join(FONT_DIR, 'simhei.ttf')       # 黑体（暂无粗体，用黑体代替）
 
 # 中英文标签映射
 I18N = {
@@ -701,9 +703,9 @@ def _generate_version_pdf(pdf_path, quotation_id, version_no, data, totals, quot
     pdf.cell(0, 7, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
     
     # 输出
-    pdf.output(buffer)
+    pdf_bytes = pdf.output()
     with open(pdf_path, 'wb') as f:
-        f.write(buffer.getvalue())
+        f.write(pdf_bytes)
 
 @export_bp.route('/quotations/<int:quotation_id>/export/word', methods=['GET'])
 def export_word(quotation_id):
@@ -1136,8 +1138,6 @@ def export_pdf(quotation_id):
             'total': fees_total + labor_total
         })
     
-    buffer = BytesIO()
-    
     class PDF(FPDF):
         def header(self):
             pass
@@ -1348,18 +1348,11 @@ def export_pdf(quotation_id):
     pdf.cell(100, 7, f"{t('grand_total', lang)}({currency})", 1, 0, 'C', True)
     pdf.cell(0, 7, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
     
-    # 输出
-    pdf.output(buffer)
-    buffer.seek(0)
-    buffer.seek(0)
-    
+    # 输出到临时文件
+    pdf_bytes = pdf.output()
+    buffer = BytesIO(pdf_bytes)
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
-    return send_file(
-        buffer,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=filename
-    )
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
 
 # ==================== 版本导出 ====================
@@ -1938,13 +1931,7 @@ def export_version_pdf(quotation_id, version_no):
         pdf.cell(100, 7, f"{t('grand_total', lang)}({currency})", 1, 0, 'C', True)
         pdf.cell(0, 7, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
     
-    pdf.output(buffer)
-    buffer.seek(0)
-    
+    pdf_bytes = pdf.output()
+    buffer = BytesIO(pdf_bytes)
     filename = f'{data.get("name", t("quote", lang))}_v{version_no}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
-    return send_file(
-        buffer,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=filename
-    )
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)

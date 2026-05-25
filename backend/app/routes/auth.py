@@ -40,7 +40,7 @@ def login():
     if not user or not user.check_password(password):
         return jsonify({'error': '用户名或密码错误'}), 401
 
-    access_token = create_access_token(identity=user.id)
+    access_token = create_access_token(identity=str(user.id))
 
     # 记录登录日志
     log_operation_manual(
@@ -54,7 +54,6 @@ def login():
     )
 
     user_data = user.to_dict()
-    user_data['permissions'] = get_user_permissions_from_db(user.role)
 
     return jsonify({
         'access_token': access_token,

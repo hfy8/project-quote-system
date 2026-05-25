@@ -638,7 +638,7 @@ const isEdit = computed(() => !!route.params.id && route.params.id !== 'new')
 const quotationId = ref(route.params.id || null)
 console.log('isEdit:', isEdit.value, 'quotationId:', quotationId.value)
 const activeTab = ref('basic')
-const quotation = ref({})
+const quotation = ref({ coefficients: { large: 1.0, standard: 1.0, other: 1.0 } })
 const isArchived = computed(() => quotation.value.status === 'approved')
 const pendingReviewCount = ref(0)
 const permissions = ref({
