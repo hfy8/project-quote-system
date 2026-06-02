@@ -46,6 +46,10 @@
         <span class="nav-icon">📝</span>
         <span class="nav-text">操作日志</span>
       </router-link>
+      <router-link to="/travel-fee-config" class="nav-item" :class="{ active: isActive('/travel-fee-config') }" v-if="canView('fee_type.view')">
+        <span class="nav-icon">🚚</span>
+        <span class="nav-text">运输差旅配置</span>
+      </router-link>
     </div>
 
     <div class="nav-section" v-if="canView('system.view') || canView('participant_type_permission.view')">

@@ -4,7 +4,7 @@
 
 ### 1.1 项目信息
 - **项目名称**: 项目报价管理系统
-- **版本**: V2.0
+- **版本**: V2.1
 - **项目类型**: 企业级 Web 应用
 - **仓库**: https://github.com/hfy8/project-quote-system
 
@@ -522,7 +522,148 @@ export const xxxAPI = {
 
 ---
 
-## 11. 待完成功能
+## 11. V2.1 新增功能
+
+### 11.1 运输包装费用（Tab A）
+
+**业务层配置（系统管理员）**：
+- 包装类型：纸箱、木箱、托盘
+- 每类包装的单价（元/个）
+
+**项目层填写**：
+- 每类包装的使用数量（单元数量）
+- 项目层不显示单价，只显示单元数量
+
+**计算逻辑**：
+```
+包装小计 = Σ(包装类型单价 × 使用数量)
+```
+
+---
+
+### 11.2 人员差旅人天费用（Tab B）
+
+**统一差旅分类**（4类，复用于 Tab B 和 Tab C）：
+- 国内出差
+- 东南亚出差
+- 欧洲出差
+- 美国出差
+
+**业务层配置（系统管理员）**：
+- 每类出差的人天单价（元/人天）
+
+**项目层填写**：
+- 每类出差的出星人天数
+
+**计算逻辑**：
+```
+差旅人天小计 = Σ(出差分类人天单价 × 出星人天数)
+```
+
+---
+
+### 11.3 差旅人次费用（Tab C）
+
+**统一差旅分类**（与 Tab B 相同，4类）：
+- 国内出差
+- 东南亚出差
+- 欧洲出差
+- 美国出差
+
+**出行方式（项目填写）**：
+- 飞机 / 高铁 / 开车
+
+**项目层填写**（根据出行方式动态显示）：
+| 出行方式 | 项目填写 | 业务填写 |
+|---------|---------|---------|
+| 飞机 | 人次 | 往返机票费用（单人）+ 签证费用（非国内需填） |
+| 高铁 | 人次 | 高铁票往返单价（单人） |
+| 开车 | 人次 | 单人次往返单价 |
+
+**计算逻辑**：
+```
+人次小计 = Σ(人次 × 对应交通单价)
+非国内小计 = Σ(人次 × 签证费用)  // 仅非国内出差
+差旅人次总费用 = 人次小计 + 非国内小计
+```
+
+---
+
+### 11.4 新增数据模型
+
+| 模型 | 说明 | 主要字段 |
+|-----|------|---------|
+| PackingType | 包装类型 | id, name, unit_price |
+| PackingEntry | 包装条目 | quotation_id, packing_type_id, quantity |
+| TravelCategory | 差旅分类 | id, name, code |
+| TravelDayRate | 差旅人天单价 | travel_category_id, unit_price |
+| TravelPersonDays | 差旅人天条目 | quotation_id, travel_category_id, person_days |
+| TravelMode | 出行方式 | id, name, code |
+| TravelPersonTrip | 差旅人次条目 | quotation_id, travel_category_id, travel_mode_id, person_count |
+| TravelPersonTripFee | 差旅人次费用 | quotation_id, travel_category_id, travel_mode_id, unit_price, visa_fee |
+
+---
+
+### 11.5 新增 API 接口
+
+| 方法 | 路径 | 说明 |
+|-----|------|------|
+| GET | /api/packing-types | 获取包装类型 |
+| POST | /api/packing-types | 创建包装类型 |
+| PUT | /api/packing-types/:id | 更新包装类型 |
+| DELETE | /api/packing-types/:id | 删除包装类型 |
+| GET | /api/packing-entries | 获取包装条目 |
+| POST | /api/packing-entries | 创建/更新包装条目 |
+| PUT | /api/packing-entries/:id | 更新包装条目 |
+| DELETE | /api/packing-entries/:id | 删除包装条目 |
+| GET | /api/travel-categories | 获取差旅分类 |
+| POST | /api/travel-categories | 创建差旅分类 |
+| PUT | /api/travel-categories/:id | 更新差旅分类 |
+| DELETE | /api/travel-categories/:id | 删除差旅分类 |
+| GET | /api/travel-day-rates | 获取差旅人天单价 |
+| PUT | /api/travel-day-rates | 更新差旅人天单价 |
+| GET | /api/travel-person-days | 获取差旅人天条目 |
+| POST | /api/travel-person-days | 创建/更新差旅人天条目 |
+| PUT | /api/travel-person-days/:id | 更新差旅人天条目 |
+| DELETE | /api/travel-person-days/:id | 删除差旅人天条目 |
+| GET | /api/travel-modes | 获取出行方式 |
+| POST | /api/travel-modes | 创建出行方式 |
+| PUT | /api/travel-modes/:id | 更新出行方式 |
+| DELETE | /api/travel-modes/:id | 删除出行方式 |
+| GET | /api/travel-person-trips | 获取差旅人次条目 |
+| POST | /api/travel-person-trips | 创建/更新差旅人次条目 |
+| PUT | /api/travel-person-trips/:id | 更新差旅人次条目 |
+| DELETE | /api/travel-person-trips/:id | 删除差旅人次条目 |
+| GET | /api/travel-person-trip-fees | 获取差旅人次费用 |
+| PUT | /api/travel-person-trip-fees | 更新差旅人次费用 |
+
+---
+
+### 11.6 报价单编辑页面 Tab 结构（V2.1）
+
+```
+报价单详情 (QuotationEdit.vue)
+├── Tab 1: 基本信息
+├── Tab 2: 模块管理
+├── Tab 3: 物料清单
+├── Tab 4: 运输包装费用（新增）
+├── Tab 5: 人员差旅人天费用（新增）
+├── Tab 6: 差旅人次费用（新增）
+├── Tab 7: 版本管理
+└── Tab 8: 汇总
+```
+
+---
+
+### 11.7 权限说明
+
+- **系统层配置**：业务管理员可编辑包装类型单价、差旅人天单价、差旅人次单价
+- **项目层填写**：项目参与人可填写运输数量、人天数、人次
+- **权限控制**：通过「分配项目报价单参与人员」Tab 控制，不按部门隔离
+
+---
+
+## 12. 待完成功能
 
 | 优先级 | 功能 | 说明 |
 |-------|------|------|

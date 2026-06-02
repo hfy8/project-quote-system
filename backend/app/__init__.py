@@ -19,7 +19,12 @@ def create_app():
     CORS(app)
 
     # 注册蓝图
-    from app.routes import auth_bp, quotation_bp, module_bp, material_bp, fee_bp, version_bp, user_bp, export_bp, logs_bp, roles_bp, fee_rate_bp, exchange_rate_bp, module_participant_bp, sync_bp, change_request_bp, messages_bp, labor_hours_bp, ptp_bp
+    from app.routes import (
+        auth_bp, quotation_bp, module_bp, material_bp, fee_bp, version_bp,
+        user_bp, export_bp, logs_bp, roles_bp, fee_rate_bp, exchange_rate_bp,
+        module_participant_bp, sync_bp, change_request_bp, messages_bp,
+        labor_hours_bp, ptp_bp, travel_fee_bp, travel_entry_bp
+    )
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(quotation_bp, url_prefix='/api/quotations')
     app.register_blueprint(module_bp, url_prefix='/api')
@@ -38,6 +43,8 @@ def create_app():
     app.register_blueprint(messages_bp, url_prefix='/api/messages')
     app.register_blueprint(labor_hours_bp, url_prefix='/api/quotations')
     app.register_blueprint(ptp_bp, url_prefix='/api/participant-type-permissions')
+    app.register_blueprint(travel_fee_bp, url_prefix='/api')
+    app.register_blueprint(travel_entry_bp, url_prefix='/api')
 
     # 初始化定时任务调度器
     from app.tasks import init_scheduler

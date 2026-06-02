@@ -19,6 +19,8 @@ change_request_bp = Blueprint('change_requests', __name__)
 messages_bp = Blueprint('messages', __name__)
 labor_hours_bp = Blueprint('labor_hours', __name__)
 ptp_bp = Blueprint('participant_type_permissions', __name__)
+travel_fee_bp = Blueprint('travel_fees', __name__)
+travel_entry_bp = Blueprint('travel_entries', __name__)
 
 # 导入各模块路由
 from app.routes.auth import auth_bp
@@ -39,3 +41,5 @@ from app.routes.change_requests import change_request_bp
 from app.routes.messages import messages_bp
 from app.routes.labor_hours import labor_hours_bp
 from app.routes.participant_type_permissions import ptp_bp
+from app.routes.travel_fees import travel_fee_bp
+from app.routes.travel_entries import travel_entry_bp

@@ -15,6 +15,7 @@ import FeeRatesConfig from '../views/FeeRatesConfig.vue'
 import ExchangeRatesConfig from '../views/ExchangeRatesConfig.vue'
 import ModuleAssignments from '../views/ModuleAssignments.vue'
 import ParticipantTypePermissions from '../views/ParticipantTypePermissions.vue'
+import TravelFeeConfig from '../views/TravelFeeConfig.vue'
 import Layout from '../components/Layout.vue'
 
 // 路由权限映射 - 与后端权限码一致
@@ -34,6 +35,7 @@ const routePermissionMap = {
   'ModuleAssignments': null,         // 所有人可访问
   'QuotationAssignmentView': null,  // 所有人可访问
   'ParticipantTypePermissions': 'participant_type_permission.view',
+  'TravelFeeConfig': 'fee_type.view',
   'ChangeRequests': 'quotation.view',
 }
 
@@ -154,6 +156,11 @@ const routes = [
         path: 'participant-type-permissions',
         name: 'ParticipantTypePermissions',
         component: ParticipantTypePermissions
+      },
+      {
+        path: 'travel-fee-config',
+        name: 'TravelFeeConfig',
+        component: TravelFeeConfig
       },
     ]
   }

@@ -16,6 +16,9 @@ from .change_request import ChangeRequest
 from .message import Message
 from .participant_type_permission import ParticipantTypePermission
 from .permission import Role, Permission
+from .packing import PackingType
+from .travel import TravelCategory, TravelDayRate, TravelMode, TravelPersonTripFee
+from .travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
 
 __all__ = [
     'User',
@@ -41,4 +44,12 @@ __all__ = [
     'ParticipantTypePermission',
     'Role',
     'Permission',
+    'PackingType',
+    'TravelCategory',
+    'TravelDayRate',
+    'TravelMode',
+    'TravelPersonTripFee',
+    'PackingEntry',
+    'TravelPersonDays',
+    'TravelPersonTrip',
 ]

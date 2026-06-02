@@ -10,3 +10,15 @@ export { feeRatesAPI } from './fee_rates'
 export { exchangeRatesAPI } from './exchange_rates'
 export { rolesAPI } from './roles'
 export { logsAPI } from './logs'
+export {
+  packingTypeAPI,
+  travelCategoryAPI,
+  travelDayRateAPI,
+  travelModeAPI,
+  travelPersonTripFeeAPI,
+} from './travel_fees'
+export {
+  packingEntryAPI,
+  travelPersonDaysAPI,
+  travelPersonTripAPI,
+} from './travel_entries'
