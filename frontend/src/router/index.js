@@ -164,11 +164,7 @@ const routes = [
         name: 'TravelFeeConfig',
         component: TravelFeeConfig
       },
-      {
-        path: 'quotations/:id/versions/compare',
-        name: 'VersionCompare',
-        component: VersionCompare
-      },
+
     ]
   }
 ]
