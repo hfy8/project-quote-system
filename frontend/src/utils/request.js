@@ -27,12 +27,23 @@ request.interceptors.response.use(
     return response.data
   },
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status
+    const message = error.response?.data?.msg || error.response?.data?.message || ''
+
+    // token 损坏（JWT 格式异常）-> 清空并跳转登录
+    if (status === 422 && message.includes('Not enough segments')) {
+      localStorage.removeItem('token')
+      router.push('/login')
+      ElMessage.error('登录状态异常，请重新登录')
+      return Promise.reject(error)
+    }
+
+    if (status === 401) {
       localStorage.removeItem('token')
       router.push('/login')
       ElMessage.error('登录已过期，请重新登录')
     } else {
-      ElMessage.error(error.response?.data?.message || '请求失败')
+      ElMessage.error(message || '请求失败')
     }
     return Promise.reject(error)
   }
