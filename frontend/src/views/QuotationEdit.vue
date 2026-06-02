@@ -453,6 +453,208 @@
           </el-dialog>
         </el-tab-pane>
 
+        <!-- 运输包装 -->
+        <el-tab-pane v-if="isEdit" label="运输包装" name="packing">
+          <div class="packing-header">
+            <el-button type="primary" @click="showAddPackingEntry">+ 添加包装条目</el-button>
+          </div>
+          <el-table :data="packingEntries" border style="width: 100%; margin-top: 16px;">
+            <el-table-column prop="packing_type_name" label="包装类型" width="160" />
+            <el-table-column prop="unit_price" label="单价（元/个）" width="160">
+              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column label="数量" width="180">
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._quantity" :min="0" :precision="2" size="small" controls-position="right" style="width: 130px;" />
+                <span v-else>{{ row.quantity }} {{ row.unit }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="total" label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column prop="remark" label="备注" />
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <template v-if="row._editing">
+                  <el-button size="small" type="primary" @click="savePackingRow(row)">保存</el-button>
+                  <el-button size="small" @click="cancelPackingEdit(row)">取消</el-button>
+                </template>
+                <template v-else>
+                  <el-button size="small" @click="editPackingRow(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="deletePackingEntry(row.id)">删除</el-button>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="packingEntries.length > 0" class="labor-total">
+            包装费用合计：<strong>¥{{ packingTotal.toFixed(2) }}</strong>
+          </div>
+          <!-- 添加包装条目弹窗 -->
+          <el-dialog v-model="packingDialogVisible" title="添加包装条目" width="450px">
+            <el-form :model="packingForm" label-width="110px">
+              <el-form-item label="包装类型" required>
+                <el-select v-model="packingForm.packing_type_id" placeholder="请选择" @change="onPackingTypeChange">
+                  <el-option v-for="pt in packingTypes" :key="pt.id" :label="pt.name" :value="pt.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="单价">
+                <span class="money">¥{{ packingForm.unit_price.toFixed(2) }} / 个</span>
+              </el-form-item>
+              <el-form-item label="数量">
+                <el-input-number v-model="packingForm.quantity" :min="0" :precision="2" style="width: 100%;" />
+              </el-form-item>
+              <el-form-item label="合计">
+                <span class="money">¥{{ (packingForm.unit_price * packingForm.quantity).toFixed(2) }}</span>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input v-model="packingForm.remark" placeholder="可选" />
+              </el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="packingDialogVisible = false">取消</el-button>
+              <el-button type="primary" @click="addPackingConfirm">确定</el-button>
+            </template>
+          </el-dialog>
+        </el-tab-pane>
+
+        <!-- 差旅人天 -->
+        <el-tab-pane v-if="isEdit" label="差旅人天" name="travel-days">
+          <div class="packing-header">
+            <el-button type="primary" @click="showAddTravelDaysEntry">+ 添加人天条目</el-button>
+          </div>
+          <el-table :data="travelPersonDays" border style="width: 100%; margin-top: 16px;">
+            <el-table-column prop="travel_category_name" label="差旅分类" width="160" />
+            <el-table-column prop="unit_price" label="单价（元/人天）" width="180">
+              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column label="人天" width="180">
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._person_days" :min="0" :precision="2" size="small" controls-position="right" style="width: 130px;" />
+                <span v-else>{{ row.person_days }} 人天</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="total" label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column prop="remark" label="备注" />
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <template v-if="row._editing">
+                  <el-button size="small" type="primary" @click="saveTravelDaysRow(row)">保存</el-button>
+                  <el-button size="small" @click="cancelTravelDaysEdit(row)">取消</el-button>
+                </template>
+                <template v-else>
+                  <el-button size="small" @click="editTravelDaysRow(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="deleteTravelDaysEntry(row.id)">删除</el-button>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="travelPersonDays.length > 0" class="labor-total">
+            差旅人天合计：<strong>¥{{ travelDaysTotal.toFixed(2) }}</strong>
+          </div>
+          <el-dialog v-model="travelDaysDialogVisible" title="添加差旅人天" width="450px">
+            <el-form :model="travelDaysForm" label-width="120px">
+              <el-form-item label="差旅分类" required>
+                <el-select v-model="travelDaysForm.travel_category_id" placeholder="请选择" @change="onTravelCategoryChange">
+                  <el-option v-for="c in travelCategories" :key="c.id" :label="c.name" :value="c.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="单价">
+                <span class="money">¥{{ travelDaysForm.unit_price.toFixed(2) }} / 人天</span>
+              </el-form-item>
+              <el-form-item label="人天">
+                <el-input-number v-model="travelDaysForm.person_days" :min="0" :precision="2" style="width: 100%;" />
+              </el-form-item>
+              <el-form-item label="合计">
+                <span class="money">¥{{ (travelDaysForm.unit_price * travelDaysForm.person_days).toFixed(2) }}</span>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input v-model="travelDaysForm.remark" placeholder="可选" />
+              </el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="travelDaysDialogVisible = false">取消</el-button>
+              <el-button type="primary" @click="addTravelDaysConfirm">确定</el-button>
+            </template>
+          </el-dialog>
+        </el-tab-pane>
+
+        <!-- 差旅人次 -->
+        <el-tab-pane v-if="isEdit" label="差旅人次" name="travel-trips">
+          <div class="packing-header">
+            <el-button type="primary" @click="showAddTravelTripEntry">+ 添加人次条目</el-button>
+          </div>
+          <el-table :data="travelPersonTrips" border style="width: 100%; margin-top: 16px;">
+            <el-table-column prop="travel_category_name" label="差旅分类" width="140" />
+            <el-table-column prop="travel_mode_name" label="出行方式" width="120" />
+            <el-table-column prop="unit_price" label="交通单价" width="140">
+              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column prop="visa_fee" label="签证费" width="120">
+              <template #default="{ row }"><span class="money">¥{{ row.visa_fee.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column label="人次" width="120">
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._person_count" :min="0" :precision="0" size="small" controls-position="right" style="width: 90px;" />
+                <span v-else>{{ row.person_count }} 人</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="total" label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            </el-table-column>
+            <el-table-column prop="remark" label="备注" />
+            <el-table-column label="操作" width="150" align="center">
+              <template #default="{ row }">
+                <template v-if="row._editing">
+                  <el-button size="small" type="primary" @click="saveTravelTripRow(row)">保存</el-button>
+                  <el-button size="small" @click="cancelTravelTripEdit(row)">取消</el-button>
+                </template>
+                <template v-else>
+                  <el-button size="small" @click="editTravelTripRow(row)">编辑</el-button>
+                  <el-button size="small" type="danger" @click="deleteTravelTripEntry(row.id)">删除</el-button>
+                </template>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="travelPersonTrips.length > 0" class="labor-total">
+            差旅人次合计：<strong>¥{{ travelTripsTotal.toFixed(2) }}</strong>
+          </div>
+          <el-dialog v-model="travelTripDialogVisible" title="添加差旅人次" width="500px">
+            <el-form :model="travelTripForm" label-width="120px">
+              <el-form-item label="差旅分类" required>
+                <el-select v-model="travelTripForm.travel_category_id" placeholder="请选择" @change="onTripCategoryChange">
+                  <el-option v-for="c in travelCategories" :key="c.id" :label="c.name" :value="c.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="出行方式" required>
+                <el-select v-model="travelTripForm.travel_mode_id" placeholder="请选择" @change="onTripModeChange">
+                  <el-option v-for="m in travelModes" :key="m.id" :label="m.name" :value="m.id" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="交通单价">
+                <span class="money">¥{{ travelTripForm.unit_price.toFixed(2) }} / 人次</span>
+              </el-form-item>
+              <el-form-item v-if="travelTripForm.visa_fee > 0" label="签证费">
+                <span class="money">¥{{ travelTripForm.visa_fee.toFixed(2) }} / 人次（非国内出差）</span>
+              </el-form-item>
+              <el-form-item label="人次">
+                <el-input-number v-model="travelTripForm.person_count" :min="0" :precision="0" style="width: 100%;" />
+              </el-form-item>
+              <el-form-item label="合计">
+                <span class="money">¥{{ travelTripForm.subtotal.toFixed(2) }}</span>
+              </el-form-item>
+              <el-form-item label="备注">
+                <el-input v-model="travelTripForm.remark" placeholder="可选" />
+              </el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="travelTripDialogVisible = false">取消</el-button>
+              <el-button type="primary" @click="addTravelTripConfirm">确定</el-button>
+            </template>
+          </el-dialog>
+        </el-tab-pane>
+
         <!-- 汇总 -->
         <el-tab-pane v-if="isEdit" label="汇总" name="summary">
           <div v-loading="summaryLoading">
@@ -624,7 +826,8 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
-import { feesAPI } from '../api'
+import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
+import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 import changeRequestsAPI from '../api/changeRequests'
 
 const route = useRoute()
@@ -659,6 +862,14 @@ const users = ref([])
 const businessUsers = ref([])
 const feeTypes = ref([])
 const availableMaterials = ref([])
+
+// 三大新费用数据
+const packingEntries = ref([])
+const travelPersonDays = ref([])
+const travelPersonTrips = ref([])
+const packingTypes = ref([])
+const travelCategories = ref([])
+const travelModes = ref([])
 
 const selectedModuleId = ref(null)
 const summaryLoading = ref(false)
@@ -1020,6 +1231,217 @@ const laborForm = reactive({ name: '', hours: 0, unit_price: 0 })
 const laborTotal = computed(() => {
   return laborHours.value.reduce((sum, item) => sum + (item.hours || 0) * (item.unit_price || 0), 0)
 })
+
+// ===== 运输包装 =====
+const packingDialogVisible = ref(false)
+const packingForm = reactive({ packing_type_id: null, unit_price: 0, quantity: 0, remark: '' })
+
+const packingTotal = computed(() =>
+  packingEntries.value.reduce((sum, e) => sum + (e.total || 0), 0)
+)
+
+async function loadPackingTypes() {
+  try {
+    const res = await packingTypeAPI.getList()
+    packingTypes.value = Array.isArray(res) ? res : (res.items || [])
+  } catch (e) { console.error(e) }
+}
+
+async function loadPackingEntries() {
+  if (!quotationId.value) return
+  try {
+    const data = await packingEntryAPI.getList({ quotation_id: quotationId.value })
+    packingEntries.value = (data || []).map(e => ({ ...e, _editing: false, _quantity: e.quantity }))
+  } catch (e) { console.error(e) }
+}
+
+function onPackingTypeChange(id) {
+  const pt = packingTypes.value.find(p => p.id === id)
+  packingForm.unit_price = pt ? (pt.unit_price || 0) : 0
+}
+
+function showAddPackingEntry() {
+  packingForm.packing_type_id = null; packingForm.unit_price = 0; packingForm.quantity = 0; packingForm.remark = ''
+  packingDialogVisible.value = true
+}
+
+async function addPackingConfirm() {
+  if (!packingForm.packing_type_id) { ElMessage.warning('请选择包装类型'); return }
+  try {
+    await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: packingForm.packing_type_id, quantity: packingForm.quantity, remark: packingForm.remark })
+    ElMessage.success('添加成功')
+    packingDialogVisible.value = false
+    loadPackingEntries()
+  } catch (e) { ElMessage.error('添加失败') }
+}
+
+function editPackingRow(row) { row._editing = true; row._quantity = row.quantity }
+function cancelPackingEdit(row) { row._editing = false }
+async function savePackingRow(row) {
+  try {
+    await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: row.packing_type_id, quantity: row._quantity, remark: row.remark })
+    ElMessage.success('保存成功')
+    loadPackingEntries()
+  } catch (e) { ElMessage.error('保存失败') }
+}
+async function deletePackingEntry(id) {
+  try { await packingEntryAPI.delete(id); ElMessage.success('删除成功'); loadPackingEntries() } catch (e) { ElMessage.error('删除失败') }
+}
+
+// ===== 差旅人天 =====
+const travelDaysDialogVisible = ref(false)
+const travelDaysForm = reactive({ travel_category_id: null, unit_price: 0, person_days: 0, remark: '' })
+
+const travelDaysTotal = computed(() =>
+  travelPersonDays.value.reduce((sum, e) => sum + (e.total || 0), 0)
+)
+
+async function loadTravelCategories() {
+  try {
+    const res = await travelCategoryAPI.getList()
+    travelCategories.value = Array.isArray(res) ? res : (res.items || [])
+  } catch (e) { console.error(e) }
+}
+
+async function loadTravelDayRates() {
+  // 单价由后端根据分类自动查，这里只加载分类
+}
+
+function onTravelCategoryChange(id) {
+  // 从已加载的人天单价列表中找对应分类的单价
+  travelDaysForm.unit_price = 0
+}
+
+async function loadTravelPersonDays() {
+  if (!quotationId.value) return
+  try {
+    const data = await travelPersonDaysAPI.getList({ quotation_id: quotationId.value })
+    travelPersonDays.value = (data || []).map(e => ({ ...e, _editing: false, _person_days: e.person_days }))
+  } catch (e) { console.error(e) }
+}
+
+function showAddTravelDaysEntry() {
+  travelDaysForm.travel_category_id = null; travelDaysForm.unit_price = 0; travelDaysForm.person_days = 0; travelDaysForm.remark = ''
+  travelDaysDialogVisible.value = true
+}
+
+async function addTravelDaysConfirm() {
+  if (!travelDaysForm.travel_category_id) { ElMessage.warning('请选择差旅分类'); return }
+  try {
+    await travelPersonDaysAPI.upsert({ quotation_id: quotationId.value, travel_category_id: travelDaysForm.travel_category_id, person_days: travelDaysForm.person_days, remark: travelDaysForm.remark })
+    ElMessage.success('添加成功')
+    travelDaysDialogVisible.value = false
+    loadTravelPersonDays()
+  } catch (e) { ElMessage.error('添加失败') }
+}
+
+function editTravelDaysRow(row) { row._editing = true; row._person_days = row.person_days }
+function cancelTravelDaysEdit(row) { row._editing = false }
+async function saveTravelDaysRow(row) {
+  try {
+    await travelPersonDaysAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, person_days: row._person_days, remark: row.remark })
+    ElMessage.success('保存成功')
+    loadTravelPersonDays()
+  } catch (e) { ElMessage.error('保存失败') }
+}
+async function deleteTravelDaysEntry(id) {
+  try { await travelPersonDaysAPI.delete(id); ElMessage.success('删除成功'); loadTravelPersonDays() } catch (e) { ElMessage.error('删除失败') }
+}
+
+// ===== 差旅人次 =====
+const travelTripDialogVisible = ref(false)
+const travelTripForm = reactive({ travel_category_id: null, travel_mode_id: null, unit_price: 0, visa_fee: 0, person_count: 0, remark: '' })
+
+const travelTripsTotal = computed(() =>
+  travelPersonTrips.value.reduce((sum, e) => sum + (e.total || 0), 0)
+)
+
+async function loadTravelModes() {
+  try {
+    const res = await travelModeAPI.getList()
+    travelModes.value = Array.isArray(res) ? res : (res.items || [])
+  } catch (e) { console.error(e) }
+}
+
+function onTripCategoryChange() {
+  travelTripForm.unit_price = 0
+  travelTripForm.visa_fee = 0
+  travelTripForm.subtotal = 0
+}
+async function onTripModeChange() {
+  // 选择出行方式后，查询对应分类×方式的单价
+  if (!travelTripForm.travel_category_id || !travelTripForm.travel_mode_id) return
+  try {
+    const res = await travelPersonTripFeeAPI.getList({
+      travel_category_id: travelTripForm.travel_category_id,
+      travel_mode_id: travelTripForm.travel_mode_id
+    })
+    const fee = Array.isArray(res) ? res.find(f => f.is_active) : null
+    if (fee) {
+      travelTripForm.unit_price = fee.unit_price || 0
+      travelTripForm.visa_fee = fee.visa_fee || 0
+    } else {
+      travelTripForm.unit_price = 0
+      travelTripForm.visa_fee = 0
+    }
+  } catch (e) {
+    travelTripForm.unit_price = 0
+    travelTripForm.visa_fee = 0
+  }
+}
+
+function computeTripSubtotal() {
+  const count = travelTripForm.person_count || 0
+  const unit = travelTripForm.unit_price || 0
+  const visa = travelTripForm.visa_fee || 0
+  const cat = travelCategories.value.find(c => c.id === travelTripForm.travel_category_id)
+  const isDomestic = cat && cat.code === 'domestic'
+  return count * (unit + (isDomestic ? 0 : visa))
+}
+
+Object.defineProperty(travelTripForm, 'subtotal', { get: computeTripSubtotal, enumerable: true })
+
+async function loadTravelPersonTrips() {
+  if (!quotationId.value) return
+  try {
+    const data = await travelPersonTripAPI.getList({ quotation_id: quotationId.value })
+    travelPersonTrips.value = (data || []).map(e => ({ ...e, _editing: false, _person_count: e.person_count }))
+  } catch (e) { console.error(e) }
+}
+
+function showAddTravelTripEntry() {
+  Object.assign(travelTripForm, { travel_category_id: null, travel_mode_id: null, unit_price: 0, visa_fee: 0, person_count: 0, remark: '' })
+  travelTripDialogVisible.value = true
+}
+
+async function addTravelTripConfirm() {
+  if (!travelTripForm.travel_category_id || !travelTripForm.travel_mode_id) { ElMessage.warning('请选择差旅分类和出行方式'); return }
+  try {
+    await travelPersonTripAPI.upsert({
+      quotation_id: quotationId.value,
+      travel_category_id: travelTripForm.travel_category_id,
+      travel_mode_id: travelTripForm.travel_mode_id,
+      person_count: travelTripForm.person_count,
+      remark: travelTripForm.remark
+    })
+    ElMessage.success('添加成功')
+    travelTripDialogVisible.value = false
+    loadTravelPersonTrips()
+  } catch (e) { ElMessage.error('添加失败') }
+}
+
+function editTravelTripRow(row) { row._editing = true; row._person_count = row.person_count }
+function cancelTravelTripEdit(row) { row._editing = false }
+async function saveTravelTripRow(row) {
+  try {
+    await travelPersonTripAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, travel_mode_id: row.travel_mode_id, person_count: row._person_count, remark: row.remark })
+    ElMessage.success('保存成功')
+    loadTravelPersonTrips()
+  } catch (e) { ElMessage.error('保存失败') }
+}
+async function deleteTravelTripEntry(id) {
+  try { await travelPersonTripAPI.delete(id); ElMessage.success('删除成功'); loadTravelPersonTrips() } catch (e) { ElMessage.error('删除失败') }
+}
 
 async function loadLaborHours() {
   if (!quotationId.value) return
@@ -1639,6 +2061,16 @@ watch(activeTab, (tab) => {
     loadSummary()
   } else if (tab === 'versions') {
     loadVersions()
+  } else if (tab === 'packing') {
+    loadPackingTypes()
+    loadPackingEntries()
+  } else if (tab === 'travel-days') {
+    loadTravelCategories()
+    loadTravelPersonDays()
+  } else if (tab === 'travel-trips') {
+    loadTravelCategories()
+    loadTravelModes()
+    loadTravelPersonTrips()
   }
 })
 
@@ -2308,5 +2740,15 @@ onMounted(async () => {
   border-radius: 8px;
   color: #166534;
   font-size: 14px;
+}
+
+.packing-header {
+  display: flex;
+  gap: 8px;
+}
+
+.money {
+  font-weight: 600;
+  color: var(--color-primary);
 }
 </style>

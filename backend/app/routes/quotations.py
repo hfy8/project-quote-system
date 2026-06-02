@@ -2,7 +2,7 @@ import json
 from flask import Blueprint, jsonify, request, current_app
 from flask_jwt_extended import jwt_required, get_jwt_identity
 from app import db, create_app
-from app.models import Quotation, QuotationParticipant, User, Module, ModuleMaterial, OtherFee, FeeRate, VersionSnapshot, LaborHour, ParticipantTypePermission
+from app.models import Quotation, QuotationParticipant, User, Module, ModuleMaterial, OtherFee, FeeRate, VersionSnapshot, LaborHour, ParticipantTypePermission, PackingEntry, TravelPersonDays, TravelPersonTrip, TravelPersonTripFee
 from app.utils.permissions import check_permission, check_any_permission
 from app.utils.logger import log_operation, log_operation_manual
 from app.models.operation_log import Action, Module as LogModule
@@ -683,9 +683,59 @@ def get_quotation_summary(quotation_id):
             'material_amount_with_rate': round(module_amount_with_rate, 2)
         })
 
+    # 费用项合计
     total_fees = sum(float(f.amount or 0) for f in fees)
     total_labor = sum(float(l.total or 0) for l in labor_hours)
-    fees_total = total_fees + total_labor  # 费用合计含人力工时
+
+    # ===== 三大新费用 =====
+
+    # Tab A: 包装费用（包装条目 × 包装类型单价）
+    packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
+    total_packing = 0
+    for entry in packing_entries:
+        if entry.packing_type:
+            total_packing += float(entry.packing_type.unit_price or 0) * float(entry.quantity or 0)
+    packing_details = [{
+        'packing_type_name': entry.packing_type.name if entry.packing_type else '',
+        'unit_price': float(entry.packing_type.unit_price or 0) if entry.packing_type else 0,
+        'quantity': float(entry.quantity or 0),
+        'total': round(float(entry.packing_type.unit_price or 0) * float(entry.quantity or 0), 2)
+    } for entry in packing_entries]
+
+    # Tab B: 差旅人天费用（人天条目 × 人天单价）
+    person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
+    total_person_days = 0
+    for entry in person_days_entries:
+        if entry.travel_day_rate:
+            total_person_days += float(entry.travel_day_rate.unit_price or 0) * float(entry.person_days or 0)
+    person_days_details = [{
+        'travel_category_name': entry.travel_category.name if entry.travel_category else '',
+        'unit_price': float(entry.travel_day_rate.unit_price or 0) if entry.travel_day_rate else 0,
+        'person_days': float(entry.person_days or 0),
+        'total': round(float(entry.travel_day_rate.unit_price or 0) * float(entry.person_days or 0), 2)
+    } for entry in person_days_entries]
+
+    # Tab C: 差旅人次费用（人次条目 × 出行方式单价）
+    person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
+    total_person_trips = 0
+    for entry in person_trip_entries:
+        fee_record = None
+        if entry.travel_category and entry.travel_mode:
+            fee_record = db.session.query(TravelPersonTripFee).filter_by(
+                travel_category_id=entry.travel_category_id,
+                travel_mode_id=entry.travel_mode_id,
+                is_active=True
+            ).first()
+        unit_price = float(fee_record.unit_price or 0) if fee_record else 0
+        visa_fee = float(fee_record.visa_fee or 0) if fee_record else 0
+        person_count = float(entry.person_count or 0)
+        cat_code = entry.travel_category.code if entry.travel_category else ''
+        # 非国内出差：total = 交通费 + 签证费
+        subtotal = person_count * (unit_price + (visa_fee if cat_code != 'domestic' else 0))
+        total_person_trips += subtotal
+
+    total_new_fees = total_packing + total_person_days + total_person_trips
+    fees_total = total_fees + total_labor + total_new_fees
     subtotal = total_with_rates + fees_total
     profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
     subtotal_with_profit = subtotal * (1 + profit_rate)
@@ -703,6 +753,13 @@ def get_quotation_summary(quotation_id):
         'labor_hours': [l.to_dict() for l in labor_hours],
         'fee_rates': fee_rates,
         'rate_details': [{'category': k, **v} for k, v in rate_details.items()],
+        # 三大新费用
+        'packing_details': packing_details,
+        'person_days_details': person_days_details,
+        'total_packing': round(total_packing, 2),
+        'total_person_days': round(total_person_days, 2),
+        'total_person_trips': round(total_person_trips, 2),
+        'total_new_fees': round(total_new_fees, 2),
         'subtotal': round(subtotal, 2),
         'profit_rate': profit_rate,
         'subtotal_with_profit': round(subtotal_with_profit, 2),
