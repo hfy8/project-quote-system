@@ -187,3 +187,82 @@ def compare_versions(version_id, other_id):
         'totals1': v1_totals,
         'totals2': v2_totals
     }), 200
+
+
+@version_bp.route('/quotations/<int:quotation_id>/versions/compare', methods=['GET'])
+@jwt_required()
+def compare_versions_by_quotaion(quotation_id):
+    """对比同一报价单的两个版本（按 version_no）"""
+    v1_no = request.args.get('v1', type=int)
+    v2_no = request.args.get('v2', type=int)
+
+    if not v1_no or not v2_no:
+        return jsonify({'error': 'v1 和 v2 版本号必填'}), 400
+
+    v1 = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=v1_no).first()
+    v2 = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=v2_no).first()
+    if not v1 or not v2:
+        return jsonify({'error': '版本不存在'}), 404
+
+    # 复用已有的 compare logic，复用 normalize/enrich
+    def normalize(snapshot):
+        if 'quotation' in snapshot:
+            return snapshot
+        if 'modules' in snapshot or 'fees' in snapshot:
+            coeff = snapshot.get('coefficients')
+            return {
+                'quotation': snapshot,
+                'modules': snapshot.get('modules', []),
+                'fees': snapshot.get('fees', []),
+                'labor_hours': snapshot.get('labor_hours', []),
+                'coefficients': coeff
+            }
+        coeff = snapshot.get('coefficients')
+        return {'quotation': snapshot, 'modules': [], 'fees': [], 'labor_hours': snapshot.get('labor_hours', []), 'coefficients': coeff}
+
+    from app.models import Material
+    material_cache = {}
+
+    def enrich_material(mat_data):
+        if not mat_data:
+            return mat_data
+        mat_id = mat_data.get('material_id')
+        if not mat_id:
+            return mat_data
+        if mat_id not in material_cache:
+            mat = Material.query.get(mat_id)
+            if mat:
+                material_cache[mat_id] = {
+                    'material_name': mat.name, 'spec': mat.spec,
+                    'brand': mat.brand,
+                    'unit_price': float(mat.unit_price) if mat.unit_price else 0,
+                    'unit': mat.unit,
+                }
+            else:
+                material_cache[mat_id] = {'material_name': f'物料{mat_id}', 'spec': '-', 'brand': '-', 'unit_price': 0, 'unit': ''}
+        return {**mat_data, **material_cache[mat_id]}
+
+    def enrich_module(mod):
+        if 'materials' in mod:
+            mod['materials'] = [enrich_material(m) for m in mod['materials']]
+        return mod
+
+    v1_data = normalize(json.loads(v1.snapshot_data))
+    v2_data = normalize(json.loads(v2.snapshot_data))
+    v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
+    v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
+
+    from app.routes.exports import calculate_version_totals
+    v1_totals = calculate_version_totals(v1_data)
+    v2_totals = calculate_version_totals(v2_data)
+
+    return jsonify({
+        'quotation_id': quotation_id,
+        'version1': v1_data, 'version_no1': v1.version_no,
+        'version2': v2_data, 'version_no2': v2.version_no,
+        'totals1': v1_totals, 'totals2': v2_totals,
+        'created_at1': v1.created_at.isoformat() if v1.created_at else None,
+        'created_at2': v2.created_at.isoformat() if v2.created_at else None,
+        'operator_name1': v1.operator.username if v1.operator else None,
+        'operator_name2': v2.operator.username if v2.operator else None,
+    }), 200

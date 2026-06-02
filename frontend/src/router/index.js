@@ -17,6 +17,7 @@ import ModuleAssignments from '../views/ModuleAssignments.vue'
 import ParticipantTypePermissions from '../views/ParticipantTypePermissions.vue'
 import TravelFeeConfig from '../views/TravelFeeConfig.vue'
 import Layout from '../components/Layout.vue'
+import VersionCompare from '../views/VersionCompare.vue'
 
 // 路由权限映射 - 与后端权限码一致
 const routePermissionMap = {
@@ -37,6 +38,7 @@ const routePermissionMap = {
   'ParticipantTypePermissions': 'participant_type_permission.view',
   'TravelFeeConfig': 'fee_type.view',
   'ChangeRequests': 'quotation.view',
+  'VersionCompare': 'version.view',
 }
 
 // 权限检查函数 - 支持通配符匹配
@@ -161,6 +163,11 @@ const routes = [
         path: 'travel-fee-config',
         name: 'TravelFeeConfig',
         component: TravelFeeConfig
+      },
+      {
+        path: 'quotations/:id/versions/compare',
+        name: 'VersionCompare',
+        component: VersionCompare
       },
     ]
   }

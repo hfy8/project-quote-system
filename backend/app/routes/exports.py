@@ -1053,6 +1053,112 @@ def export_excel(quotation_id):
     )
 
 
+# ==================== 版本导出（指定版本号） ====================
+
+def _build_export_data_from_snapshot(snapshot_data_str):
+    """从 snapshot_data 构建脱敏导出数据（用于高效渲染/导出）"""
+    import json
+    data = json.loads(snapshot_data_str) if isinstance(snapshot_data_str, str) else snapshot_data_str
+    # 已在 normalize 后结构化为 {quotation, modules, fees, labor_hours}
+    return data
+
+
+@export_bp.route('/quotations/<int:quotation_id>/versions/<int:version_no>/export/excel', methods=['GET'])
+def export_version_excel(quotation_id, version_no):
+    """导出版本 Excel（指定版本号）"""
+    version = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=version_no).first()
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+
+    # 如果有预生成文件，直接返回（暂未实现，动态生成）
+    data = get_version_snapshot_data(quotation_id, version_no)
+    if not data:
+        return jsonify({'error': 'Version data not found'}), 404
+
+    quotation = Quotation.query.get(quotation_id)
+    currency = quotation.currency if quotation and quotation.currency else 'CNY'
+    exchange_rates = {er.currency: float(er.rate) for er in ExchangeRate.query.all()}
+    currency_symbol = get_currency_symbol(currency)
+    grand_total = convert_currency(
+        calculate_version_totals(data)['grand_total'], currency, exchange_rates)
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    header_font = Font(bold=True, color='FFFFFF')
+    header_fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+    header_alignment = Alignment(horizontal='center', vertical='center')
+    thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                         top=Side(style='thin'), bottom=Side(style='thin'))
+
+    # Sheet 1: 基本信息
+    ws1 = wb.create_sheet('基本信息')
+    ws1.append(['报价单基本信息'])
+    ws1.merge_cells('A1:D1')
+    ws1['A1'].font = Font(bold=True, size=14)
+    ws1['A1'].alignment = Alignment(horizontal='center')
+    ws1.append([])
+    info = [
+        ('项目名称', data.get('name', '')),
+        ('方案编号', data.get('scheme_no', '')),
+        ('版本号', f'v{version_no}'),
+        ('币种', currency),
+    ]
+    for k, v in info:
+        ws1.append([k, v])
+    ws1.column_dimensions['A'].width = 18
+    ws1.column_dimensions['B'].width = 30
+
+    # Sheet 2: 物料及费用清单
+    ws2 = wb.create_sheet('物料及费用清单')
+    headers = ['模块', '项目', '规格', '分类/品牌', '单价', '数量', '小计', '合计']
+    ws2.append(headers)
+    for cell in ws2[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = thin_border
+
+    modules = data.get('modules', [])
+    for mod in modules:
+        mod_name = mod.get('name', '未命名模块')
+        materials = mod.get('materials', [])
+        if not materials:
+            ws2.append([mod_name, '（无物料）', '', '', '', '', '', ''])
+            continue
+        for i, m in enumerate(materials):
+            ws2.append([
+                mod_name if i == 0 else '',
+                m.get('name') or m.get('item', ''),
+                m.get('spec', ''),
+                m.get('brand', ''),
+                m.get('unit_price', 0),
+                m.get('quantity', 0),
+                m.get('subtotal', 0) if isinstance(m.get('subtotal'), (int, float)) else 0,
+                '',
+            ])
+        # 模块合计行（取第一条物料的小计之和）
+        mod_total = sum(
+            float(m.get('subtotal', 0)) if isinstance(m.get('subtotal'), (int, float)) else 0
+            for m in materials
+        )
+        last_row = ws2.max_row
+        ws2[f'H{last_row}'] = mod_total
+        ws2.merge_cells(f'A{last_row}:G{last_row}')
+        ws2[f'A{last_row}'].alignment = Alignment(horizontal='right')
+
+    # 调整列宽
+    for i, w in enumerate([15, 20, 20, 15, 12, 8, 12, 12]):
+        ws2.column_dimensions[get_column_letter(i + 1)].width = w
+
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    filename = f'{data.get("name", "报价单")}_v{version_no}.xlsx'
+    return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    as_attachment=True, download_name=filename)
+
+
 @export_bp.route('/quotations/<int:quotation_id>/export/pdf', methods=['GET'])
 def export_pdf(quotation_id):
     """导出 PDF 格式，支持中英文 ?lang=en """

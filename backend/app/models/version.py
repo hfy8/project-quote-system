@@ -10,6 +10,7 @@ class VersionSnapshot(db.Model):
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
     version_no = db.Column(db.Integer, nullable=False)
     snapshot_data = db.Column(db.Text, nullable=False)  # JSON字符串
+    export_data = db.Column(db.Text, nullable=True, comment='脱敏导出数据JSON')
     operation_type = db.Column(db.String(20), nullable=False)
     remark = db.Column(db.Text, nullable=True)
     operator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
@@ -31,5 +32,6 @@ class VersionSnapshot(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'word_file': self.word_file,
             'pdf_file': self.pdf_file,
+            'export_data': self.export_data,
             'creator_name': self.operator.username if self.operator else None,
         }
