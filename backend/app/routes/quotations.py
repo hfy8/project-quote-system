@@ -444,7 +444,7 @@ def archive_quotation(quotation_id):
         MessageService.notify_version_updated(
             user_ids=user_ids,
             quotation_name=quotation.name,
-            version_no=new_version_no,
+            version_no=version.version_no,
             quotation_id=quotation.id
         )
     
