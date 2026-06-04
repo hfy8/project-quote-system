@@ -41,7 +41,11 @@ I18N = {
         'internal': '厂内', 'external': '厂外',
         'no_materials': '（无物料）', 'no_data': '无物料及费用数据',
         'labor_hours': '人力工时', 'version': '版本', 'version_no': '版本号',
-        'profit_rate_label': '利润率', 'subtotal_label': '含利润率小计',
+        'profit_rate_label': '利润率', 'subtotal_label': '合计',
+        'brand_col': '品牌', 'division_col': '设计工时划分', 'fee_name_col': '费用名称',
+        'table1_total': '设备硬件合计', 'table2_total': '设备人力合计', 'table3_total': '其他合计',
+        'profit_amount': '项目利润',
+        'unit_col': '单位', 'total_col': '合计',
         'unit_h': 'h', 'tax_included': '含税报价',
     },
     'en': {
@@ -61,6 +65,9 @@ I18N = {
         'no_materials': '(No Materials)', 'no_data': 'No material or cost data',
         'labor_hours': 'Labor Hours', 'version': 'Version', 'version_no': 'Version No.',
         'profit_rate_label': 'Profit Rate', 'subtotal_label': 'Subtotal w/ Profit',
+        'table1_total': 'Hardware Total', 'table2_total': 'Labor Total', 'table3_total': 'Other Total',
+        'profit_amount': 'Project Profit',
+        'unit_col': 'Unit', 'total_col': 'Total',
         'unit_h': 'h', 'tax_included': 'Tax Included',
     }
 }
@@ -108,12 +115,16 @@ from app.models.exchange_rate import ExchangeRate
 from app.models.version import VersionSnapshot
 from app.models.user import User
 from app.models.labor_hour import LaborHour
+from app.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
+from app.models.travel import TravelPersonTripFee
+from app.models.packing import PackingType
+from app import db
 
 export_bp = Blueprint('exports', __name__)
 
 
 def get_quotation_with_details(quotation_id):
-    """获取报价单及其详细信息"""
+    """获取报价单及其详细信息（含三大新费用）"""
     quotation = Quotation.query.get(quotation_id)
     if not quotation:
         return None
@@ -123,66 +134,210 @@ def get_quotation_with_details(quotation_id):
     for module in modules:
         module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
     
-    # 获取其他费用
+    # 获取费用Tab
     fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
     labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
-
-    return quotation, modules, fees, labor_hours
-
-
-def calculate_totals_with_rates(quotation, modules, fees, labor_hours):
-    """计算汇总数据（含费用系数和税率）"""
-    # 分类统计物料
-    category_totals = {'large': 0, 'standard': 0, 'other': 0}
-    for module in modules:
-        for mm in module.materials:
-            if mm.material:
-                cat = mm.material.category or 'standard'
-                amount = float(mm.material.unit_price or 0) * mm.quantity
-                category_totals[cat] = category_totals.get(cat, 0) + amount
     
-    # 获取费用系数（优先使用报价单私有系数，否则用全局配置）
-    coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
-             {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
+    # 三大新费用
+    packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
+    person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
+    person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
+    
+    return quotation, modules, fees, labor_hours, packing_entries, person_days_entries, person_trip_entries
+
+
+def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, person_days_entries, person_trip_entries, coeff):
+    """构建PDF三个合并表格的数据"""
     rate_large = float(coeff.get('large', 1.0))
     rate_standard = float(coeff.get('standard', 1.0))
     rate_other = float(coeff.get('other', 1.0))
-    fee_rates = coeff
-    
-    # 计算物料含系数小计
-    material_with_rates = (
-        category_totals.get('large', 0) * rate_large +
-        category_totals.get('standard', 0) * rate_standard +
-        category_totals.get('other', 0) * rate_other
-    )
-    
-    material_total = sum(category_totals.values())
-    fees_total = sum(float(fee.amount or 0) for fee in fees)
-    labor_total = sum(float(l.total or 0) for l in labor_hours)
-    subtotal = material_with_rates + fees_total + labor_total
-    
-    # 对外利润率
+
+    # ===== 表格1：设备硬件合计 =====
+    table1_rows = []
+    table1_total = 0.0
+    for module in modules:
+        if not module.materials:
+            continue
+        non_other_materials = [mm for mm in module.materials
+                              if mm.material and not mm.is_other]
+        other_material = next((mm for mm in module.materials
+                               if mm.is_other), None)
+
+        # 品牌取值
+        if len(non_other_materials) == 0:
+            # 只有其他或无物料
+            brand = '其他'
+        elif len(non_other_materials) == 1:
+            # 只有一个非其他物料
+            brand = non_other_materials[0].material.brand or ''
+        else:
+            # 多个非其他物料
+            brand = 'RS'
+
+        # 该模块的含系数小计
+        module_subtotal = 0.0
+        for mm in module.materials:
+            if not mm.material:
+                continue
+            rate = (rate_large if mm.material.category == 'large'
+                    else (rate_standard if mm.material.category == 'standard' else rate_other))
+            if mm.is_other:
+                unit_amount = float(mm.unit_price_override or float(mm.material.unit_price or 0)) * rate
+            else:
+                unit_amount = float(mm.material.unit_price or 0) * rate * mm.quantity
+            module_subtotal += unit_amount
+
+        table1_rows.append({
+            'module_name': module.name or '',
+            'brand': brand,
+            'quantity': 1,
+            'unit': 'SET',
+            'subtotal': round(module_subtotal, 2),
+        })
+        table1_total += module_subtotal
+
+    # ===== 表格2：设备人力合计 =====
+    table2_rows = []
+    table2_total = 0.0
+    for l in labor_hours:
+        row_total = float(l.total or 0)
+        table2_rows.append({
+            'division': l.name or '',
+            'hours': float(l.hours) if l.hours else 0,
+            'unit': 'H',
+            'hourly_rate': float(l.unit_price) if l.unit_price else 0,
+            'subtotal': round(row_total, 2),
+        })
+        table2_total += row_total
+
+    # ===== 三大新费用汇总 =====
+    # 差旅人天费用 + 总人天数量
+    total_person_days = 0.0
+    total_person_days_count = 0.0
+    for entry in person_days_entries:
+        up = float(entry.unit_price) if entry.unit_price else (
+            float(entry.travel_category.day_rates[0].unit_price)
+            if entry.travel_category and entry.travel_category.day_rates else 0)
+        days = float(entry.person_days or 0)
+        total_person_days += up * days
+        total_person_days_count += days
+
+    # 差旅人次费用 + 总人次数量
+    total_person_trips = 0.0
+    total_person_trips_count = 0.0
+    for entry in person_trip_entries:
+        if entry.unit_price is not None or entry.visa_fee is not None:
+            up = float(entry.unit_price) if entry.unit_price is not None else 0
+            vf = float(entry.visa_fee) if entry.visa_fee is not None else 0
+        else:
+            fee_record = TravelPersonTripFee.query.filter_by(
+                travel_category_id=entry.travel_category_id,
+                travel_mode_id=entry.travel_mode_id,
+                is_active=True
+            ).first()
+            up = float(fee_record.unit_price or 0) if fee_record else 0
+            vf = float(fee_record.visa_fee or 0) if fee_record else 0
+        cat_code = entry.travel_category.code if entry.travel_category else ''
+        count = float(entry.person_count or 0)
+        total_person_trips += count * (up + (vf if cat_code != 'domestic' else 0))
+        total_person_trips_count += count
+
+    # 运输包装费用 + 总数量
+    total_packing = 0.0
+    total_packing_count = 0.0
+    for entry in packing_entries:
+        up = float(entry.unit_price) if entry.unit_price else (
+            float(entry.packing_type.unit_price)
+            if entry.packing_type and entry.packing_type.unit_price else 0)
+        qty = float(entry.quantity or 0)
+        total_packing += up * qty
+        total_packing_count += qty
+
+    # ===== 表格3：其他合计 =====
+    table3_rows = []
+    table3_total = 0.0
+
+    # 固定条目：差旅住宿费
+    if total_person_days > 0:
+        table3_rows.append({
+            'name': '差旅住宿费',
+            'quantity': round(total_person_days_count, 1),
+            'unit': '人天',
+            'unit_price': round(total_person_days, 2),
+        })
+        table3_total += total_person_days
+
+    # 固定条目：差旅交通签证费
+    if total_person_trips > 0:
+        table3_rows.append({
+            'name': '差旅交通签证费',
+            'quantity': round(total_person_trips_count, 0),
+            'unit': '人次',
+            'unit_price': round(total_person_trips, 2),
+        })
+        table3_total += total_person_trips
+
+    # 固定条目：设备包装运输费
+    if total_packing > 0:
+        table3_rows.append({
+            'name': '设备包装运输费',
+            'quantity': round(total_packing_count, 0),
+            'unit': '单元',
+            'unit_price': round(total_packing, 2),
+        })
+        table3_total += total_packing
+
+    # 动态条目：费用Tab每项
+    dynamic_fees_total = 0.0
+    for fee in fees:
+        fee_amount = float(fee.amount or 0)
+        table3_rows.append({
+            'name': fee.fee_type or '',
+            'quantity': 1,
+            'unit': 'SET',
+            'unit_price': round(fee_amount, 2),
+        })
+        dynamic_fees_total += fee_amount
+    table3_total += dynamic_fees_total
+
+    # 项目利润 = (物料×系数 + 人力合计 + 所有费用) × 对外利润率
     profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
-    subtotal_with_profit = subtotal * (1 + profit_rate)
-    
-    # 获取税率
-    tax_rate = float(quotation.tax_rate) if quotation.tax_rate else 0.13
+    profit_amount = (table1_total + table2_total + table3_total) * profit_rate
+
+    # 项目税额
+    subtotal_with_profit = table1_total + table2_total + table3_total + profit_amount
+    tax_rate = float(quotation.tax_rate) if quotation.tax_rate else 0.0
     tax_amount = subtotal_with_profit * tax_rate
+
+    table3_rows.append({
+        'name': '项目利润',
+        'quantity': 1,
+        'unit': 'SET',
+        'unit_price': round(profit_amount, 2),
+    })
+    table3_rows.append({
+        'name': '项目税额',
+        'quantity': 1,
+        'unit': 'SET',
+        'unit_price': round(tax_amount, 2),
+    })
+
     grand_total = subtotal_with_profit + tax_amount
-    
+
+    # fees_subtotal = 其他合计 + 项目利润 + 税额
+    fees_subtotal = table3_total + profit_amount + tax_amount
+
     return {
-        'material_total': material_total,
-        'material_total_with_rates': material_with_rates,
-        'fees_total': fees_total,
-        'labor_total': labor_total,
-        'subtotal': subtotal,
-        'profit_rate': profit_rate,
-        'subtotal_with_profit': subtotal_with_profit,
-        'tax_rate': tax_rate,
-        'tax_amount': tax_amount,
-        'grand_total': grand_total,
-        'category_totals': category_totals,
-        'fee_rates': fee_rates
+        'table1': {'rows': table1_rows, 'total': round(table1_total, 2)},
+        'table2': {'rows': table2_rows, 'total': round(table2_total, 2)},
+        'table3': {'rows': table3_rows, 'total': round(table3_total, 2)},
+        'grand_total': round(grand_total, 2),
+        'fees_subtotal': round(fees_subtotal, 2),
+        'profit_amount': round(profit_amount, 2),
+        'tax_amount': round(tax_amount, 2),
+        'subtotal_with_profit': round(subtotal_with_profit, 2),
+        'fees_total': round(table3_total, 2),
+        'rates': coeff,
     }
 
 
@@ -1167,82 +1322,20 @@ def export_pdf(quotation_id):
     if not data:
         return jsonify({'error': 'Quotation not found'}), 404
     
-    quotation, modules, fees, labor_hours = data
-    totals = calculate_totals_with_rates(quotation, modules, fees, labor_hours)
-    
-    # 使用报价单的币种
-    currency = quotation.currency if quotation and quotation.currency else 'CNY'
-    
-    # 获取汇率
-    exchange_rates = {er.currency: float(er.rate) for er in ExchangeRate.query.all()}
-    currency_symbol = get_currency_symbol(currency)
-    
-    # 转换最终报价
-    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
+    (quotation, modules, fees, labor_hours,
+     packing_entries, person_days_entries, person_trip_entries) = data
     
     # 获取系数
     coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
              {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
-    rate_large = float(coeff.get('large', 1.0))
-    rate_standard = float(coeff.get('standard', 1.0))
-    rate_other = float(coeff.get('other', 1.0))
     
-    doc = Document()
-    module_groups = []
-    for module in modules:
-        items = []
-        module_total = 0
-        if module.materials:
-            for mm in module.materials:
-                mat = mm.material
-                if mat:
-                    cat = mat.category or 'standard'
-                    rate = rate_large if cat == 'large' else (rate_standard if cat == 'standard' else rate_other)
-                    unit_price_with_rate = float(mat.unit_price or 0) * rate
-                    item_total = unit_price_with_rate * mm.quantity
-                    module_total += item_total
-                    items.append({
-                        'item': mat.name or '',
-                        'spec': mat.spec or '',
-                        'category': mat.brand or '',
-                        'unit_price': f'¥{unit_price_with_rate:.2f}',
-                        'quantity': str(mm.quantity),
-                        'subtotal': f'¥{item_total:.2f}',
-                    })
-        module_groups.append({
-            'name': get_name(module, lang),
-            'items': items,
-            'total': module_total
-        })
+    # 构建三个表格数据
+    tables = _build_pdf_tables(quotation, modules, fees, labor_hours,
+                                 packing_entries, person_days_entries, person_trip_entries, coeff)
     
-    fees_total = sum(float(f.amount or 0) for f in fees)
-    labor_total = sum(float(l.total or 0) for l in labor_hours)
-    fee_items = []
-    for fee in fees:
-        location_text = '厂内' if fee.location == 'internal' else ('厂外' if fee.location == 'external' else fee.location or '')
-        fee_items.append({
-            'item': get_fee_type_name(fee.fee_type, lang) or '',
-            'spec': location_text,
-            'category': get_fee_type_name(fee.fee_type, lang) or '',
-            'unit_price': '',
-            'quantity': '1',
-            'subtotal': f'¥{float(fee.amount or 0):.2f}',
-        })
-    for l in labor_hours:
-        fee_items.append({
-            'item': l.name or t('labor_hours', lang),
-            'spec': f"{l.hours}{t('unit_h', lang)}",
-            'category': t('labor_hours', lang),
-            'unit_price': f'¥{float(l.unit_price or 0):.2f}/h',
-            'quantity': '1',
-            'subtotal': f'¥{float(l.total or 0):.2f}',
-        })
-    if fee_items:
-        module_groups.append({
-            'name': t('other_fees', lang),
-            'items': fee_items,
-            'total': fees_total + labor_total
-        })
+    # 使用报价单的币种
+    currency = quotation.currency if quotation and quotation.currency else 'CNY'
+    currency_symbol = get_currency_symbol(currency)
     
     class PDF(FPDF):
         def header(self):
@@ -1279,182 +1372,121 @@ def export_pdf(quotation_id):
         pdf.set_font('SimHei', '', 9)
         pdf.cell(0, 6, str(value), 1, 1)
     
+    
     pdf.ln(5)
     
-    # 物料及费用清单 (PDF)
-    if module_groups:
-        col_widths = [22, 38, 26, 20, 22, 12, 26, 24]  # 总约190
-        headers = [t('module_col', lang), t('item_col', lang), t('spec_col', lang),
-                   t('category_col', lang), t('unit_price_col', lang), t('qty_col', lang),
-                   t('subtotal_col', lang), t('total_col', lang)]
+    # ========== 合并表格：一张大表，每个section有独立列头 ==========
+    if tables['table1']['rows'] or tables['table2']['rows'] or tables['table3']['rows']:
+        unified_col_widths = [60, 35, 30, 20, 45]  # 统一列宽（模块/名称|品牌|数量|单位|合计）
         
-        def draw_table_header():
+        # 1. 设备硬件
+        if tables['table1']['rows']:
+            # section分隔行（蓝色背景+白字）
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(68, 114, 196)
             pdf.set_text_color(255, 255, 255)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
-            for i, h in enumerate(headers):
-                pdf.cell(col_widths[i], 6, h, 1, 0, 'C', True)
-            pdf.ln()
+            pdf.cell(sum(unified_col_widths), 5, '【设备硬件】', 1, 1, 'L', True)
+            # 设备硬件列头（灰色背景）
+            pdf.set_fill_color(217, 217, 217)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.cell(unified_col_widths[0], 6, t('module_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[1], 6, t('brand_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[2], 6, t('qty_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[3], 6, t('unit_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, t('total_col', lang), 1, 1, 'C', True)
             pdf.set_text_color(0, 0, 0)
             pdf.set_font('SimHei', '', 8)
+            # 数据行
+            for row in tables['table1']['rows']:
+                pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+                pdf.cell(unified_col_widths[0], 5, str(row['module_name'])[:20], 1)
+                pdf.cell(unified_col_widths[1], 5, str(row['brand'])[:10], 1)
+                pdf.cell(unified_col_widths[2], 5, str(row['quantity']), 1, 0, 'C')
+                pdf.cell(unified_col_widths[3], 5, str(row['unit']), 1, 0, 'C')
+                pdf.cell(unified_col_widths[4], 5, f'¥{row["subtotal"]:.2f}', 1, 1, 'R')
+            # 合计行
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.set_font('SimHei', 'B', 8)
+            pdf.set_fill_color(226, 239, 218)
+            pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, f'¥{tables["table1"]["total"]:.2f}', 1, 1, 'R', True)
         
-        def draw_group(y_start, group):
-            item_count = len(group['items'])
-            row_h = 5
-            y_bottom = y_start + item_count * row_h
-            
-            # 使用PDF实际的左边距（默认10）
-            x_start = pdf.l_margin if pdf.l_margin else 10
-            x_module = x_start
-            x_data = x_start + col_widths[0]
-            x_total = x_start + col_widths[0] + sum(col_widths[1:7])
-            x_end = x_start + sum(col_widths)
-            
-            # 模块列外边框
-            pdf.rect(x_module, y_start, col_widths[0], item_count * row_h)
-            # 合计列外边框
-            pdf.rect(x_total, y_start, col_widths[7], item_count * row_h)
-            
-            # 数据区域边框
-            pdf.line(x_data, y_start, x_data, y_bottom)
-            pdf.line(x_total, y_start, x_total, y_bottom)
-            
-            # 列竖向分割线
-            x_cur = x_data
-            for j in range(1, 7):
-                x_line = x_cur + col_widths[j]
-                pdf.line(x_line, y_start, x_line, y_bottom)
-                x_cur += col_widths[j]
-            
-            # 行水平分割线
-            for i in range(1, item_count):
-                y_line = y_start + i * row_h
-                pdf.line(x_data, y_line, x_total, y_line)
-            
-            # 顶边和底边
-            pdf.line(x_data, y_start, x_total, y_start)
-            pdf.line(x_data, y_bottom, x_total, y_bottom)
-            
-            # 文字 - 模块列使用 multi_cell 自动换行
-            text = group['name']
-            line_height = 4
-            lines_wrapped = pdf.multi_cell(col_widths[0], line_height, text, border=0, align='C', split_only=True)
-            text_height = len(lines_wrapped) * line_height
-            cell_height = item_count * row_h
-            y_text = y_start + (cell_height - text_height) / 2
-            pdf.set_xy(x_module, y_text)
-            pdf.multi_cell(col_widths[0], line_height, text, 0, 'C')
-            # 合计列
-            pdf.set_xy(x_total, y_start + (item_count * row_h - 5) / 2)
-            pdf.cell(col_widths[7], 5, f'¥{group["total"]:.2f}', 0, 0, 'C')
-            
-            # 数据单元格内容
-            for i, item in enumerate(group['items']):
-                y_row = y_start + i * row_h
-                x_cur = x_data
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[1], row_h, str(item['item'])[:17], 0)
-                x_cur += col_widths[1]
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[2], row_h, str(item['spec'])[:12], 0)
-                x_cur += col_widths[2]
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[3], row_h, str(item['category'])[:9], 0)
-                x_cur += col_widths[3]
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[4], row_h, str(item['unit_price']), 0, 0, 'R')
-                x_cur += col_widths[4]
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[5], row_h, str(item['quantity']), 0, 0, 'C')
-                x_cur += col_widths[5]
-                pdf.set_xy(x_cur, y_row)
-                pdf.cell(col_widths[6], row_h, str(item['subtotal']), 0, 0, 'R')
-            
-            # 移动到下一行
-            pdf.set_y(y_bottom)
-            return y_bottom
+        # 2. 设备人力
+        if tables['table2']['rows']:
+            # section分隔行（蓝色背景+白字）
+            pdf.set_font('SimHei', 'B', 8)
+            pdf.set_fill_color(68, 114, 196)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.cell(sum(unified_col_widths), 5, '【设备人力】', 1, 1, 'L', True)
+            # 设备人力列头（灰色背景）
+            pdf.set_fill_color(217, 217, 217)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            # 前两列合并：设计工时划分
+            pdf.cell(unified_col_widths[0] + unified_col_widths[1], 6, t('division_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[2], 6, t('qty_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[3], 6, t('unit_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, t('total_col', lang), 1, 1, 'C', True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('SimHei', '', 8)
+            # 数据行
+            for row in tables['table2']['rows']:
+                pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+                pdf.cell(unified_col_widths[0] + unified_col_widths[1], 5, str(row['division'])[:20], 1)
+                pdf.cell(unified_col_widths[2], 5, f'{row["hours"]:.1f}', 1, 0, 'C')
+                pdf.cell(unified_col_widths[3], 5, 'H', 1, 0, 'C')
+                pdf.cell(unified_col_widths[4], 5, f'¥{row["subtotal"]:.2f}', 1, 1, 'R')
+            # 合计行
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.set_font('SimHei', 'B', 8)
+            pdf.set_fill_color(226, 239, 218)
+            pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, f'¥{tables["table2"]["total"]:.2f}', 1, 1, 'R', True)
         
-        def check_page_break(y_current, item_count, row_h=5):
-            """检查是否需要换页，留出足够空间给当前模块"""
-            try:
-                y_current = float(y_current) if y_current is not None else 0
-            except (ValueError, TypeError):
-                y_current = 0
-            pdf_h = float(pdf.h) if pdf.h else 297.0
-            pdf_bm = float(pdf.b_margin) if pdf.b_margin else 10.0
-            page_height = pdf_h - pdf_bm
-            needed_height = item_count * row_h + 10  # 10为表头高度
-            if y_current + needed_height > page_height:
-                pdf.add_page()
-                draw_table_header()
-                new_y = pdf.get_y()
-                return float(new_y) if new_y is not None else (pdf_h - pdf_bm - 10)
-            return y_current
+        # 3. 其他合计
+        if tables['table3']['rows']:
+            # section分隔行（蓝色背景+白字）
+            pdf.set_font('SimHei', 'B', 8)
+            pdf.set_fill_color(68, 114, 196)
+            pdf.set_text_color(255, 255, 255)
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.cell(sum(unified_col_widths), 5, '【其他】', 1, 1, 'L', True)
+            # 其他列头（灰色背景）
+            pdf.set_fill_color(217, 217, 217)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.cell(unified_col_widths[0] + unified_col_widths[1], 6, t('fee_name_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[2], 6, t('qty_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[3], 6, t('unit_col', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, t('unit_price_col', lang), 1, 1, 'C', True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.set_font('SimHei', '', 8)
+            # 数据行
+            for row in tables['table3']['rows']:
+                pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+                pdf.cell(unified_col_widths[0] + unified_col_widths[1], 5, str(row['name'])[:20], 1)
+                pdf.cell(unified_col_widths[2], 5, str(row['quantity']), 1, 0, 'C')
+                pdf.cell(unified_col_widths[3], 5, str(row['unit']), 1, 0, 'C')
+                pdf.cell(unified_col_widths[4], 5, f'¥{row["unit_price"]:.2f}', 1, 1, 'R')
+            # 合计行
+            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+            pdf.set_font('SimHei', 'B', 8)
+            pdf.set_fill_color(226, 239, 218)
+            pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
+            pdf.cell(unified_col_widths[4], 6, f'¥{tables["fees_subtotal"]:.2f}', 1, 1, 'R', True)
         
-        # 开始绘制表格
-        pdf.ln(5)
-        pdf.set_font('SimHei', 'B', 11)
-        pdf.cell(0, 8, t('material_list', lang), 0, 1)
-        draw_table_header()
-        
-        y_start = pdf.get_y()
-        for group in module_groups:
-            if not group['items']:
-                pdf.cell(sum(col_widths), 5, f'{group["name"]} - {t("no_materials", lang)}', 1, 1, 'L')
-                y_start = pdf.get_y()
-                continue
-            
-            item_count = len(group['items'])
-            # 检查是否需要换页
-            y_start = check_page_break(y_start, item_count)
-            
-            y_end = draw_group(y_start, group)
-            if y_end is None:
-                y_end = y_start + len(group['items']) * 5
-            y_start = y_end
-        
-        # 移动到下一页
-        if y_start + 10 > (pdf.h if pdf.h else 297) - (pdf.b_margin if pdf.b_margin else 10):
-            pdf.add_page()
-    else:
-        pdf.set_font('SimHei', '', 9)
-        pdf.cell(0, 5, '无物料及费用数据', 0, 1)
+        # 最终报价
+        pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
+        pdf.set_font('SimHei', 'B', 9)
+        pdf.set_fill_color(255, 255, 204)
+        pdf.cell(sum(unified_col_widths[:2]), 6, t('grand_total', lang), 1, 0, 'C', True)
+        pdf.cell(sum(unified_col_widths[2:4]), 6, currency, 1, 0, 'C', True)
+        pdf.cell(unified_col_widths[4], 6, f'{currency_symbol}{tables["grand_total"]:.2f}', 1, 1, 'R', True)
     
-    pdf.ln(5)
-    
-    # 报价汇总
-    pdf.set_font('SimHei', 'B', 11)
-    pdf.cell(0, 8, t('quote_summary', lang), 0, 1)
-    
-    pdf.set_font('SimHei', 'B', 9)
-    pdf.set_fill_color(68, 114, 196)
-    pdf.set_text_color(255, 255, 255)
-    pdf.cell(100, 6, t('project_col', lang), 1, 0, 'C', True)
-    pdf.cell(0, 6, t('amount_col', lang), 1, 1, 'C', True)
-    
-    pdf.set_text_color(0, 0, 0)
-    fees_with_labor = totals['fees_total'] + totals['labor_total']
-    summary_items = [
-        (t('material_total', lang), f'¥{totals["material_total_with_rates"]:.2f}'),
-        (t('fee_total', lang), f'¥{fees_with_labor:.2f}'),
-        (t('profit_rate', lang), f'{totals["profit_rate"] * 100:.1f}%'),
-        (t('subtotal_with_profit', lang), f'¥{totals["subtotal_with_profit"]:.2f}'),
-        (t('tax_rate', lang), f'{totals["tax_rate"] * 100:.0f}%'),
-        (t('tax_amount', lang), f'¥{totals["tax_amount"]:.2f}'),
-    ]
-    pdf.set_font('SimHei', '', 9)
-    for label, value in summary_items:
-        pdf.cell(100, 5, label, 1)
-        pdf.cell(0, 5, value, 1, 1, 'R')
-    
-    # 最终报价（高亮）
-    pdf.set_font('SimHei', 'B', 10)
-    pdf.set_fill_color(226, 239, 218)
-    pdf.cell(100, 7, f"{t('grand_total', lang)}({currency})", 1, 0, 'C', True)
-    pdf.cell(0, 7, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
-    
-    # 输出到临时文件
+    # 输出
     pdf_bytes = pdf.output()
     buffer = BytesIO(pdf_bytes)
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
