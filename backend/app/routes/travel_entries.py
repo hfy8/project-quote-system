@@ -38,16 +38,34 @@ def upsert_packing_entry():
 
     if entry:
         entry.quantity = data.get('quantity', entry.quantity)
+        entry.unit_price = data.get('unit_price', entry.unit_price)
         entry.remark = data.get('remark', entry.remark)
     else:
         entry = PackingEntry(
             quotation_id=int(quotation_id),
             packing_type_id=int(packing_type_id),
             quantity=data.get('quantity', 0),
+            unit_price=data.get('unit_price'),
             remark=data.get('remark')
         )
         db.session.add(entry)
 
+    db.session.commit()
+    return jsonify(entry.to_dict()), 200
+
+
+@travel_entry_bp.route('/packing-entries/<int:eid>', methods=['PUT'])
+@jwt_required()
+@check_permission('quotation.edit')
+def update_packing_entry(eid):
+    """更新包装条目"""
+    data = request.get_json()
+    entry = PackingEntry.query.get(eid)
+    if not entry:
+        return jsonify({'error': '包装条目不存在'}), 404
+    entry.quantity = data.get('quantity', entry.quantity)
+    entry.unit_price = data.get('unit_price', entry.unit_price)
+    entry.remark = data.get('remark', entry.remark)
     db.session.commit()
     return jsonify(entry.to_dict()), 200
 
@@ -94,16 +112,34 @@ def upsert_travel_person_days():
 
     if entry:
         entry.person_days = data.get('person_days', entry.person_days)
+        entry.unit_price = data.get('unit_price', entry.unit_price)
         entry.remark = data.get('remark', entry.remark)
     else:
         entry = TravelPersonDays(
             quotation_id=int(quotation_id),
             travel_category_id=int(travel_category_id),
             person_days=data.get('person_days', 0),
+            unit_price=data.get('unit_price'),
             remark=data.get('remark')
         )
         db.session.add(entry)
 
+    db.session.commit()
+    return jsonify(entry.to_dict()), 200
+
+
+@travel_entry_bp.route('/travel-person-days/<int:eid>', methods=['PUT'])
+@jwt_required()
+@check_permission('quotation.edit')
+def update_travel_person_days(eid):
+    """更新差旅人天条目"""
+    data = request.get_json()
+    entry = TravelPersonDays.query.get(eid)
+    if not entry:
+        return jsonify({'error': '差旅人天条目不存在'}), 404
+    entry.person_days = data.get('person_days', entry.person_days)
+    entry.unit_price = data.get('unit_price', entry.unit_price)
+    entry.remark = data.get('remark', entry.remark)
     db.session.commit()
     return jsonify(entry.to_dict()), 200
 
@@ -171,6 +207,8 @@ def upsert_travel_person_trip():
 
     if trip:
         trip.person_count = data.get('person_count', trip.person_count)
+        trip.unit_price = data.get('unit_price', trip.unit_price)
+        trip.visa_fee = data.get('visa_fee', trip.visa_fee)
         trip.remark = data.get('remark', trip.remark)
     else:
         trip = TravelPersonTrip(
@@ -178,10 +216,29 @@ def upsert_travel_person_trip():
             travel_category_id=int(travel_category_id),
             travel_mode_id=int(travel_mode_id),
             person_count=data.get('person_count', 0),
+            unit_price=data.get('unit_price'),
+            visa_fee=data.get('visa_fee'),
             remark=data.get('remark')
         )
         db.session.add(trip)
 
+    db.session.commit()
+    return jsonify(trip.to_dict()), 200
+
+
+@travel_entry_bp.route('/travel-person-trips/<int:tid>', methods=['PUT'])
+@jwt_required()
+@check_permission('quotation.edit')
+def update_travel_person_trip(tid):
+    """更新差旅人次条目"""
+    data = request.get_json()
+    trip = TravelPersonTrip.query.get(tid)
+    if not trip:
+        return jsonify({'error': '差旅人次条目不存在'}), 404
+    trip.person_count = data.get('person_count', trip.person_count)
+    trip.unit_price = data.get('unit_price', trip.unit_price)
+    trip.visa_fee = data.get('visa_fee', trip.visa_fee)
+    trip.remark = data.get('remark', trip.remark)
     db.session.commit()
     return jsonify(trip.to_dict()), 200
 

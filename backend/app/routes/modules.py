@@ -113,11 +113,29 @@ def add_material_to_module(module_id):
     """添加物料到模块"""
     data = request.get_json()
     user_id = get_jwt_identity()
+    material_id = data.get('material_id')
+    quantity = data.get('quantity', 1)
+
+    # 检查该模块是否已添加过"其他"物料（按名称查，避免硬编码ID）
+    other_material = db.session.execute(db.text(
+        "SELECT id FROM materials WHERE name = '其他' LIMIT 1"
+    )).fetchone()
+    other_material_id = other_material[0] if other_material else None
+    is_other = (other_material_id and material_id == other_material_id)
+    if is_other:
+        existing = db.session.execute(db.text('''
+            SELECT id FROM module_materials
+            WHERE module_id = :mid AND material_id = :mid2
+            LIMIT 1
+        '''), {'mid': module_id, 'mid2': other_material_id}).fetchone()
+        if existing:
+            return jsonify({'error': '该模块已添加"其他"物料，请直接修改其单价'}), 400
 
     module_material = ModuleMaterial(
         module_id=module_id,
-        material_id=data.get('material_id'),
-        quantity=data.get('quantity', 1),
+        material_id=material_id,
+        is_other=is_other,
+        quantity=1 if is_other else quantity,
         selected_by_id=user_id
     )
     db.session.add(module_material)
@@ -135,6 +153,8 @@ def update_module_material(id):
 
     data = request.get_json()
     module_material.quantity = data.get('quantity', module_material.quantity)
+    if module_material.is_other and data.get('unit_price_override') is not None:
+        module_material.unit_price_override = data.get('unit_price_override')
     db.session.commit()
     return jsonify(module_material.to_dict()), 200
 
@@ -159,7 +179,12 @@ def get_module_summary(module_id):
     materials = ModuleMaterial.query.filter_by(module_id=module_id).all()
     summary = {
         'total_quantity': sum(m.quantity for m in materials),
-        'total_amount': sum(m.quantity * float(m.material.unit_price) for m in materials if m.material),
+        'total_amount': sum(
+            float(m.unit_price_override) if m.is_other and m.unit_price_override
+            else m.quantity * float(m.material.unit_price) if m.material and m.material.unit_price
+            else 0
+            for m in materials
+        ),
         'materials': [m.to_dict() for m in materials]
     }
     return jsonify(summary), 200

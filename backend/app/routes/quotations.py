@@ -652,24 +652,28 @@ def get_quotation_summary(quotation_id):
         module_amount_with_rate = 0
 
         for mm in module_materials:
-            if mm.material:
+            if mm.is_other and mm.unit_price_override:
+                amount = float(mm.unit_price_override)
+                category = 'other'
+                rate = float(fee_rates.get('other', default_rate))
+            elif mm.material:
                 amount = float(mm.material.unit_price) * mm.quantity
-                module_amount += amount
-                
-                # 获取物料分类对应的费用系数
                 category = mm.material.category or 'standard'
                 if quotation.coefficients:
                     rate = float(quotation.coefficients.get(category, 1.0))
                 else:
                     rate = float(fee_rates.get(category, default_rate))
-                amount_with_rate = amount * rate
-                module_amount_with_rate += amount_with_rate
-                
-                # 累计各分类费用
-                if category not in rate_details:
-                    rate_details[category] = {'base': 0, 'with_rate': 0, 'rate': rate}
-                rate_details[category]['base'] += amount
-                rate_details[category]['with_rate'] += amount_with_rate
+            else:
+                continue
+
+            module_amount += amount
+            amount_with_rate = amount * rate
+            module_amount_with_rate += amount_with_rate
+
+            if category not in rate_details:
+                rate_details[category] = {'base': 0, 'with_rate': 0, 'rate': rate}
+            rate_details[category]['base'] += amount
+            rate_details[category]['with_rate'] += amount_with_rate
 
         total_material += module_amount
         total_with_rates += module_amount_with_rate
@@ -689,49 +693,57 @@ def get_quotation_summary(quotation_id):
 
     # ===== 三大新费用 =====
 
-    # Tab A: 包装费用（包装条目 × 包装类型单价）
+    # Tab A: 包装费用（优先用条目自定义单价，否则用系统配置）
     packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
     total_packing = 0
+    packing_details = []
     for entry in packing_entries:
-        if entry.packing_type:
-            total_packing += float(entry.packing_type.unit_price or 0) * float(entry.quantity or 0)
-    packing_details = [{
-        'packing_type_name': entry.packing_type.name if entry.packing_type else '',
-        'unit_price': float(entry.packing_type.unit_price or 0) if entry.packing_type else 0,
-        'quantity': float(entry.quantity or 0),
-        'total': round(float(entry.packing_type.unit_price or 0) * float(entry.quantity or 0), 2)
-    } for entry in packing_entries]
+        up = float(entry.unit_price) if entry.unit_price else (float(entry.packing_type.unit_price) if entry.packing_type and entry.packing_type.unit_price else 0)
+        qty = float(entry.quantity or 0)
+        sub = up * qty
+        total_packing += sub
+        packing_details.append({
+            'packing_type_name': entry.packing_type.name if entry.packing_type else '',
+            'unit_price': up,
+            'quantity': qty,
+            'total': round(sub, 2)
+        })
 
-    # Tab B: 差旅人天费用（人天条目 × 人天单价）
+    # Tab B: 差旅人天费用（优先用条目自定义单价，否则用系统配置）
     person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
     total_person_days = 0
+    person_days_details = []
     for entry in person_days_entries:
-        if entry.travel_day_rate:
-            total_person_days += float(entry.travel_day_rate.unit_price or 0) * float(entry.person_days or 0)
-    person_days_details = [{
-        'travel_category_name': entry.travel_category.name if entry.travel_category else '',
-        'unit_price': float(entry.travel_day_rate.unit_price or 0) if entry.travel_day_rate else 0,
-        'person_days': float(entry.person_days or 0),
-        'total': round(float(entry.travel_day_rate.unit_price or 0) * float(entry.person_days or 0), 2)
-    } for entry in person_days_entries]
+        up = float(entry.unit_price) if entry.unit_price else (float(entry.travel_category.day_rates[0].unit_price) if entry.travel_category and entry.travel_category.day_rates else 0)
+        pd = float(entry.person_days or 0)
+        sub = up * pd
+        total_person_days += sub
+        person_days_details.append({
+            'travel_category_name': entry.travel_category.name if entry.travel_category else '',
+            'unit_price': up,
+            'person_days': pd,
+            'total': round(sub, 2)
+        })
 
-    # Tab C: 差旅人次费用（人次条目 × 出行方式单价）
+    # Tab C: 差旅人次费用（优先用条目自定义单价/签证费，否则用系统配置）
     person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
     total_person_trips = 0
     for entry in person_trip_entries:
-        fee_record = None
-        if entry.travel_category and entry.travel_mode:
+        # 优先用条目自定义值，否则查系统配置
+        if entry.unit_price is not None or entry.visa_fee is not None:
+            up = float(entry.unit_price) if entry.unit_price is not None else 0
+            vf = float(entry.visa_fee) if entry.visa_fee is not None else 0
+        else:
             fee_record = db.session.query(TravelPersonTripFee).filter_by(
                 travel_category_id=entry.travel_category_id,
                 travel_mode_id=entry.travel_mode_id,
                 is_active=True
             ).first()
-        unit_price = float(fee_record.unit_price or 0) if fee_record else 0
-        visa_fee = float(fee_record.visa_fee or 0) if fee_record else 0
+            up = float(fee_record.unit_price or 0) if fee_record else 0
+            vf = float(fee_record.visa_fee or 0) if fee_record else 0
         person_count = float(entry.person_count or 0)
         cat_code = entry.travel_category.code if entry.travel_category else ''
-        # 非国内出差：total = 交通费 + 签证费
-        subtotal = person_count * (unit_price + (visa_fee if cat_code != 'domestic' else 0))
+        subtotal = person_count * (up + (vf if cat_code != 'domestic' else 0))
         total_person_trips += subtotal
 
     total_new_fees = total_packing + total_person_days + total_person_trips
@@ -759,6 +771,9 @@ def get_quotation_summary(quotation_id):
         'total_packing': round(total_packing, 2),
         'total_person_days': round(total_person_days, 2),
         'total_person_trips': round(total_person_trips, 2),
+        'packing_total': round(total_packing, 2),
+        'travel_person_days_total': round(total_person_days, 2),
+        'travel_person_trips_total': round(total_person_trips, 2),
         'total_new_fees': round(total_new_fees, 2),
         'subtotal': round(subtotal, 2),
         'profit_rate': profit_rate,

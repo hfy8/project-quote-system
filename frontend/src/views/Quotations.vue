@@ -162,11 +162,12 @@
     </el-dialog>
 
     <!-- 版本对比弹窗 -->
-    <VersionCompare
-      v-model:visible="versionCompareVisible"
-      :versions="versions"
-      :quotation-id="currentQuotationId"
-    />
+    <el-dialog v-model="versionCompareVisible" title="版本对比" width="95%" fullscreen destroy-on-close>
+      <VersionCompare
+        :versions="versions"
+        :quotation-id="currentQuotationId"
+      />
+    </el-dialog>
   </div>
 </template>
 

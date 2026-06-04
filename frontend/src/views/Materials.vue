@@ -62,24 +62,40 @@
           v-loading="loading"
           stripe
           class="materials-table"
-          height="100%"
+          :height="'100%'"
           :scrollbar-always-on="true"
+          show-overflow-tooltip
         >
-          <el-table-column prop="name" label="品名" min-width="150">
+          <el-table-column prop="name" label="品名" min-width="120">
             <template #default="{ row }">
               <div class="material-name">
                 <span class="name-text">{{ row.name }}</span>
               </div>
             </template>
           </el-table-column>
-          <el-table-column prop="spec" label="规格" min-width="150">
+          <el-table-column prop="spec" label="规格" min-width="100">
             <template #default="{ row }">
               <span class="spec-text">{{ row.spec || '-' }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="brand" label="品牌" width="120">
+          <el-table-column prop="brand" label="品牌" width="100">
             <template #default="{ row }">
               <span class="brand-text">{{ row.brand || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="param1" label="关键参数01" min-width="130">
+            <template #default="{ row }">
+              <span class="param-text">{{ row.param1 || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="param2" label="关键参数02" min-width="130">
+            <template #default="{ row }">
+              <span class="param-text">{{ row.param2 || '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="param3" label="关键参数03" min-width="130">
+            <template #default="{ row }">
+              <span class="param-text">{{ row.param3 || '-' }}</span>
             </template>
           </el-table-column>
           <el-table-column prop="category" label="分类" width="100">
@@ -135,6 +151,15 @@
         </el-form-item>
         <el-form-item label="品牌" prop="brand">
           <el-input v-model="form.brand" placeholder="请输入品牌" />
+        </el-form-item>
+        <el-form-item label="关键参数01" prop="param1">
+          <el-input v-model="form.param1" placeholder="请输入关键参数01" />
+        </el-form-item>
+        <el-form-item label="关键参数02" prop="param2">
+          <el-input v-model="form.param2" placeholder="请输入关键参数02" />
+        </el-form-item>
+        <el-form-item label="关键参数03" prop="param3">
+          <el-input v-model="form.param3" placeholder="请输入关键参数03" />
         </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%;">
@@ -223,7 +248,10 @@ const form = reactive({
   brand: '',
   category: 'standard',
   unit: '',
-  unit_price: 0
+  unit_price: 0,
+  param1: '',
+  param2: '',
+  param3: ''
 })
 
 const rules = {
@@ -282,7 +310,7 @@ const handlePageChange = (page) => {
 
 const handleAdd = () => {
   dialogTitle.value = '新增物料'
-  Object.assign(form, { id: null, name: '', spec: '', brand: '', category: 'standard', unit: '', unit_price: 0 })
+  Object.assign(form, { id: null, name: '', spec: '', brand: '', category: 'standard', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
   dialogVisible.value = true
 }
 
@@ -351,6 +379,7 @@ onMounted(() => {
   height: 100vh;
   overflow: hidden;
   box-sizing: border-box;
+  min-width: 0;
 }
 
 /* 左侧分类导航 */
@@ -443,7 +472,10 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--spacing-md);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .header-left {
@@ -512,7 +544,10 @@ onMounted(() => {
   margin-bottom: var(--spacing-sm);
   background: var(--color-bg-card);
   border-radius: var(--radius-md);
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .filter-group {
@@ -536,13 +571,37 @@ onMounted(() => {
   border-radius: var(--radius-lg);
 }
 
+.table-wrapper :deep(.el-table__header-wrapper table),
+.table-wrapper :deep(.el-table__body-wrapper table) {
+  table-layout: fixed !important;
+  width: 100% !important;
+}
+
 .table-wrapper :deep(.el-table) {
-  flex: 1;
-  overflow: auto;
+  display: block !important;
+  width: 100% !important;
+  table-layout: fixed;
+  min-width: 0;
+  overflow-x: auto;
 }
 
 .materials-table {
   --el-table-border-color: var(--color-border-light);
+  width: 100% !important;
+  min-width: 0;
+}
+
+.table-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* 分页 */

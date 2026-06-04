@@ -141,6 +141,11 @@
           <!-- 添加人员弹窗 -->
           <el-dialog v-model="addParticipantDialogVisible" title="添加人员" width="500px">
             <div class="add-participant-form">
+              <el-form-item label="参与类型" style="margin-bottom: 16px;">
+                <el-select v-model="selectedParticipantType" placeholder="请选择参与类型" style="width: 100%;">
+                  <el-option v-for="t in participantTypes" :key="t.type" :label="t.type_name + ' (' + t.type + ')'" :value="t.type" />
+                </el-select>
+              </el-form-item>
               <el-input v-model="participantSearch" placeholder="搜索人员姓名或用户名" clearable style="width: 100%; margin-bottom: 16px;" />
               <el-table :data="filteredAvailableUsers" v-loading="participantLoading" border size="small" max-height="300" @selection-change="handleParticipantSelection">
                 <el-table-column type="selection" width="50" :selectable="checkParticipantSelectable"></el-table-column>
@@ -150,7 +155,7 @@
             </div>
             <template #footer>
               <el-button @click="addParticipantDialogVisible = false">取消</el-button>
-              <el-button type="primary" :disabled="!selectedParticipantUsers.length" @click="addParticipantsConfirm">添加 ({{ selectedParticipantUsers.length }})</el-button>
+              <el-button type="primary" :disabled="!selectedParticipantUsers.length || !selectedParticipantType" @click="addParticipantsConfirm">添加 ({{ selectedParticipantUsers.length }})</el-button>
             </template>
           </el-dialog>
         </el-tab-pane>
@@ -230,15 +235,24 @@
               <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
               <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
             </div>
-            <el-table :data="mod.materials" border style="width: 100%;">
-              <el-table-column prop="material_name" label="物料名称" min-width="120">
+            <el-table :data="mod.materials" border style="width: 100%;" show-overflow-tooltip>
+              <el-table-column prop="material_name" label="物料名称" min-width="100">
                 <template #default="{ row }">{{ row.material_name || '-' }}</template>
               </el-table-column>
-              <el-table-column prop="specification" label="规格" min-width="100">
+              <el-table-column prop="specification" label="规格" min-width="80">
                 <template #default="{ row }">{{ row.specification || '-' }}</template>
               </el-table-column>
-              <el-table-column prop="brand" label="品牌" width="80">
+              <el-table-column prop="brand" label="品牌" width="70">
                 <template #default="{ row }">{{ row.brand || '-' }}</template>
+              </el-table-column>
+              <el-table-column v-if="hasKeyFields" prop="param1" label="关键参数01" width="130">
+                <template #default="{ row }"><span v-if="row.param1">{{ row.param1 }}</span></template>
+              </el-table-column>
+              <el-table-column v-if="hasKeyFields" prop="param2" label="关键参数02" width="130">
+                <template #default="{ row }"><span v-if="row.param2">{{ row.param2 }}</span></template>
+              </el-table-column>
+              <el-table-column v-if="hasKeyFields" prop="param3" label="关键参数03" width="130">
+                <template #default="{ row }"><span v-if="row.param3">{{ row.param3 }}</span></template>
               </el-table-column>
               <el-table-column prop="unit" label="单位" width="60">
                 <template #default="{ row }">{{ row.unit || '-' }}</template>
@@ -248,7 +262,9 @@
               </el-table-column>
               <el-table-column label="数量" width="130">
                 <template #default="{ row }">
+                  <span v-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
                   <el-input-number
+                    v-else
                     :model-value="row.quantity"
                     :min="1"
                     size="small"
@@ -264,12 +280,16 @@
               </el-table-column>
               <el-table-column label="添加人" width="80">
                 <template #default="{ row }">
-                  {{ getUserName(row.selected_by_id) }}
+                  {{ row.selected_by_name || '-' }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="80">
+              <el-table-column label="操作" width="150" align="center">
                 <template #default="{ row }">
-                  <el-button size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
+                  <template v-if="row.is_other === true">
+                    <el-button size="small" @click="editOtherMaterial(row)">改单价</el-button>
+                    <el-button size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
+                  </template>
+                  <el-button v-else size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -281,16 +301,16 @@
           </div>
 
           <!-- 添加物料弹窗 -->
-          <el-dialog v-model="materialDialogVisible" title="添加物料" width="900px">
+          <el-dialog v-model="materialDialogVisible" title="添加物料" width="1300px">
             <!-- 筛选栏 -->
             <div class="material-filter-bar">
-              <el-input v-model="materialFilter.keyword" placeholder="搜索品名" clearable style="width: 150px;" />
-              <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 120px;">
+              <el-input v-model="materialFilter.keyword" placeholder="搜索品名" clearable style="width: 140px;" />
+              <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 110px;">
                 <el-option label="大件" value="large" />
                 <el-option label="普通件" value="standard" />
                 <el-option label="其他件" value="other" />
               </el-select>
-              <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 120px;">
+              <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 110px;">
                 <el-option v-for="b in availableBrands" :key="b" :label="b" :value="b" />
               </el-select>
             </div>
@@ -300,22 +320,34 @@
               :data="filteredAvailableMaterials"
               border
               style="width: 100%; margin-top: 12px;"
-              max-height="350"
+              max-height="400"
+              show-overflow-tooltip
               @selection-change="handleMaterialSelection"
               ref="materialTableRef"
             >
               <el-table-column type="selection" width="45"></el-table-column>
               <el-table-column prop="name" label="品名" min-width="120" />
               <el-table-column prop="spec" label="规格" min-width="100" />
-              <el-table-column prop="brand" label="品牌" width="80" />
+              <el-table-column prop="brand" label="品牌" width="70" />
+              <el-table-column v-if="materialHasKeyParams" prop="param1" label="关键参数01" width="140">
+                <template #default="{ row }"><span v-if="row.param1" class="key-param">{{ row.param1 }}</span></template>
+              </el-table-column>
+              <el-table-column v-if="materialHasKeyParams" prop="param2" label="关键参数02" width="140">
+                <template #default="{ row }"><span v-if="row.param2" class="key-param">{{ row.param2 }}</span></template>
+              </el-table-column>
+              <el-table-column v-if="materialHasKeyParams" prop="param3" label="关键参数03" width="140">
+                <template #default="{ row }"><span v-if="row.param3" class="key-param">{{ row.param3 }}</span></template>
+              </el-table-column>
               <el-table-column prop="unit" label="单位" width="60" />
-              <el-table-column prop="unit_price" label="单价" width="80" />
-              <el-table-column label="分类" width="80">
+              <el-table-column prop="unit_price" label="单价" width="70" />
+              <el-table-column label="分类" width="70">
                 <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
               </el-table-column>
-              <el-table-column label="数量" width="130">
+              <el-table-column label="数量" width="120">
                 <template #default="{ row }">
+                  <span v-if="row.name === '其他'">1 <span style="color:#999;font-size:12px">(不可改)</span></span>
                   <el-input-number
+                    v-else
                     v-model="row._quantity"
                     :min="1"
                     size="small"
@@ -328,6 +360,22 @@
             <template #footer>
               <el-button @click="materialDialogVisible = false">取消</el-button>
               <el-button type="primary" @click="addMaterialsToModule">确定添加</el-button>
+            </template>
+          </el-dialog>
+
+          <!-- 修改其他物料单价弹窗 -->
+          <el-dialog v-model="otherPriceDialogVisible" title="修改其他物料单价" width="400px">
+            <el-form :model="otherPriceForm" label-width="100px">
+              <el-form-item label="物料名称">
+                <el-input v-model="otherPriceForm.material_name" disabled />
+              </el-form-item>
+              <el-form-item label="单价">
+                <el-input-number v-model="otherPriceForm.unit_price_override" :min="0" :precision="2" style="width: 100%;" />
+              </el-form-item>
+            </el-form>
+            <template #footer>
+              <el-button @click="otherPriceDialogVisible = false">取消</el-button>
+              <el-button type="primary" @click="saveOtherMaterialPrice">保存</el-button>
             </template>
           </el-dialog>
         </el-tab-pane>
@@ -456,21 +504,25 @@
         <!-- 运输包装 -->
         <el-tab-pane v-if="isEdit" label="运输包装" name="packing">
           <div class="packing-header">
-            <el-button type="primary" @click="showAddPackingEntry">+ 添加包装条目</el-button>
+            <el-button type="primary" @click="showAddPackingEntry">+ 添加运输包装条目</el-button>
           </div>
           <el-table :data="packingEntries" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="packing_type_name" label="包装类型" width="160" />
+            <el-table-column prop="packing_type_name" label="运输包装类型" />
             <el-table-column prop="unit_price" label="单价（元/个）" width="160">
-              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 120px;" />
+                <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="数量" width="180">
               <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._quantity" :min="0" :precision="2" size="small" controls-position="right" style="width: 130px;" />
+                <el-input-number v-if="row._editing && !row.is_other" v-model="row._quantity" :min="0" :precision="0" size="small" controls-position="right" style="width: 130px;" />
+                <span v-else-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
                 <span v-else>{{ row.quantity }} {{ row.unit }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="total" label="小计" width="140">
-              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            <el-table-column label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ (row._editing ? row._unit_price : row.unit_price) * (row._editing ? row._quantity : row.quantity) }}</span></template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" />
             <el-table-column label="操作" width="150" align="center">
@@ -487,12 +539,12 @@
             </el-table-column>
           </el-table>
           <div v-if="packingEntries.length > 0" class="labor-total">
-            包装费用合计：<strong>¥{{ packingTotal.toFixed(2) }}</strong>
+            运输包装费用合计：<strong>¥{{ packingTotal.toFixed(2) }}</strong>
           </div>
           <!-- 添加包装条目弹窗 -->
-          <el-dialog v-model="packingDialogVisible" title="添加包装条目" width="450px">
+          <el-dialog v-model="packingDialogVisible" title="添加运输包装条目" width="450px">
             <el-form :model="packingForm" label-width="110px">
-              <el-form-item label="包装类型" required>
+              <el-form-item label="运输包装类型" required>
                 <el-select v-model="packingForm.packing_type_id" placeholder="请选择" @change="onPackingTypeChange">
                   <el-option v-for="pt in packingTypes" :key="pt.id" :label="pt.name" :value="pt.id" />
                 </el-select>
@@ -525,7 +577,10 @@
           <el-table :data="travelPersonDays" border style="width: 100%; margin-top: 16px;">
             <el-table-column prop="travel_category_name" label="差旅分类" width="160" />
             <el-table-column prop="unit_price" label="单价（元/人天）" width="180">
-              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 140px;" />
+                <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="人天" width="180">
               <template #default="{ row }">
@@ -533,8 +588,8 @@
                 <span v-else>{{ row.person_days }} 人天</span>
               </template>
             </el-table-column>
-            <el-table-column prop="total" label="小计" width="140">
-              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            <el-table-column label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ (row._editing ? row._unit_price : row.unit_price) * (row._editing ? row._person_days : row.person_days) }}</span></template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" />
             <el-table-column label="操作" width="150" align="center">
@@ -589,10 +644,16 @@
             <el-table-column prop="travel_category_name" label="差旅分类" width="140" />
             <el-table-column prop="travel_mode_name" label="出行方式" width="120" />
             <el-table-column prop="unit_price" label="交通单价" width="140">
-              <template #default="{ row }"><span class="money">¥{{ row.unit_price.toFixed(2) }}</span></template>
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 110px;" />
+                <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
+              </template>
             </el-table-column>
             <el-table-column prop="visa_fee" label="签证费" width="120">
-              <template #default="{ row }"><span class="money">¥{{ row.visa_fee.toFixed(2) }}</span></template>
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._visa_fee" :min="0" :precision="2" size="small" controls-position="right" style="width: 100px;" />
+                <span v-else class="money">¥{{ row.visa_fee.toFixed(2) }}</span>
+              </template>
             </el-table-column>
             <el-table-column label="人次" width="120">
               <template #default="{ row }">
@@ -600,8 +661,8 @@
                 <span v-else>{{ row.person_count }} 人</span>
               </template>
             </el-table-column>
-            <el-table-column prop="total" label="小计" width="140">
-              <template #default="{ row }"><span class="money">¥{{ row.total.toFixed(2) }}</span></template>
+            <el-table-column label="小计" width="140">
+              <template #default="{ row }"><span class="money">¥{{ ((row._editing ? row._unit_price : row.unit_price) + (row._editing ? row._visa_fee : row.visa_fee)) * (row._editing ? row._person_count : row.person_count) }}</span></template>
             </el-table-column>
             <el-table-column prop="remark" label="备注" />
             <el-table-column label="操作" width="150" align="center">
@@ -681,6 +742,18 @@
               <div class="summary-card">
                 <div class="summary-label">费用合计</div>
                 <div class="summary-value">{{ summary.fees_total?.toFixed(2) || '0.00' }}</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">运输包装费用</div>
+                <div class="summary-value">{{ summary.packing_total?.toFixed(2) || '0.00' }}</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">差旅人天费用</div>
+                <div class="summary-value">{{ summary.travel_person_days_total?.toFixed(2) || '0.00' }}</div>
+              </div>
+              <div class="summary-card">
+                <div class="summary-label">差旅人次费用</div>
+                <div class="summary-value">{{ summary.travel_person_trips_total?.toFixed(2) || '0.00' }}</div>
               </div>
               <div class="summary-card">
                 <div class="summary-label">小计</div>
@@ -843,6 +916,14 @@ console.log('isEdit:', isEdit.value, 'quotationId:', quotationId.value)
 const activeTab = ref('basic')
 const quotation = ref({ coefficients: { large: 1.0, standard: 1.0, other: 1.0 } })
 const isArchived = computed(() => quotation.value.status === 'approved')
+const hasKeyFields = computed(() => {
+  return modules.value.some(mod =>
+    mod.materials && mod.materials.some(m => m.param1 || m.param2 || m.param3)
+  )
+})
+const materialHasKeyParams = computed(() => {
+  return availableMaterials.value.some(m => m.param1 || m.param2 || m.param3)
+})
 const pendingReviewCount = ref(0)
 const permissions = ref({
   can_edit_coefficients: true,
@@ -1014,7 +1095,20 @@ const materialFilter = reactive({
   brand: ''
 })
 
-// 计算属性：过滤后的可选物料
+// 修改其他物料单价弹窗
+const otherPriceDialogVisible = ref(false)
+const otherPriceForm = reactive({
+  id: null,
+  material_name: '其他',
+  unit_price_override: 0
+})
+
+// 动态获取"其他"物料ID（按名称查，避免硬编码）
+const otherMaterial = computed(() => {
+  return availableMaterials.value.find(m => m.name === '其他')
+})
+
+// 显示添加其他物料弹窗
 const filteredAvailableMaterials = computed(() => {
   let list = availableMaterials.value || []
   if (materialFilter.keyword) {
@@ -1088,6 +1182,7 @@ const selectedParticipantUsers = ref([])
 const participantSearch = ref('')
 const currentModuleId = ref(null)
 const participantLoading = ref(false)
+const selectedParticipantType = ref('')
 
 // 计算属性：返回已加载的用户（搜索后由后端返回）
 const filteredAvailableUsers = computed(() => {
@@ -1122,6 +1217,7 @@ async function manageParticipants(module) {
 async function showAddParticipantDialog() {
   participantSearch.value = ''
   selectedParticipantUsers.value = []
+  selectedParticipantType.value = ''
   // 加载报价单已有参与人
   if (quotationId.value) {
     try {
@@ -1149,12 +1245,12 @@ function handleParticipantSelection(selection) {
 
 // 确认添加人员
 async function addParticipantsConfirm() {
-  if (!selectedParticipantUsers.value.length) return
+  if (!selectedParticipantUsers.value.length || !selectedParticipantType.value) return
   try {
     for (const user of selectedParticipantUsers.value) {
       await api.post(`/quotations/${quotationId.value}/participants`, {
         user_id: user.id,
-        participant_type: 'project'
+        participant_type: selectedParticipantType.value
       })
     }
     ElMessage.success('添加成功')
@@ -1237,7 +1333,7 @@ const packingDialogVisible = ref(false)
 const packingForm = reactive({ packing_type_id: null, unit_price: 0, quantity: 0, remark: '' })
 
 const packingTotal = computed(() =>
-  packingEntries.value.reduce((sum, e) => sum + (e.total || 0), 0)
+  packingEntries.value.reduce((sum, e) => sum + (e.subtotal || 0), 0)
 )
 
 async function loadPackingTypes() {
@@ -1266,7 +1362,7 @@ function showAddPackingEntry() {
 }
 
 async function addPackingConfirm() {
-  if (!packingForm.packing_type_id) { ElMessage.warning('请选择包装类型'); return }
+  if (!packingForm.packing_type_id) { ElMessage.warning('请选择运输包装类型'); return }
   try {
     await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: packingForm.packing_type_id, quantity: packingForm.quantity, remark: packingForm.remark })
     ElMessage.success('添加成功')
@@ -1275,11 +1371,11 @@ async function addPackingConfirm() {
   } catch (e) { ElMessage.error('添加失败') }
 }
 
-function editPackingRow(row) { row._editing = true; row._quantity = row.quantity }
+function editPackingRow(row) { row._editing = true; row._quantity = row.quantity; row._unit_price = row.unit_price }
 function cancelPackingEdit(row) { row._editing = false }
 async function savePackingRow(row) {
   try {
-    await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: row.packing_type_id, quantity: row._quantity, remark: row.remark })
+    await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: row.packing_type_id, quantity: row._quantity, unit_price: row._unit_price, remark: row.remark })
     ElMessage.success('保存成功')
     loadPackingEntries()
   } catch (e) { ElMessage.error('保存失败') }
@@ -1293,7 +1389,7 @@ const travelDaysDialogVisible = ref(false)
 const travelDaysForm = reactive({ travel_category_id: null, unit_price: 0, person_days: 0, remark: '' })
 
 const travelDaysTotal = computed(() =>
-  travelPersonDays.value.reduce((sum, e) => sum + (e.total || 0), 0)
+  travelPersonDays.value.reduce((sum, e) => sum + (e.subtotal || 0), 0)
 )
 
 async function loadTravelCategories() {
@@ -1335,11 +1431,11 @@ async function addTravelDaysConfirm() {
   } catch (e) { ElMessage.error('添加失败') }
 }
 
-function editTravelDaysRow(row) { row._editing = true; row._person_days = row.person_days }
+function editTravelDaysRow(row) { row._editing = true; row._person_days = row.person_days; row._unit_price = row.unit_price }
 function cancelTravelDaysEdit(row) { row._editing = false }
 async function saveTravelDaysRow(row) {
   try {
-    await travelPersonDaysAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, person_days: row._person_days, remark: row.remark })
+    await travelPersonDaysAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, person_days: row._person_days, unit_price: row._unit_price, remark: row.remark })
     ElMessage.success('保存成功')
     loadTravelPersonDays()
   } catch (e) { ElMessage.error('保存失败') }
@@ -1353,7 +1449,7 @@ const travelTripDialogVisible = ref(false)
 const travelTripForm = reactive({ travel_category_id: null, travel_mode_id: null, unit_price: 0, visa_fee: 0, person_count: 0, remark: '' })
 
 const travelTripsTotal = computed(() =>
-  travelPersonTrips.value.reduce((sum, e) => sum + (e.total || 0), 0)
+  travelPersonTrips.value.reduce((sum, e) => sum + (e.subtotal || 0), 0)
 )
 
 async function loadTravelModes() {
@@ -1430,11 +1526,11 @@ async function addTravelTripConfirm() {
   } catch (e) { ElMessage.error('添加失败') }
 }
 
-function editTravelTripRow(row) { row._editing = true; row._person_count = row.person_count }
+function editTravelTripRow(row) { row._editing = true; row._person_count = row.person_count; row._unit_price = row.unit_price; row._visa_fee = row.visa_fee }
 function cancelTravelTripEdit(row) { row._editing = false }
 async function saveTravelTripRow(row) {
   try {
-    await travelPersonTripAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, travel_mode_id: row.travel_mode_id, person_count: row._person_count, remark: row.remark })
+    await travelPersonTripAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, travel_mode_id: row.travel_mode_id, person_count: row._person_count, unit_price: row._unit_price, visa_fee: row._visa_fee, remark: row.remark })
     ElMessage.success('保存成功')
     loadTravelPersonTrips()
   } catch (e) { ElMessage.error('保存失败') }
@@ -1823,6 +1919,32 @@ async function showAddMaterial() {
   materialDialogVisible.value = true
 }
 
+// 修改其他物料单价
+function editOtherMaterial(row) {
+  otherPriceForm.id = row.id
+  otherPriceForm.material_name = row.material_name
+  otherPriceForm.unit_price_override = row.unit_price_override || row.unit_price || 0
+  otherPriceDialogVisible.value = true
+}
+
+// 保存其他物料单价
+async function saveOtherMaterialPrice() {
+  if (!otherPriceForm.unit_price_override || otherPriceForm.unit_price_override <= 0) {
+    ElMessage.warning('请输入有效的单价')
+    return
+  }
+  try {
+    await api.put(`/module_materials/${otherPriceForm.id}`, {
+      unit_price_override: otherPriceForm.unit_price_override
+    })
+    ElMessage.success('修改成功')
+    otherPriceDialogVisible.value = false
+    await loadModuleMaterials()
+  } catch (error) {
+    ElMessage.error('修改失败')
+  }
+}
+
 // 选择物料
 function handleMaterialSelection(selection) {
   selectedMaterials.value = selection
@@ -1859,6 +1981,16 @@ async function addMaterialsToModule() {
   }
   
   try {
+    // 检查是否重复物料
+    const existingMaterialIds = moduleMaterials.value
+      .filter(mm => mm.module_id === selectedModuleId.value)
+      .map(mm => mm.material_id || mm.id)
+    const duplicate = selectedMaterials.value.find(m => existingMaterialIds.includes(m.id))
+    if (duplicate) {
+      ElMessage.warning(`"${duplicate.name}" 已在该模块中，请修改数量`)
+      return
+    }
+
     for (const material of selectedMaterials.value) {
       const qty = material._quantity || 1
       await api.post(`/modules/${selectedModuleId.value}/materials`, {
@@ -2157,7 +2289,26 @@ onMounted(async () => {
   background: var(--color-bg-card);
   border-radius: var(--radius-lg);
   border: 1px solid var(--color-border-light);
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  height: calc(100vh - 140px);
+}
+
+.edit-card :deep(.el-tabs) {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.edit-card :deep(.el-tabs__content) {
+  flex: 1;
+  overflow: auto;
+}
+
+.edit-card :deep(.el-tab-pane) {
+  height: 100%;
+  overflow: auto;
 }
 
 /* Tabs 样式 */

@@ -19,7 +19,10 @@ class Module(db.Model):
     materials = db.relationship('ModuleMaterial', backref='module', cascade='all, delete-orphan')
 
     def to_dict(self):
-        total = sum(m.quantity * float(m.material.unit_price) if m.material and m.material.unit_price else 0 for m in self.materials)
+        total = sum(
+            (float(m.unit_price_override) if m.is_other and m.unit_price_override else m.quantity * float(m.material.unit_price) if m.material and m.material.unit_price else 0)
+            for m in self.materials
+        )
         return {
             'id': self.id,
             'quotation_id': self.quotation_id,

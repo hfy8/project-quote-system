@@ -302,6 +302,7 @@ const menuItems = computed(() => {
     { path: '/users', label: '用户管理', icon: '👤', permission: 'user.view' },
     { path: '/roles', label: '角色管理', icon: '👥', permission: 'role.view' },
     { path: '/participant-type-permissions', label: '参与人权限', icon: '🔐', permission: 'role.view' },
+    { path: '/travel-fee-config', label: '运输差旅配置', icon: '🚚', permission: 'fee_type.view' },
     { path: '/logs', label: '操作日志', icon: '📝', permission: 'log.view' }
   ]
   return items.filter(item => !item.permission || hasPermission(item.permission))
@@ -340,11 +341,13 @@ onUnmounted(() => {
   display: flex;
   min-height: 100vh;
   background: var(--color-bg-page);
+  overflow: hidden;
+  width: 100vw;
 }
 
 /* 侧边栏 - 清新浅色风格 */
 .sidebar {
-  width: 240px;
+  width: 220px;
   background: #FFFFFF;
   display: flex;
   flex-direction: column;
@@ -544,6 +547,7 @@ onUnmounted(() => {
   flex: 1;
   margin-left: 240px;
   min-height: 100vh;
+  overflow: auto;
 }
 
 /* 消息铃铛 */

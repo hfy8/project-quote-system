@@ -115,6 +115,9 @@ const availableTabs = [
   { value: 'summary', label: '汇总' },
   { value: 'coefficients', label: '费用系数' },
   { value: 'export', label: '导出' },
+  { value: 'packing', label: '运输包装' },
+  { value: 'travel_person_days', label: '差旅人天' },
+  { value: 'travel_person_trips', label: '差旅人次' },
 ]
 
 async function loadAll() {

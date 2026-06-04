@@ -2,15 +2,15 @@
   <div class="travel-fee-config-container">
     <div class="page-header">
       <h2>运输与差旅费用配置</h2>
-      <p class="subtitle">配置包装类型、差旅分类、出行方式及各项单价</p>
+      <p class="subtitle">配置运输包装类型、差旅分类、出行方式及各项单价</p>
     </div>
 
     <div class="card">
       <el-tabs v-model="activeTab" class="config-tabs">
         <!-- 1. 包装类型 -->
-        <el-tab-pane label="包装类型" name="packing">
+        <el-tab-pane label="运输包装类型" name="packing">
           <div class="tab-toolbar">
-            <el-button type="primary" size="small" @click="showAddPacking">添加包装类型</el-button>
+            <el-button type="primary" size="small" @click="showAddPacking">添加运输包装类型</el-button>
           </div>
           <el-table :data="packingTypes" border v-loading="loading" height="calc(-280px + 100vh)">
             <el-table-column prop="name" label="名称" width="150" />
@@ -310,7 +310,7 @@ async function deleteItem(type, id) {
   }
 }
 
-// ====== 包装类型 ======
+// ====== 运输包装类型 ======
 const packingDialog = reactive({
   visible: false, title: '添加包装类型', isEdit: false,
   form: { id: null, name: '', name_en: '', unit_price: 0, description: '' },
@@ -318,13 +318,13 @@ const packingDialog = reactive({
 
 function showAddPacking() {
   packingDialog.isEdit = false
-  packingDialog.title = '添加包装类型'
+  packingDialog.title = '添加运输包装类型'
   packingDialog.form = { id: null, name: '', name_en: '', unit_price: 0, description: '' }
   packingDialog.visible = true
 }
 function editPacking(row) {
   packingDialog.isEdit = true
-  packingDialog.title = '编辑包装类型'
+  packingDialog.title = '编辑运输包装类型'
   packingDialog.form = { ...row }
   packingDialog.visible = true
 }
