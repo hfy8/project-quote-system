@@ -761,6 +761,7 @@ def get_quotation_summary(quotation_id):
         'material_total': round(total_material, 2),
         'material_total_with_rates': round(total_with_rates, 2),
         'fees_total': round(fees_total, 2),
+        'fee_total': round(total_fees, 2),
         'labor_total': round(total_labor, 2),
         'labor_hours': [l.to_dict() for l in labor_hours],
         'fee_rates': fee_rates,

@@ -10,7 +10,7 @@
     </div>
 
     <!-- 主内容卡片 -->
-    <div class="edit-card">
+    <div class="edit-card" v-loading="pageLoading" element-loading-text="页面加载中...">
       <el-tabs v-model="activeTab">
         <!-- 基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
@@ -730,62 +730,78 @@
                 </span>
               </div>
             </div>
-            <div class="summary-grid" v-if="summary">
-              <div class="summary-card">
-                <div class="summary-label">物料合计</div>
-                <div class="summary-value">{{ summary.material_total?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">物料合计(含系数)</div>
-                <div class="summary-value highlight">{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">费用合计</div>
-                <div class="summary-value">{{ summary.fees_total?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">运输包装费用</div>
-                <div class="summary-value">{{ summary.packing_total?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">差旅人天费用</div>
-                <div class="summary-value">{{ summary.travel_person_days_total?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">差旅人次费用</div>
-                <div class="summary-value">{{ summary.travel_person_trips_total?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">小计</div>
-                <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">对外利润率</div>
-                <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">含利润小计</div>
-                <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">实际利润</div>
-                <div class="summary-value highlight">
-                  <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
-                  <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
+            <div class="summary-layout" v-if="summary">
+              <div class="summary-left">
+                <div class="summary-card compact">
+                  <div class="summary-label">物料合计</div>
+                  <div class="summary-value">{{ summary.material_total?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">物料合计(含系数)</div>
+                  <div class="summary-value highlight">{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">小计</div>
+                  <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">对外利润率</div>
+                  <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">含利润小计</div>
+                  <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">实际利润</div>
+                  <div class="summary-value highlight">
+                    <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
+                    <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
+                  </div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">税率</div>
+                  <div class="summary-value">{{ (summary.tax_rate * 100)?.toFixed(0) || 0 }}%</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">税额</div>
+                  <div class="summary-value">{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
                 </div>
               </div>
-              <div class="summary-card">
-                <div class="summary-label">税率</div>
-                <div class="summary-value">{{ (summary.tax_rate * 100)?.toFixed(0) || 0 }}%</div>
-              </div>
-              <div class="summary-card">
-                <div class="summary-label">税额</div>
-                <div class="summary-value">{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
-              </div>
-              <div class="summary-card total">
-                <div class="summary-label">最终报价</div>
-                <div class="summary-value highlight large">
-                  {{ convertedSummary?.grand_total?.toFixed(2) || '0.00' }} {{ selectedCurrency }}
+              <div class="summary-right">
+                <div class="summary-card fees-card">
+                  <div class="fees-card-header">
+                    <span class="summary-label">费用合计</span>
+                    <span class="fees-total highlight">{{ summary.fees_total?.toFixed(2) }}</span>
+                  </div>
+                  <div class="fees-list">
+                    <div class="fees-row" v-if="summary.fee_total > 0">
+                      <span>费用Tab</span>
+                      <span>{{ summary.fee_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.labor_total > 0">
+                      <span>人力合计</span>
+                      <span>{{ summary.labor_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.packing_total > 0">
+                      <span>运输包装费</span>
+                      <span>{{ summary.packing_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.travel_person_days_total > 0">
+                      <span>差旅住宿费</span>
+                      <span>{{ summary.travel_person_days_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.travel_person_trips_total > 0">
+                      <span>差旅交通签证费</span>
+                      <span>{{ summary.travel_person_trips_total?.toFixed(2) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="summary-card total">
+                  <div class="summary-label">最终报价</div>
+                  <div class="summary-value large">
+                    {{ convertedSummary?.grand_total?.toFixed(2) || '0.00' }} {{ selectedCurrency }}
+                  </div>
                 </div>
               </div>
             </div>
@@ -953,6 +969,7 @@ const travelCategories = ref([])
 const travelModes = ref([])
 
 const selectedModuleId = ref(null)
+const pageLoading = ref(true)
 const summaryLoading = ref(false)
 
 // 货币切换 - 默认使用报价单币种
@@ -1618,6 +1635,7 @@ async function loadQuotation() {
   console.log('loadQuotation called, id:', quotationId.value)
   if (!quotationId.value) {
     console.log('Skipping loadQuotation - no valid id')
+    pageLoading.value = false
     return
   }
   try {
@@ -1670,6 +1688,8 @@ async function loadQuotation() {
   } catch (error) {
     console.error('Load quotation error:', error)
     ElMessage.error('加载报价单失败: ' + (error.message || '未知错误'))
+  } finally {
+    pageLoading.value = false
   }
 }
 
@@ -2230,6 +2250,7 @@ onMounted(async () => {
     await loadLaborHours()
   } else {
     await loadExchangeRates()  // 新建模式，使用默认币种
+    pageLoading.value = false
   }
 })
 </script>
@@ -2569,12 +2590,26 @@ onMounted(async () => {
   color: var(--color-primary);
 }
 
-/* 汇总卡片 */
-.summary-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
+/* 汇总布局 */
+.summary-layout {
+  display: flex;
   gap: var(--spacing-md);
   margin-bottom: var(--spacing-xl);
+}
+
+.summary-left {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+  align-items: stretch;
+}
+
+.summary-right {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
 }
 
 .summary-card {
@@ -2584,8 +2619,15 @@ onMounted(async () => {
   text-align: center;
 }
 
+.summary-card.compact {
+  padding: var(--spacing-md);
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .summary-card.total {
-  grid-column: 1 / -1;
   background: var(--color-primary);
   color: white;
 }
@@ -2600,6 +2642,10 @@ onMounted(async () => {
   margin-bottom: var(--spacing-xs);
 }
 
+.summary-card.total .summary-label {
+  color: rgba(255,255,255,0.75);
+}
+
 .summary-value {
   font-size: 24px;
   font-weight: 700;
@@ -2610,21 +2656,74 @@ onMounted(async () => {
   color: var(--color-primary);
 }
 
+.summary-card.total .summary-value {
+  color: white;
+}
+
 .summary-value.large {
   font-size: 32px;
   color: #FFFFFF;
 }
 
-.rate-details {
-  margin-top: var(--spacing-lg);
-  padding: var(--spacing-md);
+/* 费用卡片 */
+.fees-card {
   background: var(--color-bg-hover);
   border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  text-align: left;
+  flex: 1;
 }
 
-.rate-details h4 {
-  margin: 0 0 var(--spacing-sm) 0;
+.fees-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--spacing-sm);
+  padding-bottom: var(--spacing-sm);
+  border-bottom: 1px solid rgba(0,0,0,0.08);
+}
+
+.fees-total {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.fees-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.fees-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 3px 0;
+  color: var(--color-text-secondary);
+}
+
+.fees-row span:last-child {
+  font-weight: 500;
   color: var(--color-text-primary);
+}
+
+.profit-pct {
+  font-size: 12px;
+  margin-left: 4px;
+  color: var(--color-primary);
+}
+
+@media (max-width: 900px) {
+  .summary-layout {
+    flex-direction: column;
+  }
+  .summary-left {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .summary-right {
+    width: 100%;
+  }
 }
 
 /* 导出按钮组 */
