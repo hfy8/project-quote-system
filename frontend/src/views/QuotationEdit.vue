@@ -19,13 +19,15 @@
               <el-input v-model="quotation.name" placeholder="请输入报价单名称" :disabled="isEdit" />
             </el-form-item>
             <el-form-item label="项目类型">
-              <el-select v-model="quotation.type" placeholder="请选择类型" :disabled="isEdit">
+              <el-select v-model="quotation.type" placeholder="请选择类型" :disabled="isEdit || !!parentId">
                 <el-option label="单机 (single)" value="single" />
                 <el-option label="线体 (line)" value="line" />
               </el-select>
+              <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">子报价单（单机）</span>
             </el-form-item>
             <el-form-item label="方案编号" prop="scheme_no">
-              <el-input v-model="quotation.scheme_no" placeholder="请输入方案编号" :disabled="isEdit" />
+              <el-input v-model="quotation.scheme_no" placeholder="请输入方案编号" :disabled="isEdit || !!parentId" />
+              <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">自动生成，不可编辑</span>
             </el-form-item>
             <el-form-item label="状态">
               <el-select v-model="quotation.status" placeholder="请选择状态" :disabled="isEdit">
@@ -231,6 +233,7 @@
           <div v-for="mod in filteredModuleGroups" :key="mod.id" class="module-group">
             <div class="module-group-header">
               <span class="module-name">{{ mod.name }}</span>
+              <span v-if="mod.quotation_name" class="module-quotation-tag">{{ mod.quotation_name }}</span>
               <span class="module-material-count">{{ mod.materials.length }} 项物料</span>
               <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
               <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
@@ -915,7 +918,7 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
-import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
+import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI, quotationsAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 import changeRequestsAPI from '../api/changeRequests'
 
@@ -928,7 +931,8 @@ console.log('Route path:', route.path)
 // 判断是新建还是编辑
 const isEdit = computed(() => !!route.params.id && route.params.id !== 'new')
 const quotationId = ref(route.params.id || null)
-console.log('isEdit:', isEdit.value, 'quotationId:', quotationId.value)
+const parentId = ref(route.query.parent_id ? parseInt(route.query.parent_id) : null)
+console.log('isEdit:', isEdit.value, 'quotationId:', quotationId.value, 'parentId:', parentId.value)
 const activeTab = ref('basic')
 const quotation = ref({ coefficients: { large: 1.0, standard: 1.0, other: 1.0 } })
 const isArchived = computed(() => quotation.value.status === 'approved')
@@ -1630,6 +1634,32 @@ const feeForm = reactive({
 
 const api = request
 
+// 加载父报价单信息
+async function loadParentQuotation() {
+  try {
+    const parent = await quotationsAPI.getById(parentId.value)
+    // 预填字段（除名称和方案编号外的继承字段）
+    quotation.value.currency = parent.currency
+    quotation.value.tax_rate = parent.tax_rate
+    quotation.value.profit_rate = parent.profit_rate
+    quotation.value.business_owner_id = parent.business_owner_id
+    quotation.value.coefficients = parent.coefficients || { large: 1.0, standard: 1.0, other: 1.0 }
+    quotation.value.type = 'single'  // 强制锁定单机
+
+    // 生成子报价单方案编号：父方案编号-01, -02, ...
+    const parentSchemeNo = parent.scheme_no || `Q${parent.id}`
+    // 查询父报价单已有子报价单数量
+    const siblings = await quotationsAPI.getChildren(parentId.value)
+    const nextSeq = (siblings.length || 0) + 1
+    quotation.value.scheme_no = `${parentSchemeNo}-${String(nextSeq).padStart(2, '0')}`
+    quotation.value.parent_id = parentId.value
+    console.log('子报价单方案编号:', quotation.value.scheme_no)
+  } catch (error) {
+    console.error('加载父报价单失败:', error)
+    ElMessage.error('加载父报价单信息失败')
+  }
+}
+
 // 加载报价单
 async function loadQuotation() {
   console.log('loadQuotation called, id:', quotationId.value)
@@ -1640,13 +1670,13 @@ async function loadQuotation() {
   }
   try {
     const data = await api.get(`/quotations/${quotationId.value}`)
+    quotation.value = data
     // 已归档的报价单不允许编辑，重定向回列表
     if (data.status === 'approved') {
       ElMessage.warning('已归档的报价单无法编辑，如需修改请先撤销归档')
       router.push('/quotations')
       return
     }
-    quotation.value = data
     // 加载用户操作权限
     try {
       const permData = await api.get(`/quotations/${quotationId.value}/permissions`)
@@ -1806,7 +1836,13 @@ async function saveProfitRate() {
 // 加载模块
 async function loadModules() {
   try {
-    const data = await api.get(`/quotations/${quotationId.value}/modules`)
+    let data
+    if (quotation.value.type === 'line' && isEdit.value) {
+      // 线体报价单：聚合所有子报价单的模块
+      data = await api.get(`/quotations/${quotationId.value}/all-modules`)
+    } else {
+      data = await api.get(`/quotations/${quotationId.value}/modules`)
+    }
     modules.value = data
   } catch (error) {
     ElMessage.error('加载模块失败')
@@ -2250,6 +2286,10 @@ onMounted(async () => {
     await loadLaborHours()
   } else {
     await loadExchangeRates()  // 新建模式，使用默认币种
+    // 如果是创建子报价单，预填父报价单信息
+    if (parentId.value) {
+      await loadParentQuotation()
+    }
     pageLoading.value = false
   }
 })
@@ -2873,6 +2913,15 @@ onMounted(async () => {
 .module-name {
   font-weight: 600;
   color: var(--color-text-primary);
+}
+
+.module-quotation-tag {
+  padding: 2px 8px;
+  background: #E0E7FF;
+  color: #4F46E5;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .module-material-count {

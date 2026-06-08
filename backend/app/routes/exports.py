@@ -124,77 +124,142 @@ export_bp = Blueprint('exports', __name__)
 
 
 def get_quotation_with_details(quotation_id):
-    """获取报价单及其详细信息（含三大新费用）"""
+    """获取报价单及其详细信息（含三大新费用）
+    线体报价单：聚合所有子报价单的数据
+    """
     quotation = Quotation.query.get(quotation_id)
     if not quotation:
         return None
-    
-    # 获取模块及物料
-    modules = Module.query.filter_by(quotation_id=quotation_id).all()
-    for module in modules:
-        module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
-    
-    # 获取费用Tab
-    fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
-    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
-    
-    # 三大新费用
-    packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
-    person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
-    person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
-    
+
+    # 线体：聚合所有子报价单的数据
+    if quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children.all()]
+        all_ids = [quotation_id] + child_ids
+
+        # 所有模块（含子报价单的模块）
+        modules = Module.query.filter(Module.quotation_id.in_(all_ids)).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+
+        # 费用聚合
+        fees = OtherFee.query.filter(OtherFee.quotation_id.in_(all_ids)).all()
+        labor_hours = LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all()
+        packing_entries = PackingEntry.query.filter(PackingEntry.quotation_id.in_(all_ids)).all()
+        person_days_entries = TravelPersonDays.query.filter(TravelPersonDays.quotation_id.in_(all_ids)).all()
+        person_trip_entries = TravelPersonTrip.query.filter(TravelPersonTrip.quotation_id.in_(all_ids)).all()
+    else:
+        # 普通报价单
+        modules = Module.query.filter_by(quotation_id=quotation_id).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
+        labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
+        packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
+        person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
+        person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
+
     return quotation, modules, fees, labor_hours, packing_entries, person_days_entries, person_trip_entries
 
 
 def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, person_days_entries, person_trip_entries, coeff):
-    """构建PDF三个合并表格的数据"""
+    """构建PDF三个合并表格的数据
+    line报价单：设备硬件按子项目分组汇总
+    """
     rate_large = float(coeff.get('large', 1.0))
     rate_standard = float(coeff.get('standard', 1.0))
     rate_other = float(coeff.get('other', 1.0))
+    is_line = (quotation.type == 'line')
 
     # ===== 表格1：设备硬件合计 =====
     table1_rows = []
     table1_total = 0.0
-    for module in modules:
-        if not module.materials:
-            continue
-        non_other_materials = [mm for mm in module.materials
-                              if mm.material and not mm.is_other]
-        other_material = next((mm for mm in module.materials
-                               if mm.is_other), None)
 
-        # 品牌取值
-        if len(non_other_materials) == 0:
-            # 只有其他或无物料
-            brand = '其他'
-        elif len(non_other_materials) == 1:
-            # 只有一个非其他物料
-            brand = non_other_materials[0].material.brand or ''
-        else:
-            # 多个非其他物料
-            brand = 'RS'
+    if is_line:
+        # 线体模式：按子报价单分组，每个子报价单的物料×系数后合计
+        # 先按 quotation_id 分组
+        from collections import defaultdict
+        modules_by_quotation = defaultdict(list)
+        for mod in modules:
+            modules_by_quotation[mod.quotation_id].append(mod)
 
-        # 该模块的含系数小计
-        module_subtotal = 0.0
-        for mm in module.materials:
-            if not mm.material:
-                continue
-            rate = (rate_large if mm.material.category == 'large'
-                    else (rate_standard if mm.material.category == 'standard' else rate_other))
-            if mm.is_other:
-                unit_amount = float(mm.unit_price_override or float(mm.material.unit_price or 0)) * rate
+        # 子报价单名称映射
+        child_names = {}
+        for c in quotation.children.all():
+            child_names[c.id] = c.name
+
+        for qid, mod_list in modules_by_quotation.items():
+            # 该组的含系数合计
+            group_subtotal = 0.0
+            for mod in mod_list:
+                if not hasattr(mod, 'materials') or not mod.materials:
+                    continue
+                for mm in mod.materials:
+                    if not mm.material:
+                        continue
+                    rate = (rate_large if mm.material.category == 'large'
+                            else (rate_standard if mm.material.category == 'standard' else rate_other))
+                    if mm.is_other:
+                        unit_amount = float(mm.unit_price_override or float(mm.material.unit_price or 0)) * rate
+                    else:
+                        unit_amount = float(mm.material.unit_price or 0) * rate * mm.quantity
+                    group_subtotal += unit_amount
+
+            # 确定显示名称
+            if qid == quotation.id:
+                display_name = '(线体)'
             else:
-                unit_amount = float(mm.material.unit_price or 0) * rate * mm.quantity
-            module_subtotal += unit_amount
+                display_name = child_names.get(qid, f'子项目{qid}')
 
-        table1_rows.append({
-            'module_name': module.name or '',
-            'brand': brand,
-            'quantity': 1,
-            'unit': 'SET',
-            'subtotal': round(module_subtotal, 2),
-        })
-        table1_total += module_subtotal
+            table1_rows.append({
+                'module_name': display_name,
+                'brand': 'RS',
+                'quantity': 1,
+                'unit': 'SET',
+                'subtotal': round(group_subtotal, 2),
+            })
+            table1_total += group_subtotal
+    else:
+        # 普通模式：按模块分列
+        for module in modules:
+            if not module.materials:
+                continue
+            non_other_materials = [mm for mm in module.materials
+                                  if mm.material and not mm.is_other]
+            other_material = next((mm for mm in module.materials
+                                   if mm.is_other), None)
+
+            # 品牌取值
+            if len(non_other_materials) == 0:
+                # 只有其他或无物料
+                brand = '其他'
+            elif len(non_other_materials) == 1:
+                # 只有一个非其他物料
+                brand = non_other_materials[0].material.brand or ''
+            else:
+                # 多个非其他物料
+                brand = 'RS'
+
+            # 该模块的含系数小计
+            module_subtotal = 0.0
+            for mm in module.materials:
+                if not mm.material:
+                    continue
+                rate = (rate_large if mm.material.category == 'large'
+                        else (rate_standard if mm.material.category == 'standard' else rate_other))
+                if mm.is_other:
+                    unit_amount = float(mm.unit_price_override or float(mm.material.unit_price or 0)) * rate
+                else:
+                    unit_amount = float(mm.material.unit_price or 0) * rate * mm.quantity
+                module_subtotal += unit_amount
+
+            table1_rows.append({
+                'module_name': module.name or '',
+                'brand': brand,
+                'quantity': 1,
+                'unit': 'SET',
+                'subtotal': round(module_subtotal, 2),
+            })
+            table1_total += module_subtotal
 
     # ===== 表格2：设备人力合计 =====
     table2_rows = []
@@ -226,9 +291,9 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, pe
     total_person_trips = 0.0
     total_person_trips_count = 0.0
     for entry in person_trip_entries:
-        if entry.unit_price is not None or entry.visa_fee is not None:
-            up = float(entry.unit_price) if entry.unit_price is not None else 0
-            vf = float(entry.visa_fee) if entry.visa_fee is not None else 0
+        if entry.unit_price or entry.visa_fee:
+            up = float(entry.unit_price) if entry.unit_price else 0
+            vf = float(entry.visa_fee) if entry.visa_fee else 0
         else:
             fee_record = TravelPersonTripFee.query.filter_by(
                 travel_category_id=entry.travel_category_id,
@@ -300,7 +365,10 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, pe
         dynamic_fees_total += fee_amount
     table3_total += dynamic_fees_total
 
-    # 项目利润 = (物料×系数 + 人力合计 + 所有费用) × 对外利润率
+    # 基础 table3_total（不含利润和税额行）
+    base_table3_total = table3_total
+
+    # 项目利润 = (物料×系数 + 人力合计 + 基础费用) × 对外利润率
     profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
     profit_amount = (table1_total + table2_total + table3_total) * profit_rate
 
@@ -321,11 +389,13 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, pe
         'unit': 'SET',
         'unit_price': round(tax_amount, 2),
     })
+    table3_total += profit_amount
+    table3_total += tax_amount
 
     grand_total = subtotal_with_profit + tax_amount
 
     # fees_subtotal = 其他合计 + 项目利润 + 税额
-    fees_subtotal = table3_total + profit_amount + tax_amount
+    fees_subtotal = table3_total
 
     return {
         'table1': {'rows': table1_rows, 'total': round(table1_total, 2)},
@@ -1314,80 +1384,68 @@ def export_version_excel(quotation_id, version_no):
                     as_attachment=True, download_name=filename)
 
 
-@export_bp.route('/quotations/<int:quotation_id>/export/pdf', methods=['GET'])
-def export_pdf(quotation_id):
-    """导出 PDF 格式，支持中英文 ?lang=en """
-    lang = request.args.get('lang', 'zh')
-    data = get_quotation_with_details(quotation_id)
-    if not data:
-        return jsonify({'error': 'Quotation not found'}), 404
-    
-    (quotation, modules, fees, labor_hours,
-     packing_entries, person_days_entries, person_trip_entries) = data
-    
-    # 获取系数
-    coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
-             {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
-    
-    # 构建三个表格数据
-    tables = _build_pdf_tables(quotation, modules, fees, labor_hours,
-                                 packing_entries, person_days_entries, person_trip_entries, coeff)
-    
-    # 使用报价单的币种
-    currency = quotation.currency if quotation and quotation.currency else 'CNY'
-    currency_symbol = get_currency_symbol(currency)
-    
+# ==================== 共享 PDF 渲染函数 ====================
+
+def render_pdf_bytes(tables, currency, currency_symbol, material_with_rates, table2_total, table3_total,
+                     profit_rate, subtotal_with_profit, tax_rate, tax_amount, grand_total_converted,
+                     quotation, data, lang):
+    """共享 PDF 渲染逻辑，中英文通用"""
     class PDF(FPDF):
-        def header(self):
-            pass
-        def footer(self):
-            pass
-    
+        def header(self): pass
+        def footer(self): pass
+
     pdf = PDF()
     pdf.add_font('SimHei', '', FONT_REGULAR, uni=True)
     pdf.add_font('SimHei', 'B', FONT_BOLD, uni=True)
     pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    
+
     # 标题
     pdf.set_font('SimHei', 'B', 16)
     pdf.cell(0, 12, t('quote', lang), 0, 1, 'C')
     pdf.ln(5)
-    
+
     # 基本信息
     pdf.set_font('SimHei', 'B', 11)
     pdf.cell(0, 8, t('basic_info', lang), 0, 1)
     pdf.set_font('SimHei', '', 10)
-    
+
+    # 从 quotation 或 data 中获取基本信息
+    q_name = quotation.name if quotation else data.get('name', '')
+    q_scheme_no = quotation.scheme_no if quotation else data.get('scheme_no', '')
+    q_owner = quotation.business_owner.real_name if quotation and quotation.business_owner else ''
+    q_created = quotation.created_at.strftime('%Y-%m-%d %H:%M') if quotation and quotation.created_at else ''
+    q_version = data.get('version_no', '') if data else ''
+
     basic_info = [
-        (t('project_name', lang), quotation.name or ''),
-        (t('scheme_no', lang), quotation.scheme_no or ''),
-        (t('business_owner', lang), quotation.business_owner.real_name if quotation.business_owner else ''),
-        (t('created_at', lang), quotation.created_at.strftime('%Y-%m-%d %H:%M') if quotation.created_at else ''),
-        (t('currency', lang), currency)
+        (t('project_name', lang), q_name or ''),
+        (t('scheme_no', lang), q_scheme_no or ''),
+        (t('business_owner', lang), q_owner),
+        (t('created_at', lang), q_created),
+        (t('currency', lang), currency),
     ]
+    if q_version:
+        basic_info.append((t('version_no', lang), f'v{q_version}'))
+
     for key, value in basic_info:
         pdf.set_font('SimHei', 'B', 9)
         pdf.cell(40, 6, key, 1)
         pdf.set_font('SimHei', '', 9)
         pdf.cell(0, 6, str(value), 1, 1)
-    
-    
+
     pdf.ln(5)
-    
-    # ========== 合并表格：一张大表，每个section有独立列头 ==========
+
+    # ========== 合并表格 ==========
     if tables['table1']['rows'] or tables['table2']['rows'] or tables['table3']['rows']:
-        unified_col_widths = [60, 35, 30, 20, 45]  # 统一列宽（模块/名称|品牌|数量|单位|合计）
-        
+        unified_col_widths = [60, 35, 30, 20, 45]
+
         # 1. 设备硬件
         if tables['table1']['rows']:
-            # section分隔行（蓝色背景+白字）
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(68, 114, 196)
             pdf.set_text_color(255, 255, 255)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.cell(sum(unified_col_widths), 5, '【设备硬件】', 1, 1, 'L', True)
-            # 设备硬件列头（灰色背景）
             pdf.set_fill_color(217, 217, 217)
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
@@ -1398,63 +1456,55 @@ def export_pdf(quotation_id):
             pdf.cell(unified_col_widths[4], 6, t('total_col', lang), 1, 1, 'C', True)
             pdf.set_text_color(0, 0, 0)
             pdf.set_font('SimHei', '', 8)
-            # 数据行
             for row in tables['table1']['rows']:
                 pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
                 pdf.cell(unified_col_widths[0], 5, str(row['module_name'])[:20], 1)
                 pdf.cell(unified_col_widths[1], 5, str(row['brand'])[:10], 1)
-                pdf.cell(unified_col_widths[2], 5, str(row['quantity']), 1, 0, 'C')
+                qty_val = row['quantity']
+                pdf.cell(unified_col_widths[2], 5, str(int(qty_val)) if qty_val == int(qty_val) else str(qty_val), 1, 0, 'C')
                 pdf.cell(unified_col_widths[3], 5, str(row['unit']), 1, 0, 'C')
                 pdf.cell(unified_col_widths[4], 5, f'¥{row["subtotal"]:.2f}', 1, 1, 'R')
-            # 合计行
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(226, 239, 218)
             pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[4], 6, f'¥{tables["table1"]["total"]:.2f}', 1, 1, 'R', True)
-        
+
         # 2. 设备人力
         if tables['table2']['rows']:
-            # section分隔行（蓝色背景+白字）
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(68, 114, 196)
             pdf.set_text_color(255, 255, 255)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.cell(sum(unified_col_widths), 5, '【设备人力】', 1, 1, 'L', True)
-            # 设备人力列头（灰色背景）
             pdf.set_fill_color(217, 217, 217)
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
-            # 前两列合并：设计工时划分
             pdf.cell(unified_col_widths[0] + unified_col_widths[1], 6, t('division_col', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[2], 6, t('qty_col', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[3], 6, t('unit_col', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[4], 6, t('total_col', lang), 1, 1, 'C', True)
             pdf.set_text_color(0, 0, 0)
             pdf.set_font('SimHei', '', 8)
-            # 数据行
             for row in tables['table2']['rows']:
                 pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
                 pdf.cell(unified_col_widths[0] + unified_col_widths[1], 5, str(row['division'])[:20], 1)
                 pdf.cell(unified_col_widths[2], 5, f'{row["hours"]:.1f}', 1, 0, 'C')
                 pdf.cell(unified_col_widths[3], 5, 'H', 1, 0, 'C')
                 pdf.cell(unified_col_widths[4], 5, f'¥{row["subtotal"]:.2f}', 1, 1, 'R')
-            # 合计行
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(226, 239, 218)
             pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[4], 6, f'¥{tables["table2"]["total"]:.2f}', 1, 1, 'R', True)
-        
+
         # 3. 其他合计
         if tables['table3']['rows']:
-            # section分隔行（蓝色背景+白字）
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(68, 114, 196)
             pdf.set_text_color(255, 255, 255)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.cell(sum(unified_col_widths), 5, '【其他】', 1, 1, 'L', True)
-            # 其他列头（灰色背景）
             pdf.set_fill_color(217, 217, 217)
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
@@ -1464,38 +1514,413 @@ def export_pdf(quotation_id):
             pdf.cell(unified_col_widths[4], 6, t('unit_price_col', lang), 1, 1, 'C', True)
             pdf.set_text_color(0, 0, 0)
             pdf.set_font('SimHei', '', 8)
-            # 数据行
             for row in tables['table3']['rows']:
                 pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
                 pdf.cell(unified_col_widths[0] + unified_col_widths[1], 5, str(row['name'])[:20], 1)
-                pdf.cell(unified_col_widths[2], 5, str(row['quantity']), 1, 0, 'C')
-                pdf.cell(unified_col_widths[3], 5, str(row['unit']), 1, 0, 'C')
-                pdf.cell(unified_col_widths[4], 5, f'¥{row["unit_price"]:.2f}', 1, 1, 'R')
-            # 合计行
+                qty_val = row.get('quantity', 1)
+                pdf.cell(unified_col_widths[2], 5, str(int(qty_val)) if isinstance(qty_val, (int, float)) and qty_val == int(qty_val) else str(qty_val), 1, 0, 'C')
+                pdf.cell(unified_col_widths[3], 5, str(row.get('unit', 'SET')), 1, 0, 'C')
+                pdf.cell(unified_col_widths[4], 5, f'¥{row.get("unit_price", 0):.2f}', 1, 1, 'R')
             pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
             pdf.set_font('SimHei', 'B', 8)
             pdf.set_fill_color(226, 239, 218)
             pdf.cell(sum(unified_col_widths[:4]), 6, t('subtotal_label', lang), 1, 0, 'C', True)
             pdf.cell(unified_col_widths[4], 6, f'¥{tables["fees_subtotal"]:.2f}', 1, 1, 'R', True)
-        
+
         # 最终报价
         pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
         pdf.set_font('SimHei', 'B', 9)
         pdf.set_fill_color(255, 255, 204)
         pdf.cell(sum(unified_col_widths[:2]), 6, t('grand_total', lang), 1, 0, 'C', True)
         pdf.cell(sum(unified_col_widths[2:4]), 6, currency, 1, 0, 'C', True)
-        pdf.cell(unified_col_widths[4], 6, f'{currency_symbol}{tables["grand_total"]:.2f}', 1, 1, 'R', True)
-    
-    # 输出
-    pdf_bytes = pdf.output()
+        pdf.cell(unified_col_widths[4], 6, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
+
+    return pdf.output()
+
+
+# ==================== 导出 PDF（实时） ====================
+
+@export_bp.route('/quotations/<int:quotation_id>/export/pdf', methods=['GET'])
+def export_pdf(quotation_id):
+    """导出 PDF 格式，支持中英文 ?lang=en """
+    lang = request.args.get('lang', 'zh')
+    data = get_quotation_with_details(quotation_id)
+    if not data:
+        return jsonify({'error': 'Quotation not found'}), 404
+
+    (quotation, modules, fees, labor_hours,
+     packing_entries, person_days_entries, person_trip_entries) = data
+
+    coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
+             {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
+
+    tables = _build_pdf_tables(quotation, modules, fees, labor_hours,
+                                 packing_entries, person_days_entries, person_trip_entries, coeff)
+
+    currency = quotation.currency if quotation and quotation.currency else 'CNY'
+    currency_symbol = get_currency_symbol(currency)
+
+    profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
+    tax_rate = float(quotation.tax_rate) if quotation.tax_rate else 0.0
+    grand_total = tables.get('subtotal_with_profit', 0) + tables.get('tax_amount', 0)
+    grand_total_converted = convert_currency(grand_total, currency, {er.currency: float(er.rate) for er in ExchangeRate.query.all()})
+
+    # 渲染 PDF
+    pdf_bytes = render_pdf_bytes(
+        tables, currency, currency_symbol,
+        tables.get('table1', {}).get('total', 0), tables.get('table2', {}).get('total', 0), tables['fees_subtotal'],
+        profit_rate, tables.get('subtotal_with_profit', 0), tax_rate,
+        tables.get('tax_amount', 0), grand_total_converted,
+        quotation, None, lang
+    )
+
     buffer = BytesIO(pdf_bytes)
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
     return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
 
 
-# ==================== 版本导出 ====================
+# ==================== 版本快照数据读取 ====================
 
 def get_version_snapshot_data(quotation_id, version_no):
+    """获取版本快照数据并重建完整结构"""
+    version = VersionSnapshot.query.filter_by(
+        quotation_id=quotation_id,
+        version_no=version_no
+    ).first()
+    if not version:
+        return None
+
+    import json
+    data = json.loads(version.snapshot_data)
+
+    # 重建设费用信息（快照已保存完整数据，仅做字段标准化）
+    for fee in data.get('fees', []):
+        fee['name'] = fee.get('fee_type', '') or fee.get('name', '')
+        fee['amount'] = float(fee.get('amount', 0))
+        fee['location'] = fee.get('position', 'internal')
+
+    # 旧快照（unit_price=None）回退查询 Material（仅作为兜底）
+    for module in data.get('modules', []):
+        for mm in module.get('materials', []):
+            mat = Material.query.get(mm.get('material_id'))
+            if mat:
+                mm['name'] = mat.name or ''
+                mm['brand'] = mat.brand or ''
+                mm['spec'] = mat.spec or ''
+                mm['unit_price'] = float(mat.unit_price) if mat.unit_price else 0
+                mm['category'] = mat.category or 'standard'
+                # 旧快照没有 unit_price_override，如果 brand='其他' 查 ModuleMaterial 表
+                if mm.get('brand') == '其他' and mm.get('unit_price_override') is None:
+                    mm_obj = ModuleMaterial.query.filter_by(
+                        material_id=mm.get('material_id'),
+                        module_id=module.get('id')
+                    ).first()
+                    if mm_obj and mm_obj.unit_price_override:
+                        mm['unit_price_override'] = float(mm_obj.unit_price_override)
+
+    return data
+
+
+# ==================== 版本 PDF 生成（归档时调用）====================
+def generate_version_pdfs(quotation_id, version_no):
+    """归档时生成中英两个 PDF，保存路径到 version.pdf_file，与 export_pdf 逻辑完全一致"""
+    import json, os
+    version = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=version_no).first()
+    if not version:
+        return
+
+    data = get_version_snapshot_data(quotation_id, version_no)
+    if not data:
+        return
+
+    quotation = Quotation.query.get(quotation_id)
+    currency = quotation.currency if quotation and quotation.currency else 'CNY'
+    exchange_rates = {er.currency: float(er.rate) for er in ExchangeRate.query.all()}
+    currency_symbol = get_currency_symbol(currency)
+    coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
+             {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
+
+    # 重建 tables 数据（与 _build_pdf_tables 逻辑一致）
+    tables = _build_pdf_tables_from_snapshot(data, quotation, coeff)
+
+    # 直接用 tables 中已含利润/税额的正确汇总值
+    totals = {
+        'material_with_rates': tables['table1']['total'],
+        'table2_total': tables['table2']['total'],
+        'fees_subtotal': tables['fees_subtotal'],
+        'subtotal': tables['table1']['total'] + tables['table2']['total'] + tables['fees_subtotal'],
+        'profit_amount': tables.get('profit_amount', 0),
+        'subtotal_with_profit': tables.get('subtotal_with_profit', 0),
+        'tax_amount': tables.get('tax_amount', 0),
+        'tax_rate': float(quotation.tax_rate) if quotation and quotation.tax_rate else 0,
+        'grand_total': tables.get('subtotal_with_profit', 0) + tables.get('tax_amount', 0),
+    }
+    # 利润率
+    total_before_profit = tables['table1']['total'] + tables['table2']['total'] + tables['fees_subtotal'] - tables.get('profit_amount', 0) - tables.get('tax_amount', 0)
+    totals['profit_rate'] = totals['profit_amount'] / total_before_profit if total_before_profit else 0
+    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
+
+    # 快照的 data 需要 version_no
+    data['version_no'] = version_no
+
+    pdf_paths = {}
+    for lang in ['zh', 'en']:
+        pdf_bytes = render_pdf_bytes(
+            tables, currency, currency_symbol,
+            totals['material_with_rates'], totals['table2_total'], totals['fees_subtotal'],
+            totals['profit_rate'], totals['subtotal_with_profit'], totals['tax_rate'],
+            totals['tax_amount'], grand_total_converted,
+            quotation, data, lang
+        )
+
+        # 保存到 static/versions/
+        version_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'versions')
+        os.makedirs(version_dir, exist_ok=True)
+        file_path = os.path.join(version_dir, f'quotation_{quotation_id}_v{version_no}_{lang}.pdf')
+        with open(file_path, 'wb') as f:
+            f.write(pdf_bytes)
+        pdf_paths[lang] = file_path
+
+    version.pdf_file = json.dumps(pdf_paths)
+
+
+def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override=None, tax_rate_override=None):
+    """从快照数据构建 PDF tables（与 _build_pdf_tables 逻辑一致）"""
+    rate_large = float(coeff.get('large', 1.0))
+    rate_standard = float(coeff.get('standard', 1.0))
+    rate_other = float(coeff.get('other', 1.0))
+
+    modules_data = data.get('modules', [])
+    fees_data = data.get('fees', [])
+    labor_data = data.get('labor_hours', [])
+    packing_data = data.get('packing_entries', [])
+    person_days_data = data.get('person_days_entries', [])
+    person_trip_data = data.get('person_trip_entries', [])
+
+    # table1 设备硬件
+    if quotation and quotation.type == 'line':
+        from collections import defaultdict
+        modules_by_quotation = defaultdict(list)
+        for mod in modules_data:
+            modules_by_quotation[mod.get('quotation_id', quotation.id)].append(mod)
+        child_names = {c.id: c.name for c in quotation.children.all()} if quotation else {}
+        table1_rows = []
+        table1_total = 0.0
+        for qid, mod_list in modules_by_quotation.items():
+            group_total = 0.0
+            for mod in mod_list:
+                for mm in mod.get('materials', []):
+                    cat = mm.get('category', 'standard')
+                    rate = rate_large if cat == 'large' else (rate_standard if cat == 'standard' else rate_other)
+                    group_total += float(mm.get('unit_price', 0) or 0) * rate * float(mm.get('quantity', 0) or 0)
+            display_name = '(线体)' if qid == quotation.id else child_names.get(qid, f'子项目{qid}')
+            table1_rows.append({'module_name': display_name, 'brand': 'RS', 'quantity': 1, 'unit': 'SET', 'subtotal': group_total})
+            table1_total += group_total
+    else:
+        # 单机/独立报价单：每模块一行（模块内所有物料×系数合计）
+        table1_rows = []
+        table1_total = 0.0
+        for mod in modules_data:
+            mod_qid = mod.get('quotation_id', quotation.id)
+            if mod_qid != quotation.id:
+                continue
+            module_amount = 0.0
+            non_other_materials = []
+            for mm in mod.get('materials', []):
+                # 推断 is_other：快照有 is_other 字段用字段；否则用 brand='其他' 或 category='other' 推断
+                is_other = mm.get('is_other', False)
+                if not is_other:
+                    brand = mm.get('brand', '')
+                    cat = mm.get('category', '')
+                    is_other = (brand == '其他' or cat == 'other' or cat == '其他件')
+
+                if is_other:
+                    # 其他件：用 unit_price_override（快照已保存）
+                    up = float(mm.get('unit_price_override', 0) or 0)
+                    if up == 0:
+                        up = float(mm.get('unit_price', 0) or 0)
+                    qty = float(mm.get('quantity', 0) or 0)
+                    cat = 'other'
+                else:
+                    up = float(mm.get('unit_price', 0) or 0)
+                    qty = float(mm.get('quantity', 0) or 0)
+                    cat = mm.get('category', 'standard')
+                    if cat not in ('large', 'standard'):
+                        cat = 'other'
+                    if up > 0:
+                        non_other_materials.append(mm)
+
+                rate = (rate_large if cat == 'large'
+                        else (rate_standard if cat == 'standard' else rate_other))
+                module_amount += up * qty * rate
+
+            if module_amount > 0:
+                # 品牌逻辑：只有其他→其他；1个非其他→该物料品牌；多个非其他→RS
+                if len(non_other_materials) == 0:
+                    brand = '其他'
+                elif len(non_other_materials) == 1:
+                    brand = non_other_materials[0].get('brand', '') or '其他'
+                else:
+                    brand = 'RS'
+
+                table1_rows.append({
+                    'module_name': mod.get('name', ''),
+                    'brand': brand,
+                    'quantity': 1,
+                    'unit': 'SET',
+                    'subtotal': module_amount
+                })
+                table1_total += module_amount
+
+    # table2 设备人力
+    table2_rows = []
+    table2_total = 0.0
+    for lh in labor_data:
+        table2_rows.append({'division': lh.get('name', ''), 'hours': float(lh.get('hours', 0)), 'subtotal': float(lh.get('total', 0))})
+        table2_total += float(lh.get('total', 0))
+
+    # table3 其他合计（三个固定条目）
+    table3_rows = []
+    table3_total = 0.0
+    for f in fees_data:
+        table3_rows.append({'name': f.get('name', '') or f.get('fee_type', ''), 'quantity': 1, 'unit': 'SET', 'unit_price': float(f.get('amount', 0))})
+        table3_total += float(f.get('amount', 0))
+    for pe in packing_data:
+        table3_rows.append({'name': '运输包装费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pe.get('total', 0))})
+        table3_total += float(pe.get('total', 0))
+    for pd_item in person_days_data:
+        table3_rows.append({'name': '差旅住宿费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pd_item.get('total', 0))})
+        table3_total += float(pd_item.get('total', 0))
+    for pt_item in person_trip_data:
+        table3_rows.append({'name': '差旅交通签证费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pt_item.get('total', 0))})
+        table3_total += float(pt_item.get('total', 0))
+
+    # 项目利润和项目税额（基于 base table3_total）
+    base_table3_total = table3_total
+    profit_rate = profit_rate_override if profit_rate_override is not None else float(data.get('profit_rate', 0))
+    tax_rate = tax_rate_override if tax_rate_override is not None else float(data.get('tax_rate', 0))
+    profit_amount = (table1_total + table2_total + base_table3_total) * profit_rate
+    subtotal_with_profit = table1_total + table2_total + base_table3_total + profit_amount
+    tax_amount = subtotal_with_profit * tax_rate
+
+    # 项目利润行
+    table3_rows.append({
+        'name': '项目利润',
+        'quantity': 1,
+        'unit': 'SET',
+        'unit_price': round(profit_amount, 2),
+    })
+    # 项目税额行
+    table3_rows.append({
+        'name': '项目税额',
+        'quantity': 1,
+        'unit': 'SET',
+        'unit_price': round(tax_amount, 2),
+    })
+    table3_total += profit_amount
+    table3_total += tax_amount
+
+    # fees_subtotal = 基础费用 + 利润 + 税额（传给 render_pdf_bytes 最终报价用）
+    fees_subtotal = table3_total
+
+    return {
+        'table1': {'rows': table1_rows, 'total': table1_total},
+        'table2': {'rows': table2_rows, 'total': table2_total},
+        'table3': {'rows': table3_rows, 'total': table3_total},
+        'fees_subtotal': fees_subtotal,
+        'profit_amount': profit_amount,
+        'tax_amount': tax_amount,
+        'subtotal_with_profit': subtotal_with_profit,
+    }
+
+
+def calculate_totals(tables, coeff, currency):
+    """计算 PDF 汇总数据"""
+    rate_large = float(coeff.get('large', 1.0))
+    rate_standard = float(coeff.get('standard', 1.0))
+    rate_other = float(coeff.get('other', 1.0))
+    material_with_rates = tables['table1']['total']
+    table2_total = tables['table2']['total']
+    fees_subtotal = tables['fees_subtotal']
+    subtotal = material_with_rates + table2_total + fees_subtotal
+    # 这些从 quotation/data 中取，此处用默认值
+    profit_rate = 0.0
+    subtotal_with_profit = subtotal
+    tax_rate = 0.13
+    tax_amount = subtotal_with_profit * tax_rate
+    grand_total = subtotal_with_profit + tax_amount
+    return {
+        'material_with_rates': material_with_rates,
+        'table2_total': table2_total,
+        'fees_subtotal': fees_subtotal,
+        'subtotal': subtotal,
+        'profit_rate': profit_rate,
+        'subtotal_with_profit': subtotal_with_profit,
+        'tax_rate': tax_rate,
+        'tax_amount': tax_amount,
+        'grand_total': grand_total,
+    }
+
+
+@export_bp.route('/quotations/<int:quotation_id>/versions/<int:version_no>/export/pdf', methods=['GET'])
+def export_version_pdf(quotation_id, version_no):
+    lang = request.args.get('lang', 'zh')
+    version = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=version_no).first()
+    if not version:
+        return jsonify({'error': 'Version not found'}), 404
+
+    # 优先返回已保存的 PDF 文件
+    import json as json_lib
+    if version.pdf_file:
+        pdf_paths = version.pdf_file
+        if pdf_paths.startswith('{'):
+            try:
+                pdf_paths = json_lib.loads(pdf_paths)
+                file_path = pdf_paths.get(lang, pdf_paths.get('zh', ''))
+            except Exception:
+                file_path = ''
+        else:
+            file_path = pdf_paths
+
+        if file_path and os.path.exists(file_path):
+            name = '报价单'
+            if version.snapshot_data:
+                try:
+                    sd = json_lib.loads(version.snapshot_data) if isinstance(version.snapshot_data, str) else version.snapshot_data
+                    name = sd.get('name', '报价单')
+                except Exception:
+                    pass
+            filename = f'{name}_v{version_no}_{lang}.pdf'
+            return send_file(file_path, mimetype='application/pdf', as_attachment=True, download_name=filename)
+
+    # 没有预生成文件时动态生成
+    data = get_version_snapshot_data(quotation_id, version_no)
+    if not data:
+        return jsonify({'error': 'Version data not found'}), 404
+
+    quotation = Quotation.query.get(quotation_id)
+    currency = quotation.currency if quotation and quotation.currency else 'CNY'
+    exchange_rates = {er.currency: float(er.rate) for er in ExchangeRate.query.all()}
+    currency_symbol = get_currency_symbol(currency)
+    coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
+             {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
+
+    tables = _build_pdf_tables_from_snapshot(data, quotation, coeff)
+    totals = calculate_totals(tables, coeff, currency)
+    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
+    data['version_no'] = version_no
+
+    pdf_bytes = render_pdf_bytes(
+        tables, currency, currency_symbol,
+        totals['material_with_rates'], totals['table2_total'], totals['fees_subtotal'],
+        totals['profit_rate'], totals['subtotal_with_profit'], totals['tax_rate'],
+        totals['tax_amount'], grand_total_converted,
+        quotation, data, lang
+    )
+
+    buffer = BytesIO(pdf_bytes)
+    filename = f'{data.get("name", "报价单")}_v{version_no}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
+    return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)
     """获取版本快照数据并重建完整结构"""
     version = VersionSnapshot.query.filter_by(
         quotation_id=quotation_id,
@@ -1805,271 +2230,6 @@ def export_version_word(quotation_id, version_no):
         download_name=filename
     )
 
-
-@export_bp.route('/quotations/<int:quotation_id>/versions/<int:version_no>/export/pdf', methods=['GET'])
-def export_version_pdf(quotation_id, version_no):
-    lang = request.args.get('lang', 'zh')
-    """导出版本 PDF 格式（直接下载预生成文件）"""
-    version = VersionSnapshot.query.filter_by(
-        quotation_id=quotation_id,
-        version_no=version_no
-    ).first()
-    if not version:
-        return jsonify({'error': 'Version not found'}), 404
-    
-    # 如果有预生成的文件，直接返回
-    if version.pdf_file:
-        import os
-        import json
-        # pdf_file 可能是 JSON 字符串 {'zh': path, 'en': path}
-        pdf_paths = version.pdf_file
-        if pdf_paths.startswith('{'):
-            try:
-                pdf_paths = json.loads(pdf_paths)
-                file_path = pdf_paths.get(lang, pdf_paths.get('zh', ''))
-            except:
-                file_path = pdf_paths
-        else:
-            file_path = pdf_paths
-        
-        if file_path and os.path.exists(file_path):
-            # snapshot_data 是 JSON 字符串
-            name = '报价单'
-            if version.snapshot_data:
-                try:
-                    data = json.loads(version.snapshot_data) if isinstance(version.snapshot_data, str) else version.snapshot_data
-                    name = data.get('name', '报价单')
-                except:
-                    pass
-            filename = f'{name}_v{version_no}_{lang}.pdf'
-            return send_file(
-                file_path,
-                mimetype='application/pdf',
-                as_attachment=True,
-                download_name=filename
-            )
-    
-    # 如果没有预生成文件，动态生成
-    data = get_version_snapshot_data(quotation_id, version_no)
-    if not data:
-        return jsonify({'error': 'Version data not found'}), 404
-    
-    # 获取报价单信息（包含币种）
-    quotation = Quotation.query.get(quotation_id)
-    
-    totals = calculate_version_totals(data)
-    
-    # 使用报价单的币种
-    currency = quotation.currency if quotation and quotation.currency else 'CNY'
-    exchange_rates = {er.currency: float(er.rate) for er in ExchangeRate.query.all()}
-    currency_symbol = get_currency_symbol(currency)
-    grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
-    
-    # 收集分组数据（乘系数）
-    fee_rates = totals.get('fee_rates', {})
-    rate_large = fee_rates.get('large', 1.0)
-    rate_standard = fee_rates.get('standard', 1.0)
-    rate_other = fee_rates.get('other', 1.0)
-
-    module_groups = []
-    for module in data.get('modules', []):
-        items = []
-        module_total = 0
-        for mm in module.get('materials', []):
-            cat = mm.get('category', 'standard')
-            rate = rate_large if cat == 'large' else (rate_standard if cat == 'standard' else rate_other)
-            unit_price_with_rate = float(mm.get('unit_price', 0) or 0) * rate
-            item_total = unit_price_with_rate * float(mm.get('quantity', 0) or 0)
-            module_total += item_total
-            items.append({
-                'item': mm.get('name', ''),
-                'spec': mm.get('spec', ''),
-                'category': mm.get('brand', ''),
-                'unit_price': f'¥{unit_price_with_rate:.2f}',
-                'quantity': str(mm.get('quantity', 0)),
-                'subtotal': f'¥{item_total:.2f}',
-            })
-        module_groups.append({
-            'name': module.get('name', t('unnamed_module', lang)),
-            'items': items,
-            'total': module_total
-        })
-    
-    fees_total = sum(float(f.get('amount', 0)) for f in data.get('fees', []))
-    fee_items = []
-    for fee in data.get('fees', []):
-        location_text = '厂内' if fee.get('location') == 'internal' else ('厂外' if fee.get('location') == 'external' else '')
-        fee_items.append({
-            'item': get_fee_type_name(fee.get('fee_type', ''), lang) or fee.get('name', ''),
-            'spec': location_text,
-            'category': get_fee_type_name(fee.get('fee_type', ''), lang) or '',
-            'unit_price': '',
-            'quantity': '1',
-            'subtotal': f'¥{float(fee.get("amount", 0)):.2f}',
-        })
-    # 人力工时明细加入"其他费用"分组
-    labor_total_sum = 0.0
-    for lh in data.get('labor_hours', []):
-        labor_total_sum += float(lh.get('total', 0))
-        fee_items.append({
-            'item': lh.get('name', '人力工时'),
-            'spec': '',
-            'category': '人力工时',
-            'unit_price': f'¥{float(lh.get("unit_price", 0)):.2f}',
-            'quantity': str(lh.get('hours', 0)),
-            'subtotal': f'¥{float(lh.get("total", 0)):.2f}',
-        })
-    fees_total += labor_total_sum
-    if fee_items:
-        module_groups.append({
-            'name': '其他费用',
-            'items': fee_items,
-            'total': fees_total
-        })
-    
-    buffer = BytesIO()
-    
-    class PDF(FPDF):
-        def header(self):
-            pass
-        def footer(self):
-            pass
-    
-    pdf = PDF()
-    pdf.add_font('SimHei', '', FONT_REGULAR, uni=True)
-    pdf.add_font('SimHei', 'B', FONT_BOLD, uni=True)
-    pdf.add_page()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    # 标题
-    pdf.set_font('SimHei', 'B', 16)
-    pdf.cell(0, 12, data.get('name', '报价单'), 0, 1, 'C')
-    pdf.ln(5)
-    
-    # 基本信息
-    pdf.set_font('SimHei', 'B', 11)
-    pdf.cell(0, 8, t('basic_info', lang), 0, 1)
-    pdf.set_font('SimHei', '', 10)
-    
-    business_owner_name = ''
-    if data.get('business_owner_id'):
-        owner = User.query.get(data.get('business_owner_id'))
-        if owner:
-            business_owner_name = owner.real_name
-    basic_info = [
-        (t('project_name', lang), data.get('name', '')),
-        (t('scheme_no', lang), data.get('scheme_no', '')),
-        (t('business_owner', lang), business_owner_name),
-        (t('version_no', lang), f'v{version_no}'),
-        (t('currency', lang), currency)
-    ]
-    for key, value in basic_info:
-        pdf.set_font('SimHei', 'B', 9)
-        pdf.cell(40, 6, key, 1)
-        pdf.set_font('SimHei', '', 9)
-        pdf.cell(0, 6, str(value), 1, 1)
-    
-    pdf.ln(5)
-    
-    # 物料及费用清单 (PDF)
-    if module_groups:
-        pdf.set_font('SimHei', 'B', 11)
-        pdf.cell(0, 8, t('material_list', lang), 0, 1)
-        col_widths = [22, 38, 26, 20, 22, 12, 26, 24]  # 总约190
-        headers = [t('module_col', lang), t('item_col', lang), t('spec_col', lang),
-                   t('category_col', lang), t('unit_price_col', lang), t('qty_col', lang),
-                   t('subtotal_col', lang), t('total_col', lang)]
-        
-        def draw_table_header():
-            pdf.set_font('SimHei', 'B', 8)
-            pdf.set_fill_color(68, 114, 196)
-            pdf.set_text_color(255, 255, 255)
-            pdf.set_x(pdf.l_margin if pdf.l_margin else 10)
-            for i, h in enumerate(headers):
-                pdf.cell(col_widths[i], 6, h, 1, 0, 'C', True)
-            pdf.ln()
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font('SimHei', '', 8)
-        
-        def draw_group(y_start, group):
-            item_count = len(group['items'])
-            row_h = 5
-            y_bottom = y_start + item_count * row_h
-            
-            x_start = pdf.l_margin if pdf.l_margin else 10
-            x_module = x_start
-            x_data = x_start + col_widths[0]
-            x_total = x_start + col_widths[0] + sum(col_widths[1:7])
-            x_end = x_start + sum(col_widths)
-            
-            pdf.rect(x_module, y_start, col_widths[0], item_count * row_h)
-            pdf.rect(x_total, y_start, col_widths[7], item_count * row_h)
-            
-            pdf.line(x_data, y_start, x_data, y_bottom)
-            pdf.line(x_total, y_start, x_total, y_bottom)
-            
-            x_cur = x_data
-            for j in range(1, 7):
-                x_line = x_cur + col_widths[j]
-                pdf.line(x_line, y_start, x_line, y_bottom)
-                x_cur += col_widths[j]
-            
-            pdf.line(x_start, y_bottom, x_end, y_bottom)
-            
-            for i, item in enumerate(group['items']):
-                y_item = y_start + i * row_h
-                pdf.set_x(x_start)
-                pdf.cell(col_widths[0], row_h, group['name'] if i == 0 else '', 0, 0, 'C')
-                pdf.cell(col_widths[1], row_h, item['item'][:12], 0, 0, 'L')
-                pdf.cell(col_widths[2], row_h, item['spec'][:8], 0, 0, 'L')
-                pdf.cell(col_widths[3], row_h, item['category'][:6], 0, 0, 'L')
-                pdf.cell(col_widths[4], row_h, item['unit_price'][:7], 0, 0, 'R')
-                pdf.cell(col_widths[5], row_h, item['quantity'], 0, 0, 'C')
-                pdf.cell(col_widths[6], row_h, item['subtotal'][:8], 0, 0, 'R')
-                pdf.cell(col_widths[7], row_h, f'¥{group["total"]:.2f}' if i == 0 else '', 0, 1, 'R')
-            
-            return y_bottom
-        
-        draw_table_header()
-        y = pdf.get_y()
-        for group in module_groups:
-            if group['items']:
-                y = draw_group(y, group)
-        
-        pdf.ln(5)
-        
-        # 报价汇总
-        pdf.set_font('SimHei', 'B', 11)
-        pdf.cell(0, 8, t('quote_summary', lang), 0, 1)
-        
-        pdf.set_font('SimHei', 'B', 9)
-        pdf.set_fill_color(68, 114, 196)
-        pdf.set_text_color(255, 255, 255)
-        pdf.cell(100, 6, t('project_col', lang), 1, 0, 'C', True)
-        pdf.cell(0, 6, t('amount_col', lang), 1, 1, 'C', True)
-        
-        pdf.set_text_color(0, 0, 0)
-        fees_with_labor = totals['fees_total'] + totals['labor_total']
-        summary_items = [
-            (t('material_total', lang), f'¥{totals["material_total_with_rates"]:.2f}'),
-            (t('fee_total', lang), f'¥{fees_with_labor:.2f}'),
-            (t('profit_rate', lang), f'{totals["profit_rate"] * 100:.1f}%'),
-            (t('subtotal_with_profit', lang), f'¥{totals["subtotal_with_profit"]:.2f}'),
-            (t('tax_rate', lang), f'{totals["tax_rate"] * 100:.0f}%'),
-            (t('tax_amount', lang), f'¥{totals["tax_amount"]:.2f}'),
-        ]
-        pdf.set_font('SimHei', '', 9)
-        for label, value in summary_items:
-            pdf.cell(100, 5, label, 1)
-            pdf.cell(0, 5, value, 1, 1, 'R')
-        
-        # 最终报价（高亮）
-        pdf.set_font('SimHei', 'B', 10)
-        pdf.set_fill_color(226, 239, 218)
-        pdf.cell(100, 7, f"{t('grand_total', lang)}({currency})", 1, 0, 'C', True)
-        pdf.cell(0, 7, f'{currency_symbol}{grand_total_converted:.2f}', 1, 1, 'R', True)
-    
-    pdf_bytes = pdf.output()
     buffer = BytesIO(pdf_bytes)
     filename = f'{data.get("name", t("quote", lang))}_v{version_no}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
     return send_file(buffer, mimetype='application/pdf', as_attachment=True, download_name=filename)

@@ -40,6 +40,16 @@ def get_quotations():
     if qtype:
         query = query.filter(Quotation.type == qtype)
 
+    # 只看父报价单（排除子报价单）
+    parent_only = request.args.get('parent_only')
+    if parent_only == 'true':
+        query = query.filter(Quotation.parent_id.is_(None))
+
+    # 查看子报价单（按 parent_id）
+    parent_id = request.args.get('parent_id')
+    if parent_id:
+        query = query.filter(Quotation.parent_id == int(parent_id))
+
     # 关键词搜索（名称或方案号）
     keyword = request.args.get('keyword')
     if keyword:
@@ -50,8 +60,19 @@ def get_quotations():
             )
         )
 
+    # 获取所有子报价单数量（一次性查询避免 N+1）
+    child_counts = db.session.query(
+        Quotation.parent_id, db.func.count(Quotation.id)
+    ).filter(Quotation.parent_id.isnot(None)).group_by(Quotation.parent_id).all()
+    child_count_map = {pid: cnt for pid, cnt in child_counts}
+
     quotations = query.order_by(Quotation.created_at.desc()).all()
-    return jsonify([q.to_dict() for q in quotations]), 200
+    result = []
+    for q in quotations:
+        qd = q.to_dict()
+        qd['child_count'] = child_count_map.get(q.id, 0)
+        result.append(qd)
+    return jsonify(result), 200
 
 
 @quotation_bp.route('', methods=['POST'])
@@ -73,7 +94,8 @@ def create_quotation():
         business_owner_id=data.get('business_owner_id'),
         tax_rate=data.get('tax_rate', 0.13),
         profit_rate=data.get('profit_rate', 0.0),
-        currency=data.get('currency', 'CNY')
+        currency=data.get('currency', 'CNY'),
+        parent_id=data.get('parent_id')
     )
     db.session.add(quotation)
     db.session.commit()
@@ -196,6 +218,8 @@ def update_quotation(quotation_id):
         quotation.currency = data.get('currency')
     if 'coefficients' in data:
         quotation.coefficients = data.get('coefficients')
+    if 'parent_id' in data:
+        quotation.parent_id = data.get('parent_id')
 
     db.session.commit()
     return jsonify(quotation.to_dict()), 200
@@ -206,10 +230,14 @@ def update_quotation(quotation_id):
 @check_permission('quotation.delete')
 @check_any_permission('quotation.delete', 'quotation.*')
 def delete_quotation(quotation_id):
-    """删除报价单"""
+    """删除报价单（包括所有关联数据）"""
     quotation = Quotation.query.get(quotation_id)
     if not quotation:
         return jsonify({'error': '报价单不存在'}), 404
+
+    # 线体报价单：禁止删除有子报价单的
+    if quotation.type == 'line' and quotation.children.count() > 0:
+        return jsonify({'error': '该线体报价单下存在子报价单，请先删除子报价单'}), 400
 
     detail = f'删除报价单 "{quotation.name}" ({quotation.scheme_no or quotation.id})'
     db.session.delete(quotation)
@@ -231,6 +259,7 @@ def delete_quotation(quotation_id):
 @check_permission('quotation.edit')
 def update_status(quotation_id):
     """更新报价单状态"""
+    from app.routes.exports import generate_version_pdfs
     quotation = Quotation.query.get(quotation_id)
     if not quotation:
         return jsonify({'error': '报价单不存在'}), 404
@@ -247,17 +276,40 @@ def update_status(quotation_id):
     if new_status not in ['draft', 'approved']:
         return jsonify({'error': '无效的状态'}), 400
     
+    # 子报价单禁止独立归档/撤销归档
+    if quotation.parent_id:
+        if new_status == 'approved':
+            return jsonify({'error': '该报价单属于线体报价单，请通过线体报价单归档'}), 400
+        if new_status == 'draft':
+            return jsonify({'error': '该报价单属于线体报价单，请通过线体报价单撤销归档'}), 400
+
     if new_status != quotation.status:
         if new_status not in valid_transitions.get(quotation.status, []):
             return jsonify({'error': f'不能从 {quotation.status} 转换到 {new_status}'}), 400
         
         old_status = quotation.status
         quotation.status = new_status
+
+        # 线体归档时同步归档所有子报价单
+        if quotation.type == 'line' and new_status == 'approved':
+            for child in quotation.children.all():
+                if child.status == 'draft':
+                    child.status = 'approved'
+                    child_version = _create_version_snapshot(child, get_jwt_identity(), 'archive', '随线体报价单归档')
+                    generate_version_pdfs(child.id, child_version.version_no)
+
+        # 线体撤销归档时同步撤销所有子报价单
+        if quotation.type == 'line' and new_status == 'draft':
+            for child in quotation.children.all():
+                if child.status == 'approved':
+                    child.status = 'draft'
+
         db.session.commit()
         
         # 归档时创建版本快照
         if new_status == 'approved':
-            _create_version_snapshot(quotation, get_jwt_identity(), 'archive', '归档发布')
+            version = _create_version_snapshot(quotation, get_jwt_identity(), 'archive', '归档发布')
+            generate_version_pdfs(quotation.id, version.version_no)
             log_operation(
                 action=Action.EDIT,
                 module=LogModule.QUOTATION,
@@ -278,16 +330,29 @@ def update_status(quotation_id):
 
 
 def _create_version_snapshot(quotation, operator_id, operation_type, remark=None):
-    """创建版本快照"""
+    """创建版本快照（线体报价单包含所有子报价单数据）"""
+    from app.models.travel import TravelPersonTripFee
+    trip_fees = { (f.travel_category_id, f.travel_mode_id): (float(f.unit_price), float(f.visa_fee)) for f in TravelPersonTripFee.query.all() }
+    
     # 获取当前最大版本号
     max_version = db.session.query(db.func.max(VersionSnapshot.version_no)).filter_by(
         quotation_id=quotation.id
     ).scalar() or 0
-    
-    # 获取报价单完整数据
-    modules = Module.query.filter_by(quotation_id=quotation.id).all()
-    fees = OtherFee.query.filter_by(quotation_id=quotation.id).all()
-    
+
+    # 确定需要包含的报价单ID列表（线体聚合子报价单）
+    if quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children.all()]
+        all_ids = [quotation.id] + child_ids
+    else:
+        all_ids = [quotation.id]
+
+    # 聚合所有模块
+    all_modules = Module.query.filter(Module.quotation_id.in_(all_ids)).all()
+    # 聚合所有费用
+    all_fees = OtherFee.query.filter(OtherFee.quotation_id.in_(all_ids)).all()
+    # 聚合所有人力工时
+    all_labor = LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all()
+
     snapshot_data = {
         'name': quotation.name,
         'type': quotation.type,
@@ -298,28 +363,62 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
         'coefficients': quotation.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0},
         'modules': [{
             'id': m.id,
+            'quotation_id': m.quotation_id,
             'name': m.name,
             'code': m.code,
             'materials': [{
                 'material_id': mm.material_id,
+                'name': mm.material.name if mm.material else None,
+                'brand': mm.material.brand if mm.material else None,
+                'spec': mm.material.spec if mm.material else None,
+                'unit_price': float(mm.material.unit_price) if mm.material and mm.material.unit_price else 0,
                 'quantity': float(mm.quantity),
                 'selected_by_id': mm.selected_by_id,
-                'category': mm.material.category if mm.material else 'standard'
+                'category': mm.material.category if mm.material else 'standard',
+                'is_other': mm.is_other,
+                'unit_price_override': float(mm.unit_price_override) if mm.unit_price_override else None
             } for mm in ModuleMaterial.query.filter_by(module_id=m.id).all()]
-        } for m in modules],
+        } for m in all_modules],
         'fees': [{
-            'module_id': f.module_id,
+            'quotation_id': f.quotation_id,
             'fee_type': f.fee_type,
             'location': f.location,
             'amount': float(f.amount) if f.amount else 0,
             'description': f.description
-        } for f in fees],
+        } for f in all_fees],
         'labor_hours': [{
+            'quotation_id': l.quotation_id,
             'name': l.name,
             'hours': float(l.hours) if l.hours else 0,
             'unit_price': float(l.unit_price) if l.unit_price else 0,
             'total': float(l.total) if l.total else 0
-        } for l in LaborHour.query.filter_by(quotation_id=quotation.id).all()]
+        } for l in all_labor],
+        # 运输包装
+        'packing_entries': [{
+            'id': pe.id,
+            'packing_type_name': pe.packing_type.name if pe.packing_type else None,
+            'quantity': float(pe.quantity) if pe.quantity else 0,
+            'unit_price': float(pe.unit_price) if pe.unit_price else (float(pe.packing_type.unit_price) if pe.packing_type and pe.packing_type.unit_price else 0),
+            'total': float((float(pe.unit_price) if pe.unit_price else (float(pe.packing_type.unit_price) if pe.packing_type and pe.packing_type.unit_price else 0)) * float(pe.quantity or 0)),
+        } for pe in PackingEntry.query.filter(PackingEntry.quotation_id.in_(all_ids)).all()],
+        # 差旅人天（单价从 TravelCategory.day_rates 取）
+        'person_days_entries': [{
+            'id': pd.id,
+            'destination': pd.travel_category.name if pd.travel_category else None,
+            'days': float(pd.person_days) if pd.person_days else 0,
+            'quantity': float(pd.person_days) if pd.person_days else 0,
+            'unit_price': float(pd.unit_price) if pd.unit_price else (float(pd.travel_category.day_rates[0].unit_price) if pd.travel_category and pd.travel_category.day_rates else 0),
+            'total': float((float(pd.unit_price) if pd.unit_price else (float(pd.travel_category.day_rates[0].unit_price) if pd.travel_category and pd.travel_category.day_rates else 0)) * float(pd.person_days or 0)),
+        } for pd in TravelPersonDays.query.filter(TravelPersonDays.quotation_id.in_(all_ids)).all()],
+        # 差旅人次（单价从 travel_person_trip_fees 表查）
+        'person_trip_entries': [{
+            'id': pt.id,
+            'destination': f"{pt.travel_category.name if pt.travel_category else ''} {pt.travel_mode.name if pt.travel_mode else ''}".strip(),
+            'quantity': float(pt.person_count) if pt.person_count else 0,
+            'unit_price': float(pt.unit_price) if pt.unit_price else (trip_fees.get((pt.travel_category_id, pt.travel_mode_id), (0, 0))[0]),
+            'visa_fee': float(pt.visa_fee) if pt.visa_fee else (trip_fees.get((pt.travel_category_id, pt.travel_mode_id), (0, 0))[1]),
+            'total': float(((float(pt.unit_price) if pt.unit_price else (trip_fees.get((pt.travel_category_id, pt.travel_mode_id), (0, 0))[0])) + (float(pt.visa_fee) if pt.visa_fee else (trip_fees.get((pt.travel_category_id, pt.travel_mode_id), (0, 0))[1]))) * float(pt.person_count or 0)),
+        } for pt in TravelPersonTrip.query.filter(TravelPersonTrip.quotation_id.in_(all_ids)).all()],
     }
     
     new_version_no = max_version + 1
@@ -420,9 +519,22 @@ def archive_quotation(quotation_id):
     
     # 创建版本快照
     version = _create_version_snapshot(quotation, get_jwt_identity(), 'archive', remark)
-    
+
+    # 归档时生成中英 PDF（与导出 tab PDF 逻辑完全一致）
+    from app.routes.exports import generate_version_pdfs
+    generate_version_pdfs(quotation.id, version.version_no)
+
     # 更新状态
     quotation.status = 'approved'
+
+    # 线体归档时同步归档所有子报价单
+    if quotation.type == 'line':
+        for child in quotation.children.all():
+            if child.status == 'draft':
+                child.status = 'approved'
+                child_version = _create_version_snapshot(child, get_jwt_identity(), 'archive', '随线体报价单归档')
+                generate_version_pdfs(child.id, child_version.version_no)
+
     db.session.commit()
     
     log_operation(
@@ -468,8 +580,15 @@ def unarchive_quotation(quotation_id):
         return jsonify({'error': '报价单未归档'}), 400
     
     quotation.status = 'draft'
+
+    # 线体撤销归档时同步撤销所有子报价单
+    if quotation.type == 'line':
+        for child in quotation.children.all():
+            if child.status == 'approved':
+                child.status = 'draft'
+
     db.session.commit()
-    
+
     log_operation(
         action=Action.UPDATE,
         module=LogModule.QUOTATION,
@@ -619,83 +738,113 @@ def copy_quotation(quotation_id):
     return jsonify(new_quotation.to_dict()), 201
 
 
+def _calc_person_trip_total(entry):
+    """计算单条差旅人次费用"""
+    if entry.unit_price or entry.visa_fee:
+        up = float(entry.unit_price) if entry.unit_price else 0
+        vf = float(entry.visa_fee) if entry.visa_fee else 0
+    else:
+        fee_record = db.session.query(TravelPersonTripFee).filter_by(
+            travel_category_id=entry.travel_category_id,
+            travel_mode_id=entry.travel_mode_id,
+            is_active=True
+        ).first()
+        up = float(fee_record.unit_price or 0) if fee_record else 0
+        vf = float(fee_record.visa_fee or 0) if fee_record else 0
+    cat_code = entry.travel_category.code if entry.travel_category else ''
+    return float(entry.person_count or 0) * (up + (vf if cat_code != 'domestic' else 0))
+
+
 @quotation_bp.route('/<int:quotation_id>/summary', methods=['GET'])
 @jwt_required()
 def get_quotation_summary(quotation_id):
-    """获取报价单汇总数据（含费用系数和税率）"""
+    """获取报价单汇总数据（含费用系数和税率）
+    - 单机/独立报价单：汇总自己的数据
+    - 线体报价单：聚合线体 + 所有子报价单的数据
+    """
     quotation = Quotation.query.get(quotation_id)
     if not quotation:
         return jsonify({'error': '报价单不存在'}), 404
 
-    modules = Module.query.filter_by(quotation_id=quotation_id).all()
-    fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
-    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
+    is_line = quotation.type == 'line'
 
-    # 获取费用系数（优先使用报价单私有系数，否则用全局配置）
-    coeff = None
+    # ===== 确定要汇总的所有报价单 ID =====
+    if is_line:
+        # 线体：聚合线体自身 + 所有子报价单
+        all_ids = [quotation_id] + [c.id for c in quotation.children.all()]
+    else:
+        # 单机/独立报价单：只用自己
+        all_ids = [quotation_id]
+
+    # ===== 获取费用系数 =====
     if quotation.coefficients:
-        coeff = quotation.coefficients
-        fee_rates = coeff
+        fee_rates = quotation.coefficients
         default_rate = 1.0
     else:
         fee_rates = {r.category: float(r.rate) for r in FeeRate.query.all()}
         default_rate = fee_rates.get('默认', 1.0)
 
+    # ===== 物料费用汇总 =====
     module_summaries = []
-    total_material = 0
-    total_with_rates = 0
+    total_material = 0.0
+    total_with_rates = 0.0
     rate_details = {}
 
-    for module in modules:
-        module_materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
-        module_amount = 0
-        module_amount_with_rate = 0
+    for qid in all_ids:
+        for module in Module.query.filter_by(quotation_id=qid).all():
+            module_materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+            module_amount = 0.0
+            module_amount_with_rate = 0.0
 
-        for mm in module_materials:
-            if mm.is_other and mm.unit_price_override:
-                amount = float(mm.unit_price_override)
-                category = 'other'
-                rate = float(fee_rates.get('other', default_rate))
-            elif mm.material:
-                amount = float(mm.material.unit_price) * mm.quantity
-                category = mm.material.category or 'standard'
-                if quotation.coefficients:
-                    rate = float(quotation.coefficients.get(category, 1.0))
-                else:
+            for mm in module_materials:
+                if mm.is_other and mm.unit_price_override:
+                    amount = float(mm.unit_price_override)
+                    category = 'other'
+                    rate = float(fee_rates.get('other', default_rate))
+                elif mm.material:
+                    amount = float(mm.material.unit_price) * float(mm.quantity)
+                    category = mm.material.category or 'standard'
                     rate = float(fee_rates.get(category, default_rate))
+                else:
+                    continue
+
+                module_amount += amount
+                module_amount_with_rate += amount * rate
+
+                if category not in rate_details:
+                    rate_details[category] = {'base': 0, 'with_rate': 0, 'rate': rate}
+                rate_details[category]['base'] += amount
+                rate_details[category]['with_rate'] += amount * rate
+
+            total_material += module_amount
+            total_with_rates += module_amount_with_rate
+
+            # 线体按子报价单分组，单机直接追加
+            if is_line:
+                child_q = Quotation.query.get(qid)
+                source_name = child_q.name if qid != quotation_id else '线体本身'
             else:
-                continue
+                source_name = module.name
 
-            module_amount += amount
-            amount_with_rate = amount * rate
-            module_amount_with_rate += amount_with_rate
+            module_summaries.append({
+                'module_id': module.id,
+                'module_name': module.name,
+                'module_code': module.code,
+                'source': source_name if is_line else None,
+                'material_count': len(module_materials),
+                'material_amount': round(module_amount, 2),
+                'material_amount_with_rate': round(module_amount_with_rate, 2)
+            })
 
-            if category not in rate_details:
-                rate_details[category] = {'base': 0, 'with_rate': 0, 'rate': rate}
-            rate_details[category]['base'] += amount
-            rate_details[category]['with_rate'] += amount_with_rate
+    # ===== 费用项合计（OtherFee，仅用报价单自己的，不含子报价单） =====
+    total_fees = sum(float(f.amount or 0) for f in OtherFee.query.filter_by(quotation_id=quotation_id).all())
 
-        total_material += module_amount
-        total_with_rates += module_amount_with_rate
+    # ===== 人力费用（从所有相关报价单汇总） =====
+    total_labor = sum(float(l.total or 0) for l in LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all())
 
-        module_summaries.append({
-            'module_id': module.id,
-            'module_name': module.name,
-            'module_code': module.code,
-            'material_count': len(module_materials),
-            'material_amount': round(module_amount, 2),
-            'material_amount_with_rate': round(module_amount_with_rate, 2)
-        })
-
-    # 费用项合计
-    total_fees = sum(float(f.amount or 0) for f in fees)
-    total_labor = sum(float(l.total or 0) for l in labor_hours)
-
-    # ===== 三大新费用 =====
-
-    # Tab A: 包装费用（优先用条目自定义单价，否则用系统配置）
-    packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
-    total_packing = 0
+    # ===== 包装费用 =====
+    packing_entries = PackingEntry.query.filter(PackingEntry.quotation_id.in_(all_ids)).all()
+    total_packing = 0.0
     packing_details = []
     for entry in packing_entries:
         up = float(entry.unit_price) if entry.unit_price else (float(entry.packing_type.unit_price) if entry.packing_type and entry.packing_type.unit_price else 0)
@@ -709,9 +858,9 @@ def get_quotation_summary(quotation_id):
             'total': round(sub, 2)
         })
 
-    # Tab B: 差旅人天费用（优先用条目自定义单价，否则用系统配置）
-    person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
-    total_person_days = 0
+    # ===== 差旅人天费用 =====
+    person_days_entries = TravelPersonDays.query.filter(TravelPersonDays.quotation_id.in_(all_ids)).all()
+    total_person_days = 0.0
     person_days_details = []
     for entry in person_days_entries:
         up = float(entry.unit_price) if entry.unit_price else (float(entry.travel_category.day_rates[0].unit_price) if entry.travel_category and entry.travel_category.day_rates else 0)
@@ -725,14 +874,17 @@ def get_quotation_summary(quotation_id):
             'total': round(sub, 2)
         })
 
-    # Tab C: 差旅人次费用（优先用条目自定义单价/签证费，否则用系统配置）
-    person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
-    total_person_trips = 0
+    # ===== 差旅人次费用 =====
+    person_trip_entries = TravelPersonTrip.query.filter(TravelPersonTrip.quotation_id.in_(all_ids)).all()
+    total_person_trips = 0.0
+    person_trip_details = []
     for entry in person_trip_entries:
-        # 优先用条目自定义值，否则查系统配置
-        if entry.unit_price is not None or entry.visa_fee is not None:
-            up = float(entry.unit_price) if entry.unit_price is not None else 0
-            vf = float(entry.visa_fee) if entry.visa_fee is not None else 0
+        subtotal = _calc_person_trip_total(entry)
+        total_person_trips += subtotal
+        # 获取单价信息用于显示
+        if entry.unit_price or entry.visa_fee:
+            up = float(entry.unit_price) if entry.unit_price else 0
+            vf = float(entry.visa_fee) if entry.visa_fee else 0
         else:
             fee_record = db.session.query(TravelPersonTripFee).filter_by(
                 travel_category_id=entry.travel_category_id,
@@ -741,34 +893,40 @@ def get_quotation_summary(quotation_id):
             ).first()
             up = float(fee_record.unit_price or 0) if fee_record else 0
             vf = float(fee_record.visa_fee or 0) if fee_record else 0
-        person_count = float(entry.person_count or 0)
-        cat_code = entry.travel_category.code if entry.travel_category else ''
-        subtotal = person_count * (up + (vf if cat_code != 'domestic' else 0))
-        total_person_trips += subtotal
+        person_trip_details.append({
+            'travel_category_name': f"{entry.travel_category.name if entry.travel_category else ''} {entry.travel_mode.name if entry.travel_mode else ''}",
+            'person_count': float(entry.person_count or 0),
+            'unit_price': up,
+            'visa_fee': vf,
+            'total': round(subtotal, 2)
+        })
 
+    # ===== 费用汇总计算 =====
     total_new_fees = total_packing + total_person_days + total_person_trips
     fees_total = total_fees + total_labor + total_new_fees
     subtotal = total_with_rates + fees_total
     profit_rate = float(quotation.profit_rate) if quotation.profit_rate else 0.0
     subtotal_with_profit = subtotal * (1 + profit_rate)
-    tax_amount = subtotal_with_profit * (quotation.tax_rate or 0)
+    tax_rate_val = float(quotation.tax_rate) if quotation.tax_rate else 0.0
+    tax_amount = subtotal_with_profit * tax_rate_val
     grand_total = subtotal_with_profit + tax_amount
 
     return jsonify({
         'quotation': quotation.to_dict(),
+        'is_line': is_line,
         'modules': module_summaries,
-        'fees': [f.to_dict() for f in fees],
+        'fees': [f.to_dict() for f in OtherFee.query.filter_by(quotation_id=quotation_id).all()],
         'material_total': round(total_material, 2),
         'material_total_with_rates': round(total_with_rates, 2),
         'fees_total': round(fees_total, 2),
         'fee_total': round(total_fees, 2),
         'labor_total': round(total_labor, 2),
-        'labor_hours': [l.to_dict() for l in labor_hours],
         'fee_rates': fee_rates,
         'rate_details': [{'category': k, **v} for k, v in rate_details.items()],
         # 三大新费用
         'packing_details': packing_details,
         'person_days_details': person_days_details,
+        'person_trip_details': person_trip_details,
         'total_packing': round(total_packing, 2),
         'total_person_days': round(total_person_days, 2),
         'total_person_trips': round(total_person_trips, 2),
@@ -779,10 +937,11 @@ def get_quotation_summary(quotation_id):
         'subtotal': round(subtotal, 2),
         'profit_rate': profit_rate,
         'subtotal_with_profit': round(subtotal_with_profit, 2),
-        'tax_rate': quotation.tax_rate or 0,
+        'tax_rate': tax_rate_val,
         'tax_amount': round(tax_amount, 2),
-        'grand_total': round(grand_total, 2)
-    }), 200
+        'grand_total': round(grand_total, 2),
+        'child_count': len(all_ids) - 1 if is_line else 0,
+    })
 
 
 @quotation_bp.route('/my-assignments', methods=['GET'])

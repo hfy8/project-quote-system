@@ -2,6 +2,7 @@ import request from './request'
 
 export const quotationsAPI = {
   getList: (params) => request.get('/quotations', { params }),
+  getChildren: (parentId) => request.get('/quotations', { params: { parent_id: parentId } }),
   getById: (id) => request.get(`/quotations/${id}`),
   create: (data) => request.post('/quotations', data),
   update: (id, data) => request.put(`/quotations/${id}`, data),

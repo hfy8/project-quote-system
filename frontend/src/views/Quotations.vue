@@ -46,13 +46,17 @@
         v-loading="loading"
         stripe
         class="quotations-table"
+        row-key="id"
+        :tree-props="{ children: '_children' }"
+        default-expand-all
         height="calc(-200px + 100vh)"
       >
-        <el-table-column prop="name" label="项目名称" min-width="180" show-overflow-tooltip>
+        <el-table-column prop="name" label="项目名称" width="200" show-overflow-tooltip />
+        <el-table-column label="" width="90" align="center">
           <template #default="{ row }">
-            <div class="project-name" :class="{ disabled: row.status === 'approved' }" @click="handleEdit(row)">
-              {{ row.name }}
-            </div>
+            <span v-if="row._children && row._children.length" class="child-count-tag">
+              {{ row._children.length }}个子项
+            </span>
           </template>
         </el-table-column>
         <el-table-column prop="scheme_no" label="方案号" width="130" />
@@ -78,11 +82,12 @@
             <span class="date-text">{{ formatDate(row.created_at) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="280" fixed="right">
+        <el-table-column label="操作" width="320" fixed="right">
           <template #default="{ row }">
             <div class="action-buttons">
-              <button v-if="row.status === 'draft'" class="action-btn archive" @click="handleArchive(row)">归档</button>
-              <button v-if="row.status === 'approved'" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
+              <button v-if="row.type === 'line'" class="action-btn add-child" @click="handleAddChild(row)">+子项</button>
+              <button v-if="row.status === 'draft' && !row.parent_id" class="action-btn archive" @click="handleArchive(row)">归档</button>
+              <button v-if="row.status === 'approved' && !row.parent_id" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
               <button v-if="row.status === 'approved'" class="action-btn version" @click="handleViewVersions(row)">版本</button>
               <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row)">编辑</button>
               <button class="action-btn delete" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</button>
@@ -210,6 +215,15 @@ const handleEdit = (row) => {
   router.push(`/quotations/${row.id}`)
 }
 
+// 添加子报价单
+const handleAddChild = (row) => {
+  if (row.child_count >= 99) {
+    ElMessage.warning('子报价单数量已达上限（99个）')
+    return
+  }
+  router.push(`/quotations/new?parent_id=${row.id}`)
+}
+
 // 是否有删除报价单权限
 const canDelete = (row) => {
   // 已归档的报价单不能删除
@@ -249,6 +263,49 @@ const openVersionCompare = () => {
   versionCompareVisible.value = true
 }
 
+// 子报价单树形
+const childrenMap = ref({})  // { parentId: [child] }
+const expandedRows = ref(new Set())
+
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const params = {}
+    if (filters.status) params.status = filters.status
+    if (filters.type) params.type = filters.type
+    if (filters.keyword) params.keyword = filters.keyword
+
+    const res = await quotationsAPI.getList(params)
+    const items = res.items || res || []
+    console.log('API返回所有报价单:', items.length, items.map(i => ({ id: i.id, name: i.name, parent_id: i.parent_id, child_count: i.child_count })))
+
+    // 分离父报价单和子报价单
+    tableData.value = []
+    childrenMap.value = {}
+    for (const item of items) {
+      if (item.parent_id) {
+        if (!childrenMap.value[item.parent_id]) {
+          childrenMap.value[item.parent_id] = []
+        }
+        childrenMap.value[item.parent_id].push({ ...item, _hidden: true })
+      } else {
+        if (childrenMap.value[item.id]) {
+          item._children = childrenMap.value[item.id]
+        }
+        tableData.value.push(item)
+      }
+    }
+    console.log('父报价单行:', tableData.value.map(i => ({ id: i.id, name: i.name, _children: i._children?.length })))
+    console.log('childrenMap:', Object.keys(childrenMap.value))
+    pagination.total = tableData.value.length
+  } catch (error) {
+    console.error('Failed to fetch quotations:', error)
+    ElMessage.error('获取报价单列表失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 const formatType = (type) => {
   const types = { single: '单项', line: '线体' }
   return types[type] || type
@@ -266,28 +323,6 @@ const formatDate = (dateStr) => {
   if (!dateStr) return '-'
   const date = new Date(dateStr)
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
-}
-
-const fetchData = async () => {
-  loading.value = true
-  try {
-    const params = {
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    }
-    if (filters.status) params.status = filters.status
-    if (filters.type) params.type = filters.type
-    if (filters.keyword) params.keyword = filters.keyword
-
-    const res = await quotationsAPI.getList(params)
-    tableData.value = res.items || res || []
-    pagination.total = res.total || tableData.value.length
-  } catch (error) {
-    console.error('Failed to fetch quotations:', error)
-    ElMessage.error('获取报价单列表失败')
-  } finally {
-    loading.value = false
-  }
 }
 
 
@@ -517,37 +552,25 @@ onMounted(() => {
   --el-table-border-color: var(--color-border-light);
 }
 
-/* 项目名称列 */
-.project-name {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  cursor: pointer;
-}
-
-.project-name.disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
-.project-name.disabled:hover .name-text {
-  color: inherit;
-}
-
-.project-name:hover .name-text {
-  color: var(--color-primary);
-}
-
-.name-text {
-  font-weight: 500;
-  color: var(--color-text-primary);
-  transition: color var(--transition-fast);
-}
-
-.scheme-no {
-  font-size: 13px;
+/* 子项数量标签 */
+.child-count-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--color-bg-page);
   color: var(--color-text-secondary);
-  font-weight: 500;
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+/* 子报价单行样式（树形子节点） */
+::v-deep(.el-table__row--level-1) {
+  background-color: var(--color-bg-page) !important;
+}
+
+::v-deep(.el-table__row--level-1:hover > td) {
+  background-color: #F3F4F6 !important;
 }
 
 .no-scheme {
@@ -672,6 +695,23 @@ onMounted(() => {
 .action-btn.delete:hover {
   background: var(--color-danger);
   color: white;
+}
+
+/* 添加子项按钮样式 */
+.action-btn.add-child {
+  background: #D1FAE5;
+  color: #059669;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.action-btn.add-child:hover {
+  background: #A7F3D0;
 }
 
 /* 分页 */

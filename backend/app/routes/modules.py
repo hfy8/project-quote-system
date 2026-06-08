@@ -188,3 +188,35 @@ def get_module_summary(module_id):
         'materials': [m.to_dict() for m in materials]
     }
     return jsonify(summary), 200
+
+
+@module_bp.route('/quotations/<int:quotation_id>/all-modules', methods=['GET'])
+@jwt_required()
+def get_all_modules(quotation_id):
+    """获取线体报价单的所有子报价单模块（聚合）"""
+    from app.models import Quotation, Module
+    # 检查报价单是否为线体
+    quotation = Quotation.query.get(quotation_id)
+    if not quotation:
+        return jsonify({'error': '报价单不存在'}), 404
+
+    # 获取所有子报价单的ID
+    child_ids = [c.id for c in quotation.children.all()]
+
+    # 获取线体自身的模块 + 所有子报价单的模块
+    all_module_ids = [quotation_id] + child_ids
+    modules = Module.query.filter(Module.quotation_id.in_(all_module_ids)).all()
+
+    # 按子报价单分组，每个模块带上 quotation_id 和 quotation_name
+    result = []
+    for mod in modules:
+        mod_dict = mod.to_dict()
+        # 找到所属的子报价单信息
+        if mod.quotation_id == quotation_id:
+            mod_dict['quotation_name'] = quotation.name + '（线体）'
+        else:
+            child_q = Quotation.query.get(mod.quotation_id)
+            mod_dict['quotation_name'] = child_q.name if child_q else f'子报价单{mod.quotation_id}'
+        result.append(mod_dict)
+
+    return jsonify(result), 200

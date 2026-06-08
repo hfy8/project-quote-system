@@ -17,10 +17,12 @@ class Quotation(db.Model):
     profit_rate = db.Column(db.Float, default=0.0, comment='对外利润率，如 0.15 表示 15%')  # 对外利润率
     currency = db.Column(db.String(10), default='CNY', comment='币种')  # CNY/USD/EUR
     current_version = db.Column(db.Integer, default=1, comment='当前版本号')
+    parent_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=True, index=True, comment='父报价单ID（子报价单引用线体）')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
+    children = db.relationship('Quotation', backref=db.backref('parent', remote_side=[id]), lazy='dynamic')
     business_owner = db.relationship('User', foreign_keys=[business_owner_id], backref='owned_quotations')
     creator = db.relationship('User', foreign_keys=[creator_id], backref='created_quotations')
     participants = db.relationship('QuotationParticipant', backref='quotation', cascade='all, delete-orphan')
@@ -44,6 +46,8 @@ class Quotation(db.Model):
             'profit_rate': self.profit_rate if self.profit_rate is not None else 0.0,
             'currency': self.currency,
             'current_version': self.current_version,
+            'parent_id': self.parent_id,
+            'child_count': self.children.count() if self.children else 0,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'coefficients': self.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0},

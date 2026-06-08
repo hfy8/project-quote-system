@@ -5,7 +5,7 @@ class LaborHour(db.Model):
     __tablename__ = 'labor_hours'
 
     id = db.Column(db.Integer, primary_key=True)
-    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
+    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id', ondelete='CASCADE'), nullable=False)
     name = db.Column(db.String(100), nullable=False, comment='工时名称')
     hours = db.Column(db.Float, default=0, comment='工时数')
     unit_price = db.Column(db.Float, default=0, comment='单价')
