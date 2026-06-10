@@ -218,6 +218,17 @@ project-quote-system/
 └── README.md                # 本文件
 ```
 
+## 文档地图
+
+| 文档 | 用途 | 状态 |
+|------|------|------|
+| [DEVELOPMENT.md](./DEVELOPMENT.md) | **唯一权威开发 + 使用文档** | V2.1 推荐 |
+| [SPEC.md](./SPEC.md) | 旧版产品技术规格 | 归档 |
+| [使用说明书.md](./使用说明书.md) | 旧版用户使用手册 | 归档 |
+| `~/wiki/index.md` | LLM Wiki 知识库目录（28 页） | 持续维护 |
+
+**新成员请直接读 DEVELOPMENT.md**。本文（README）保留作为快速索引。
+
 ## 许可证
 
 MIT License
