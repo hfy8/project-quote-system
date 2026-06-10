@@ -721,8 +721,8 @@
 
         <!-- 汇总 -->
         <el-tab-pane v-if="isEdit" label="汇总" name="summary">
-          <div v-loading="summaryLoading">
-            <div class="summary-header">
+          <div v-loading="summaryLoading" ref="summaryRef">
+            <div class="summary-header no-export">
               <div class="summary-currency">
                 <span class="currency-label">显示货币：</span>
                 <el-select v-model="selectedCurrency" style="width: 120px;">
@@ -992,6 +992,10 @@
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
+            <div class="export-item" @click="exportSummaryAsPDF">
+              <span class="export-icon">🖼️</span>
+              <span class="export-label">导出汇总 PDF（按网页）</span>
+            </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -1000,13 +1004,15 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI, quotationsAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 import changeRequestsAPI from '../api/changeRequests'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 const route = useRoute()
 const router = useRouter()
@@ -1061,6 +1067,7 @@ const travelModes = ref([])
 const selectedModuleId = ref(null)
 const pageLoading = ref(true)
 const summaryLoading = ref(false)
+const summaryRef = ref(null)
 
 // 货币切换 - 默认使用报价单币种
 const selectedCurrency = ref('CNY')
@@ -2347,6 +2354,119 @@ function exportVersion(version, cmd) {
 function exportFile(format, lang = 'zh') {
   const langParam = (format === 'pdf' && lang) ? `&lang=${lang}` : ''
   window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}${langParam}`, '_blank')
+}
+
+// 导出汇总 tab 内容为 PDF（按网页显示样式截图）
+async function exportSummaryAsPDF() {
+  if (!summaryRef.value) {
+    ElMessage.error('汇总内容未加载，请先切换到汇总 tab')
+    return
+  }
+  if (!summary.value) {
+    ElMessage.warning('汇总数据为空，请先加载汇总')
+    return
+  }
+
+  // 切换到汇总 tab 确保内容渲染
+  if (activeTab.value !== 'summary') {
+    activeTab.value = 'summary'
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  const loading = ElMessage({
+    message: '正在生成 PDF...',
+    type: 'info',
+    duration: 0
+  })
+
+  try {
+    // 截图前临时隐藏不需要导出的元素（如货币切换器）
+    const hideElements = summaryRef.value.querySelectorAll('.no-export')
+    const prevDisplays = []
+    hideElements.forEach((el) => {
+      prevDisplays.push(el.style.display)
+      el.style.display = 'none'
+    })
+
+    // 截图：使用完整 DOM 高度（包含滚动不可见部分）
+    const canvas = await html2canvas(summaryRef.value, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth: summaryRef.value.scrollWidth,
+      windowHeight: summaryRef.value.scrollHeight
+    })
+
+    // 恢复隐藏元素
+    hideElements.forEach((el, i) => {
+      el.style.display = prevDisplays[i]
+    })
+
+    // A4 尺寸（毫米），左右上下各留 5mm 边距
+    const pdfWidth = 210
+    const pdfHeight = 297
+    const margin = 5
+    const contentWidth = pdfWidth - margin * 2
+    const contentHeight = pdfHeight - margin * 2
+
+    // 高度按比例缩放到内容区宽度
+    const imgWidth = contentWidth
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    })
+
+    // 如果内容总高度 <= A4 内容区，单页
+    if (imgHeight <= contentHeight) {
+      const imgData = canvas.toDataURL('image/png')
+      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight)
+    } else {
+      // 多页：按 A4 内容区高度切片
+      const pageHeightInPx = (contentHeight * canvas.width) / imgWidth
+      let position = 0
+      let pageIndex = 0
+      const totalPages = Math.ceil(canvas.height / pageHeightInPx)
+
+      while (position < canvas.height) {
+        const pageCanvas = document.createElement('canvas')
+        pageCanvas.width = canvas.width
+        const remainingHeight = canvas.height - position
+        const currentPageHeight = Math.min(pageHeightInPx, remainingHeight)
+        pageCanvas.height = currentPageHeight
+
+        const ctx = pageCanvas.getContext('2d')
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
+        ctx.drawImage(
+          canvas,
+          0, position, canvas.width, currentPageHeight,
+          0, 0, canvas.width, currentPageHeight
+        )
+
+        const pageImgData = pageCanvas.toDataURL('image/png')
+        const pageImgHeight = (pageCanvas.height * imgWidth) / pageCanvas.width
+        if (pageIndex > 0) pdf.addPage()
+        pdf.addImage(pageImgData, 'PNG', margin, margin, imgWidth, pageImgHeight)
+
+        position += currentPageHeight
+        pageIndex += 1
+      }
+    }
+
+    const fileName = `${quotation.value?.name || '报价单'}_汇总_${new Date().toISOString().slice(0, 10)}.pdf`
+    pdf.save(fileName)
+    ElMessage.success(`PDF 已生成：${fileName}`)
+  } catch (err) {
+    console.error('导出汇总 PDF 失败：', err)
+    ElMessage.error('导出失败：' + (err.message || '未知错误'))
+  } finally {
+    loading.close()
+  }
 }
 
 // 返回列表

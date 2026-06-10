@@ -213,6 +213,9 @@
           <div v-for="mod in filteredModuleGroups" :key="mod.id" class="module-group">
             <div class="module-group-header">
               <span class="module-name">{{ mod.name }}</span>
+              <el-tag v-if="quotation.type === 'line' && mod.quotation_name" size="small" type="info" effect="plain" style="margin-left: 8px;">
+                {{ mod.quotation_name }}
+              </el-tag>
               <span class="module-material-count">{{ mod.materials.length }} 项物料</span>
               <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
               <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
@@ -693,8 +696,8 @@
         </el-tab-pane>
         <!-- 汇总 -->
         <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
-          <div v-loading="summaryLoading" element-loading-text="页面加载中...">
-            <div class="summary-header">
+          <div v-loading="summaryLoading" ref="summaryRef" element-loading-text="页面加载中...">
+            <div class="summary-header no-export">
               <div class="summary-currency">
                 <span class="currency-label">显示货币：</span>
                 <el-select v-model="selectedCurrency" style="width: 120px;">
@@ -781,6 +784,89 @@
               </div>
             </div>
 
+            <!-- 占比分析 -->
+            <div v-if="summary" class="breakdown-section">
+              <h3 class="section-title">📊 占比分析（基于含利润小计）</h3>
+
+              <div class="ratio-cards">
+                <div class="ratio-card">
+                  <div class="ratio-label">🔧 硬件成本</div>
+                  <div class="ratio-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.material_total_with_rates) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill material" :style="{ width: getRatio(summary.material_total_with_rates) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">👷 人力工时</div>
+                  <div class="ratio-value highlight">¥{{ summary.labor_total?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.labor_total) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill labor" :style="{ width: getRatio(summary.labor_total) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">✈️ 运输+差旅</div>
+                  <div class="ratio-value highlight">¥{{ totalTravelAmount?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(totalTravelAmount) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill travel" :style="{ width: getRatio(totalTravelAmount) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">💰 利润</div>
+                  <div class="ratio-value highlight">¥{{ summary.profit_amount?.toFixed(2) || ((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)).toFixed(2) }}</div>
+                  <div class="ratio-percent">{{ getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill profit" :style="{ width: getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">🧾 税额</div>
+                  <div class="ratio-value highlight">¥{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.tax_amount) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill tax" :style="{ width: getRatio(summary.tax_amount) + '%' }"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-if="summary.rate_details && summary.rate_details.length > 0" class="hardware-structure">
+                <h4 class="section-subtitle">🔩 硬件成本结构</h4>
+                <div class="hardware-cards">
+                  <div
+                    v-for="row in summary.rate_details"
+                    :key="row.category"
+                    class="hardware-card"
+                    :class="'cat-' + row.category"
+                  >
+                    <div class="hardware-label">
+                      <span class="dot"></span>
+                      {{ getCategoryLabel(row.category) }}
+                    </div>
+                    <div class="hardware-amount">¥{{ row.with_rate?.toFixed(2) || '0.00' }}</div>
+                    <div class="hardware-percent">
+                      {{ getMaterialCategoryRatio(row.with_rate) }}% <span class="ratio-of">of 硬件</span>
+                    </div>
+                    <div class="hardware-bar">
+                      <div class="hardware-bar-fill" :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"></div>
+                    </div>
+                    <div class="hardware-meta">系数 {{ row.rate }}x · 原价 ¥{{ row.base?.toFixed(2) }}</div>
+                  </div>
+                </div>
+                <div class="hardware-stacked-bar">
+                  <div
+                    v-for="row in summary.rate_details"
+                    :key="'stack-' + row.category"
+                    class="stacked-segment"
+                    :class="'cat-' + row.category"
+                    :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"
+                    :title="`${getCategoryLabel(row.category)}: ¥${row.with_rate?.toFixed(2)} (${getMaterialCategoryRatio(row.with_rate)}%)`"
+                  ></div>
+                </div>
+              </div>
+            </div>
+
             <!-- 费用系数详情 -->
             <div v-if="summary?.rate_details?.length > 0" class="rate-details">
               <h4>费用系数明细</h4>
@@ -825,6 +911,13 @@
               <el-table-column prop="amount" label="金额" />
               <el-table-column prop="description" label="描述" />
             </el-table>
+
+            <div class="export-grid no-export" style="margin-top: 24px;">
+              <div class="export-item" @click="exportSummaryAsPDF">
+                <span class="export-icon">🖼️</span>
+                <span class="export-label">导出汇总 PDF（按网页）</span>
+              </div>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -843,6 +936,10 @@
               <span class="export-icon">📄</span>
               <span class="export-label">导出 PDF</span>
             </div>
+            <div class="export-item" @click="exportSummaryAsPDF">
+              <span class="export-icon">🖼️</span>
+              <span class="export-label">导出汇总 PDF（按网页）</span>
+            </div>
           </div>
         </el-tab-pane>
       </el-tabs>
@@ -851,10 +948,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted, watch } from 'vue'
+import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 import changeRequestsAPI from '../api/changeRequests'
@@ -1077,6 +1176,7 @@ const filteredModuleGroups = computed(() => {
     return {
       id: mod.id,
       name: mod.name,
+      quotation_name: mod.quotation_name || null,
       materials: matList,
       total: matList.reduce((sum, m) => sum + (m.unit_price || 0) * m.quantity, 0)
     }
@@ -1690,7 +1790,13 @@ async function saveBasic() {
 // 加载模块
 async function loadModules() {
   try {
-    const data = await api.get(`/quotations/${quotationId.value}/modules`)
+    let data
+    if (quotation.value.type === 'line') {
+      // 线体报价单：聚合所有子报价单的模块
+      data = await api.get(`/quotations/${quotationId.value}/all-modules`)
+    } else {
+      data = await api.get(`/quotations/${quotationId.value}/modules`)
+    }
     modules.value = data
   } catch (error) {
     ElMessage.error('加载模块失败')
@@ -2082,6 +2188,146 @@ function exportVersion(version, format) {
 function exportFile(format) {
   // 始终传递当前选中的币种参数
   window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}`, '_blank')
+}
+
+// 汇总 tab DOM 引用（用于导出 PDF 截图）
+const summaryRef = ref(null)
+
+// 运输+差旅合计（运输包装 + 差旅人天 + 差旅人次）
+const totalTravelAmount = computed(() => {
+  if (!summary.value) return 0
+  const packing = summary.value.packing_total || 0
+  const days = summary.value.travel_person_days_total || 0
+  const trips = summary.value.travel_person_trips_total || 0
+  return packing + days + trips
+})
+
+// 占比计算：含利润小计为分母
+function getRatio(amount) {
+  if (!summary.value || !amount) return '0.0'
+  const denom = summary.value.subtotal_with_profit || 0
+  if (denom === 0) return '0.0'
+  return ((amount / denom) * 100).toFixed(1)
+}
+
+// 硬件分类占比：material_total_with_rates 为分母
+function getMaterialCategoryRatio(amount) {
+  if (!summary.value || !amount) return '0.0'
+  const denom = summary.value.material_total_with_rates || 0
+  if (denom === 0) return '0.0'
+  return ((amount / denom) * 100).toFixed(1)
+}
+
+// 导出汇总 tab 内容为 PDF（按网页显示样式截图）
+async function exportSummaryAsPDF() {
+  if (!summaryRef.value) {
+    ElMessage.error('汇总内容未加载，请先切换到汇总 tab')
+    return
+  }
+  if (!summary.value) {
+    ElMessage.warning('汇总数据为空，请先加载汇总')
+    return
+  }
+
+  // 切换到汇总 tab 确保内容渲染
+  if (activeTab.value !== 'summary') {
+    activeTab.value = 'summary'
+    await nextTick()
+    await new Promise(resolve => setTimeout(resolve, 300))
+  }
+
+  const loading = ElMessage({
+    message: '正在生成 PDF...',
+    type: 'info',
+    duration: 0
+  })
+
+  try {
+    // 截图前临时隐藏不需要导出的元素（如货币切换器）
+    const hideElements = summaryRef.value.querySelectorAll('.no-export')
+    const prevDisplays = []
+    hideElements.forEach((el) => {
+      prevDisplays.push(el.style.display)
+      el.style.display = 'none'
+    })
+
+    // 截图：使用完整 DOM 高度（包含滚动不可见部分）
+    const canvas = await html2canvas(summaryRef.value, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      windowWidth: summaryRef.value.scrollWidth,
+      windowHeight: summaryRef.value.scrollHeight
+    })
+
+    // 恢复隐藏元素
+    hideElements.forEach((el, i) => {
+      el.style.display = prevDisplays[i]
+    })
+
+    // A4 尺寸（毫米），左右上下各留 5mm 边距
+    const pdfWidth = 210
+    const pdfHeight = 297
+    const margin = 5
+    const contentWidth = pdfWidth - margin * 2
+    const contentHeight = pdfHeight - margin * 2
+
+    // 高度按比例缩放到内容区宽度
+    const imgWidth = contentWidth
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4'
+    })
+
+    // 如果内容总高度 <= A4 内容区，单页
+    if (imgHeight <= contentHeight) {
+      const imgData = canvas.toDataURL('image/png')
+      pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight)
+    } else {
+      // 多页：按 A4 内容区高度切片
+      const pageHeightInPx = (contentHeight * canvas.width) / imgWidth
+      let position = 0
+      let pageIndex = 0
+
+      while (position < canvas.height) {
+        const pageCanvas = document.createElement('canvas')
+        pageCanvas.width = canvas.width
+        const remainingHeight = canvas.height - position
+        const currentPageHeight = Math.min(pageHeightInPx, remainingHeight)
+        pageCanvas.height = currentPageHeight
+
+        const ctx = pageCanvas.getContext('2d')
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height)
+        ctx.drawImage(
+          canvas,
+          0, position, canvas.width, currentPageHeight,
+          0, 0, canvas.width, currentPageHeight
+        )
+
+        const pageImgData = pageCanvas.toDataURL('image/png')
+        const pageImgHeight = (pageCanvas.height * imgWidth) / pageCanvas.width
+        if (pageIndex > 0) pdf.addPage()
+        pdf.addImage(pageImgData, 'PNG', margin, margin, imgWidth, pageImgHeight)
+
+        position += currentPageHeight
+        pageIndex += 1
+      }
+    }
+
+    const fileName = `${quotation.value?.name || '报价单'}_汇总_${new Date().toISOString().slice(0, 10)}.pdf`
+    pdf.save(fileName)
+    ElMessage.success(`PDF 已生成：${fileName}`)
+  } catch (err) {
+    console.error('导出汇总 PDF 失败：', err)
+    ElMessage.error('导出失败：' + (err.message || '未知错误'))
+  } finally {
+    loading.close()
+  }
 }
 
 // 返回列表
@@ -2596,27 +2842,6 @@ onMounted(async () => {
   }
 }
 
-/* 导出按钮组 */
-.export-item {
-  border: 1px solid transparent;
-}
-
-.export-item:hover {
-  border-color: var(--color-primary);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-}
-
-.export-icon {
-  font-size: 32px;
-}
-
-.export-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-}
-
 /* 空状态 */
 .empty-state {
   text-align: center;
@@ -2845,5 +3070,217 @@ onMounted(async () => {
   border-radius: 8px;
   color: #166534;
   font-size: 14px;
+}
+
+/* 占比卡片组（5个：硬件/人力/差旅/利润/税） */
+.ratio-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.ratio-card {
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  text-align: center;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-fast);
+}
+
+.ratio-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.ratio-card .ratio-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.ratio-card .ratio-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.ratio-card .ratio-percent {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-top: 4px;
+}
+
+.ratio-bar {
+  margin-top: 8px;
+  height: 6px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ratio-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.ratio-bar-fill.material { background: linear-gradient(90deg, #0D9488, #14B8A6); }
+.ratio-bar-fill.labor { background: linear-gradient(90deg, #6366F1, #818CF8); }
+.ratio-bar-fill.travel { background: linear-gradient(90deg, #F59E0B, #FBBF24); }
+.ratio-bar-fill.profit { background: linear-gradient(90deg, #10B981, #34D399); }
+.ratio-bar-fill.tax { background: linear-gradient(90deg, #EF4444, #F87171); }
+
+/* 硬件成本结构 */
+.hardware-structure {
+  margin-top: var(--spacing-lg);
+}
+
+.hardware-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.hardware-card {
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  text-align: center;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+}
+
+.hardware-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.hardware-card .hardware-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.hardware-card .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.hardware-card.cat-large .dot { background: #0D9488; }
+.hardware-card.cat-standard .dot { background: #6366F1; }
+.hardware-card.cat-other .dot { background: #F59E0B; }
+
+.hardware-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.hardware-percent {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-top: 4px;
+}
+
+.hardware-percent .ratio-of {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.hardware-bar {
+  margin-top: 8px;
+  height: 5px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hardware-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.hardware-card.cat-large .hardware-bar-fill { background: #0D9488; }
+.hardware-card.cat-standard .hardware-bar-fill { background: #6366F1; }
+.hardware-card.cat-other .hardware-bar-fill { background: #F59E0B; }
+
+.hardware-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+  text-align: center;
+}
+
+/* 堆叠条 */
+.hardware-stacked-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.04);
+}
+
+.stacked-segment {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.stacked-segment.cat-large { background: #0D9488; }
+.stacked-segment.cat-standard { background: #6366F1; }
+.stacked-segment.cat-other { background: #F59E0B; }
+
+/* 导出按钮组（补全为与 QuotationEdit.vue 一致的卡片风格） */
+.export-grid {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.export-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xl);
+  background: #ffffff;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: var(--shadow-sm);
+}
+
+.export-item:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.export-icon {
+  font-size: 32px;
+}
+
+.export-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
 }
 </style>
