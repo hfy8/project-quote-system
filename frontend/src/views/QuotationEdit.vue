@@ -809,6 +809,92 @@
               </div>
             </div>
 
+            <!-- 占比分析 -->
+            <div v-if="summary" class="breakdown-section">
+              <h3 class="section-title">📊 占比分析（基于含利润小计）</h3>
+
+              <!-- 成本占比卡片组 -->
+              <div class="ratio-cards">
+                <div class="ratio-card">
+                  <div class="ratio-label">🔧 硬件成本</div>
+                  <div class="ratio-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.material_total_with_rates) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill material" :style="{ width: getRatio(summary.material_total_with_rates) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">👷 人力工时</div>
+                  <div class="ratio-value highlight">¥{{ summary.labor_total?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.labor_total) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill labor" :style="{ width: getRatio(summary.labor_total) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">✈️ 运输+差旅</div>
+                  <div class="ratio-value highlight">¥{{ totalTravelAmount?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(totalTravelAmount) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill travel" :style="{ width: getRatio(totalTravelAmount) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">💰 利润</div>
+                  <div class="ratio-value highlight">¥{{ summary.profit_amount?.toFixed(2) || ((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)).toFixed(2) }}</div>
+                  <div class="ratio-percent">{{ getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill profit" :style="{ width: getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) + '%' }"></div>
+                  </div>
+                </div>
+                <div class="ratio-card">
+                  <div class="ratio-label">🧾 税额</div>
+                  <div class="ratio-value highlight">¥{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
+                  <div class="ratio-percent">{{ getRatio(summary.tax_amount) }}%</div>
+                  <div class="ratio-bar">
+                    <div class="ratio-bar-fill tax" :style="{ width: getRatio(summary.tax_amount) + '%' }"></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 硬件成本结构 -->
+              <div v-if="summary.rate_details && summary.rate_details.length > 0" class="hardware-structure">
+                <h4 class="section-subtitle">🔩 硬件成本结构</h4>
+                <div class="hardware-cards">
+                  <div
+                    v-for="row in summary.rate_details"
+                    :key="row.category"
+                    class="hardware-card"
+                    :class="'cat-' + row.category"
+                  >
+                    <div class="hardware-label">
+                      <span class="dot"></span>
+                      {{ getCategoryLabel(row.category) }}
+                    </div>
+                    <div class="hardware-amount">¥{{ row.with_rate?.toFixed(2) || '0.00' }}</div>
+                    <div class="hardware-percent">
+                      {{ getMaterialCategoryRatio(row.with_rate) }}% <span class="ratio-of">of 硬件</span>
+                    </div>
+                    <div class="hardware-bar">
+                      <div class="hardware-bar-fill" :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"></div>
+                    </div>
+                    <div class="hardware-meta">系数 {{ row.rate }}x · 原价 ¥{{ row.base?.toFixed(2) }}</div>
+                  </div>
+                </div>
+                <!-- 堆叠条 -->
+                <div class="hardware-stacked-bar">
+                  <div
+                    v-for="row in summary.rate_details"
+                    :key="'stack-' + row.category"
+                    class="stacked-segment"
+                    :class="'cat-' + row.category"
+                    :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"
+                    :title="`${getCategoryLabel(row.category)}: ¥${row.with_rate?.toFixed(2)} (${getMaterialCategoryRatio(row.with_rate)}%)`"
+                  ></div>
+                </div>
+              </div>
+            </div>
+
             <!-- 费用系数详情 -->
             <div v-if="summary?.rate_details?.length > 0" class="rate-details">
               <h4>费用系数明细</h4>
@@ -1036,6 +1122,31 @@ const convertedSummary = computed(() => {
     grand_total: summary.value.grand_total * factor
   }
 })
+
+// 运输+差旅合计（运输包装 + 差旅人天 + 差旅人次）
+const totalTravelAmount = computed(() => {
+  if (!summary.value) return 0
+  const packing = summary.value.packing_total || 0
+  const days = summary.value.travel_person_days_total || 0
+  const trips = summary.value.travel_person_trips_total || 0
+  return packing + days + trips
+})
+
+// 占比计算：含利润小计为分母
+function getRatio(amount) {
+  if (!summary.value || !amount) return '0.0'
+  const denom = summary.value.subtotal_with_profit || 0
+  if (denom === 0) return '0.0'
+  return ((amount / denom) * 100).toFixed(1)
+}
+
+// 硬件分类占比：material_total_with_rates 为分母
+function getMaterialCategoryRatio(amount) {
+  if (!summary.value || !amount) return '0.0'
+  const denom = summary.value.material_total_with_rates || 0
+  if (denom === 0) return '0.0'
+  return ((amount / denom) * 100).toFixed(1)
+}
 
 // 费用明细表格：费用 + 人力工时合并展示
 const feesIncludingLabor = computed(() => {
@@ -2704,6 +2815,189 @@ onMounted(async () => {
   font-size: 32px;
   color: #FFFFFF;
 }
+
+/* 占比分析区块 */
+.breakdown-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-lg);
+  border-top: 1px dashed rgba(0,0,0,0.08);
+}
+
+.breakdown-section .section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--spacing-md) 0;
+}
+
+.breakdown-section .section-subtitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: var(--spacing-lg) 0 var(--spacing-sm) 0;
+}
+
+/* 占比卡片组（5个：硬件/人力/差旅/利润/税） */
+.ratio-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.ratio-card {
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  text-align: left;
+  border-left: 4px solid var(--color-primary);
+}
+
+.ratio-card .ratio-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.ratio-card .ratio-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.ratio-card .ratio-percent {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-primary);
+  margin-top: 4px;
+}
+
+.ratio-bar {
+  margin-top: 8px;
+  height: 6px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ratio-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.ratio-bar-fill.material { background: linear-gradient(90deg, #0D9488, #14B8A6); }
+.ratio-bar-fill.labor { background: linear-gradient(90deg, #6366F1, #818CF8); }
+.ratio-bar-fill.travel { background: linear-gradient(90deg, #F59E0B, #FBBF24); }
+.ratio-bar-fill.profit { background: linear-gradient(90deg, #10B981, #34D399); }
+.ratio-bar-fill.tax { background: linear-gradient(90deg, #EF4444, #F87171); }
+
+/* 硬件成本结构 */
+.hardware-structure {
+  margin-top: var(--spacing-lg);
+}
+
+.hardware-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
+}
+
+.hardware-card {
+  background: var(--color-bg-hover);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-md);
+  position: relative;
+}
+
+.hardware-card .hardware-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-bottom: 6px;
+}
+
+.hardware-card .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.hardware-card.cat-large .dot { background: #0D9488; }
+.hardware-card.cat-standard .dot { background: #6366F1; }
+.hardware-card.cat-other .dot { background: #F59E0B; }
+
+.hardware-card.cat-large { border-left: 3px solid #0D9488; }
+.hardware-card.cat-standard { border-left: 3px solid #6366F1; }
+.hardware-card.cat-other { border-left: 3px solid #F59E0B; }
+
+.hardware-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.2;
+}
+
+.hardware-percent {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  margin-top: 4px;
+}
+
+.hardware-percent .ratio-of {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+.hardware-bar {
+  margin-top: 8px;
+  height: 5px;
+  background: rgba(0,0,0,0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hardware-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.hardware-card.cat-large .hardware-bar-fill { background: #0D9488; }
+.hardware-card.cat-standard .hardware-bar-fill { background: #6366F1; }
+.hardware-card.cat-other .hardware-bar-fill { background: #F59E0B; }
+
+.hardware-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 6px;
+}
+
+/* 堆叠条 */
+.hardware-stacked-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 7px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.04);
+}
+
+.stacked-segment {
+  height: 100%;
+  transition: width 0.4s ease;
+}
+
+.stacked-segment.cat-large { background: #0D9488; }
+.stacked-segment.cat-standard { background: #6366F1; }
+.stacked-segment.cat-other { background: #F59E0B; }
 
 /* 费用卡片 */
 .fees-card {

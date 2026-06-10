@@ -24,7 +24,7 @@
       </router-link>
     </div>
 
-    <div class="nav-section" v-if="canView('user.view') || canView('role.view') || canView('fee_rate.view') || canView('exchange_rate.view') || canView('log.view') || canView('fee_type.view')">
+    <div class="nav-section" v-if="canView('user.view') || canView('role.view') || canView('fee_rate.view') || canView('exchange_rate.view') || canView('log.view') || canView('fee_type.view') || canView('travel_fee_config.view')">
       <div class="nav-section-title">系统管理</div>
       <router-link to="/users" class="nav-item" :class="{ active: isActive('/users') }" v-if="canView('user.view')">
         <span class="nav-icon">👤</span>
@@ -46,7 +46,7 @@
         <span class="nav-icon">📝</span>
         <span class="nav-text">操作日志</span>
       </router-link>
-      <router-link to="/travel-fee-config" class="nav-item" :class="{ active: isActive('/travel-fee-config') }" v-if="canView('fee_type.view')">
+      <router-link to="/travel-fee-config" class="nav-item" :class="{ active: isActive('/travel-fee-config') }" v-if="canView('travel_fee_config.view')">
         <span class="nav-icon">🚚</span>
         <span class="nav-text">运输差旅配置</span>
       </router-link>

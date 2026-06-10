@@ -28,9 +28,8 @@ request.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
+      // 仅清除本地状态，跳转由路由守卫统一处理
       localStorage.removeItem('token')
-      router.push('/login')
-      ElMessage.error('登录已过期，请重新登录')
     } else {
       ElMessage.error(error.response?.data?.error || error.response?.data?.message || '请求失败')
     }

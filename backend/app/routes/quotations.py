@@ -367,6 +367,7 @@ def _create_version_snapshot(quotation, operator_id, operation_type, remark=None
             'name': m.name,
             'code': m.code,
             'materials': [{
+                'id': mm.id,
                 'material_id': mm.material_id,
                 'name': mm.material.name if mm.material else None,
                 'brand': mm.material.brand if mm.material else None,
@@ -799,10 +800,12 @@ def get_quotation_summary(quotation_id):
             for mm in module_materials:
                 if mm.is_other and mm.unit_price_override:
                     amount = float(mm.unit_price_override)
+                    # 归入 'other' key（其他类手工物料）
                     category = 'other'
                     rate = float(fee_rates.get('other', default_rate))
                 elif mm.material:
                     amount = float(mm.material.unit_price) * float(mm.quantity)
+                    # 物料表中分类已存英文（large/standard/other），直接使用
                     category = mm.material.category or 'standard'
                     rate = float(fee_rates.get(category, default_rate))
                 else:

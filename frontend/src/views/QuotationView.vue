@@ -483,142 +483,6 @@
           </el-dialog>
         </el-tab-pane>
 
-        <!-- 汇总 -->
-        <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
-          <div v-loading="summaryLoading" element-loading-text="页面加载中...">
-            <div class="summary-header">
-              <div class="summary-currency">
-                <span class="currency-label">显示货币：</span>
-                <el-select v-model="selectedCurrency" style="width: 120px;">
-                  <el-option v-for="rate in exchangeRates" :key="rate.currency" :label="rate.currency" :value="rate.currency" />
-                </el-select>
-                <span v-if="selectedCurrency !== 'CNY'" class="currency-note">
-                  汇率：{{ getExchangeRate(selectedCurrency) }}，已转换
-                </span>
-              </div>
-            </div>
-            <div class="summary-layout" v-if="summary">
-              <div class="summary-left">
-                <div class="summary-card compact">
-                  <div class="summary-label">物料合计</div>
-                  <div class="summary-value">{{ summary.material_total?.toFixed(2) || '0.00' }}</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">物料合计(含系数)</div>
-                  <div class="summary-value highlight">{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">小计</div>
-                  <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">对外利润率</div>
-                  <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">含利润小计</div>
-                  <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">实际利润</div>
-                  <div class="summary-value highlight">
-                    <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
-                    <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
-                  </div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">税率</div>
-                  <div class="summary-value">{{ (summary.tax_rate * 100)?.toFixed(0) || 0 }}%</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">税额</div>
-                  <div class="summary-value">{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
-                </div>
-              </div>
-              <div class="summary-right">
-                <div class="summary-card fees-card">
-                  <div class="fees-card-header">
-                    <span class="summary-label">费用合计</span>
-                    <span class="fees-total highlight">{{ summary.fees_total?.toFixed(2) }}</span>
-                  </div>
-                  <div class="fees-list">
-                    <div class="fees-row" v-if="summary.fee_total > 0">
-                      <span>费用Tab</span>
-                      <span>{{ summary.fee_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.labor_total > 0">
-                      <span>人力合计</span>
-                      <span>{{ summary.labor_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.packing_total > 0">
-                      <span>运输包装费</span>
-                      <span>{{ summary.packing_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.travel_person_days_total > 0">
-                      <span>差旅住宿费</span>
-                      <span>{{ summary.travel_person_days_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.travel_person_trips_total > 0">
-                      <span>差旅交通签证费</span>
-                      <span>{{ summary.travel_person_trips_total?.toFixed(2) }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="summary-card total">
-                  <div class="summary-label">最终报价</div>
-                  <div class="summary-value large">
-                    {{ convertedSummary?.grand_total?.toFixed(2) || '0.00' }} {{ selectedCurrency }}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- 费用系数详情 -->
-            <div v-if="summary?.rate_details?.length > 0" class="rate-details">
-              <h4>费用系数明细</h4>
-              <el-table :data="summary.rate_details" border size="small">
-                <el-table-column label="分类" width="100">
-                  <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
-                </el-table-column>
-                <el-table-column prop="rate" label="系数" width="80">
-                  <template #default="{ row }">{{ row.rate }}x</template>
-                </el-table-column>
-                <el-table-column prop="base" label="原价" width="120">
-                  <template #default="{ row }">{{ row.base?.toFixed(2) }}</template>
-                </el-table-column>
-                <el-table-column prop="with_rate" label="系数后">
-                  <template #default="{ row }">{{ row.with_rate?.toFixed(2) }}</template>
-                </el-table-column>
-              </el-table>
-            </div>
-
-            <h3 style="margin-top: 24px;">模块汇总</h3>
-            <el-table :data="summary?.modules" border style="width: 100%; margin-top: 8px;">
-              <el-table-column prop="module_name" label="模块名称" />
-              <el-table-column prop="material_count" label="物料数量" width="100" />
-              <el-table-column label="物料小计" width="120">
-                <template #default="{ row }">
-                  {{ row.material_amount?.toFixed(2) || '0.00' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="含系数小计" width="130">
-                <template #default="{ row }">
-                  {{ row.material_amount_with_rate?.toFixed(2) || row.material_amount?.toFixed(2) || '0.00' }}
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <h3 style="margin-top: 24px;">费用明细</h3>
-            <el-table :data="summary?.fees" border style="width: 100%; margin-top: 8px;">
-              <el-table-column prop="fee_type" label="费用类型" />
-              <el-table-column prop="location" label="位置">
-                <template #default="{ row }">{{ getLocationLabel(row.location) }}</template>
-              </el-table-column>
-              <el-table-column prop="amount" label="金额" />
-              <el-table-column prop="description" label="描述" />
-            </el-table>
-          </div>
-        </el-tab-pane>
 
         <!-- 版本 -->
         <el-tab-pane v-if="permissions.tabs?.includes('versions')" label="版本" name="versions">
@@ -637,7 +501,7 @@
         </el-tab-pane>
 
         <!-- 运输包装 -->
-        <el-tab-pane v-if="permissions.tabs?.includes('packing')" label="运输包装" name="packing">
+        <el-tab-pane v-if="permissions.tabs?.includes('packing') && !isBoundChild" label="运输包装" name="packing">
           <div class="packing-header">
             <el-button type="primary" @click="showAddPackingEntry">+ 添加运输包装条目</el-button>
           </div>
@@ -697,7 +561,7 @@
         </el-tab-pane>
 
         <!-- 差旅人天 -->
-        <el-tab-pane v-if="permissions.tabs?.includes('travel_person_days')" label="差旅人天" name="travel-days">
+        <el-tab-pane v-if="permissions.tabs?.includes('travel_person_days') && !isBoundChild" label="差旅人天" name="travel-days">
           <div class="packing-header">
             <el-button type="primary" @click="showAddTravelDaysEntry">+ 添加人天条目</el-button>
           </div>
@@ -757,7 +621,7 @@
         </el-tab-pane>
 
         <!-- 差旅人次 -->
-        <el-tab-pane v-if="permissions.tabs?.includes('travel_person_trips')" label="差旅人次" name="travel-trips">
+        <el-tab-pane v-if="permissions.tabs?.includes('travel_person_trips') && !isBoundChild" label="差旅人次" name="travel-trips">
           <div class="packing-header">
             <el-button type="primary" @click="showAddTravelTripEntry">+ 添加人次条目</el-button>
           </div>
@@ -827,6 +691,142 @@
             </template>
           </el-dialog>
         </el-tab-pane>
+        <!-- 汇总 -->
+        <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
+          <div v-loading="summaryLoading" element-loading-text="页面加载中...">
+            <div class="summary-header">
+              <div class="summary-currency">
+                <span class="currency-label">显示货币：</span>
+                <el-select v-model="selectedCurrency" style="width: 120px;">
+                  <el-option v-for="rate in exchangeRates" :key="rate.currency" :label="rate.currency" :value="rate.currency" />
+                </el-select>
+                <span v-if="selectedCurrency !== 'CNY'" class="currency-note">
+                  汇率：{{ getExchangeRate(selectedCurrency) }}，已转换
+                </span>
+              </div>
+            </div>
+            <div class="summary-layout" v-if="summary">
+              <div class="summary-left">
+                <div class="summary-card compact">
+                  <div class="summary-label">物料合计</div>
+                  <div class="summary-value">{{ summary.material_total?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">物料合计(含系数)</div>
+                  <div class="summary-value highlight">{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">小计</div>
+                  <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">对外利润率</div>
+                  <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">含利润小计</div>
+                  <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">实际利润</div>
+                  <div class="summary-value highlight">
+                    <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
+                    <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
+                  </div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">税率</div>
+                  <div class="summary-value">{{ (summary.tax_rate * 100)?.toFixed(0) || 0 }}%</div>
+                </div>
+                <div class="summary-card compact">
+                  <div class="summary-label">税额</div>
+                  <div class="summary-value">{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
+                </div>
+              </div>
+              <div class="summary-right">
+                <div class="summary-card fees-card">
+                  <div class="fees-card-header">
+                    <span class="summary-label">费用合计</span>
+                    <span class="fees-total highlight">{{ summary.fees_total?.toFixed(2) }}</span>
+                  </div>
+                  <div class="fees-list">
+                    <div class="fees-row" v-if="summary.fee_total > 0">
+                      <span>费用Tab</span>
+                      <span>{{ summary.fee_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.labor_total > 0">
+                      <span>人力合计</span>
+                      <span>{{ summary.labor_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.packing_total > 0 && !isBoundChild">
+                      <span>运输包装费</span>
+                      <span>{{ summary.packing_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.travel_person_days_total > 0 && !isBoundChild">
+                      <span>差旅住宿费</span>
+                      <span>{{ summary.travel_person_days_total?.toFixed(2) }}</span>
+                    </div>
+                    <div class="fees-row" v-if="summary.travel_person_trips_total > 0 && !isBoundChild">
+                      <span>差旅交通签证费</span>
+                      <span>{{ summary.travel_person_trips_total?.toFixed(2) }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="summary-card total">
+                  <div class="summary-label">最终报价</div>
+                  <div class="summary-value large">
+                    {{ convertedSummary?.grand_total?.toFixed(2) || '0.00' }} {{ selectedCurrency }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 费用系数详情 -->
+            <div v-if="summary?.rate_details?.length > 0" class="rate-details">
+              <h4>费用系数明细</h4>
+              <el-table :data="summary.rate_details" border size="small">
+                <el-table-column label="分类" width="100">
+                  <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
+                </el-table-column>
+                <el-table-column prop="rate" label="系数" width="80">
+                  <template #default="{ row }">{{ row.rate }}x</template>
+                </el-table-column>
+                <el-table-column prop="base" label="原价" width="120">
+                  <template #default="{ row }">{{ row.base?.toFixed(2) }}</template>
+                </el-table-column>
+                <el-table-column prop="with_rate" label="系数后">
+                  <template #default="{ row }">{{ row.with_rate?.toFixed(2) }}</template>
+                </el-table-column>
+              </el-table>
+            </div>
+
+            <h3 style="margin-top: 24px;">模块汇总</h3>
+            <el-table :data="summary?.modules" border style="width: 100%; margin-top: 8px;">
+              <el-table-column prop="module_name" label="模块名称" />
+              <el-table-column prop="material_count" label="物料数量" width="100" />
+              <el-table-column label="物料小计" width="120">
+                <template #default="{ row }">
+                  {{ row.material_amount?.toFixed(2) || '0.00' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="含系数小计" width="130">
+                <template #default="{ row }">
+                  {{ row.material_amount_with_rate?.toFixed(2) || row.material_amount?.toFixed(2) || '0.00' }}
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <h3 style="margin-top: 24px;">费用明细</h3>
+            <el-table :data="summary?.fees" border style="width: 100%; margin-top: 8px;">
+              <el-table-column prop="fee_type" label="费用类型" />
+              <el-table-column prop="location" label="位置">
+                <template #default="{ row }">{{ getLocationLabel(row.location) }}</template>
+              </el-table-column>
+              <el-table-column prop="amount" label="金额" />
+              <el-table-column prop="description" label="描述" />
+            </el-table>
+          </div>
+        </el-tab-pane>
 
         <!-- 导出 -->
         <el-tab-pane v-if="permissions.tabs?.includes('export')" label="导出" name="export">
@@ -891,6 +891,8 @@ const permissions = ref({
   can_edit_fees: false,
   tabs: []
 })
+// 子报价单绑定了父报价单（parent_id 不为 null）
+const isBoundChild = computed(() => !!quotation.value?.parent_id)
 const modules = ref([])
 const moduleMaterials = ref([])
 const fees = ref([])

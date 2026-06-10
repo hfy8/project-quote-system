@@ -446,6 +446,7 @@ def generate_version_files(quotation_id, version_no, snapshot_data, data=None, l
         data = json.loads(snapshot_data) if isinstance(snapshot_data, str) else snapshot_data
     
     # 填充物料详细信息（与 get_version_snapshot_data 相同逻辑）
+    # 注意：保留 is_other 物料的 unit_price_override，不被 live 数据覆盖
     for module in data.get('modules', []):
         for mm in module.get('materials', []):
             mat = Material.query.get(mm.get('material_id'))
@@ -453,7 +454,9 @@ def generate_version_files(quotation_id, version_no, snapshot_data, data=None, l
                 mm['name'] = mat.name or ''
                 mm['brand'] = mat.brand or ''
                 mm['spec'] = mat.spec or ''
-                mm['unit_price'] = float(mat.unit_price or 0)
+                # 只有非 is_other 物料才用 live 价；is_other 保留快照中的 override 价
+                if not mm.get('is_other', False):
+                    mm['unit_price'] = float(mat.unit_price or 0)
                 mm['category'] = mat.category or 'standard'
     
     # 计算汇总
@@ -1600,6 +1603,7 @@ def get_version_snapshot_data(quotation_id, version_no):
         fee['location'] = fee.get('position', 'internal')
 
     # 旧快照（unit_price=None）回退查询 Material（仅作为兜底）
+    # 注意：保留 is_other 物料的 unit_price_override，不被 live 数据覆盖
     for module in data.get('modules', []):
         for mm in module.get('materials', []):
             mat = Material.query.get(mm.get('material_id'))
@@ -1607,7 +1611,9 @@ def get_version_snapshot_data(quotation_id, version_no):
                 mm['name'] = mat.name or ''
                 mm['brand'] = mat.brand or ''
                 mm['spec'] = mat.spec or ''
-                mm['unit_price'] = float(mat.unit_price) if mat.unit_price else 0
+                # 只有非 is_other 物料才用 live 价；is_other 保留快照中的 override 价
+                if not mm.get('is_other', False):
+                    mm['unit_price'] = float(mat.unit_price) if mat.unit_price else 0
                 mm['category'] = mat.category or 'standard'
                 # 旧快照没有 unit_price_override，如果 brand='其他' 查 ModuleMaterial 表
                 if mm.get('brand') == '其他' and mm.get('unit_price_override') is None:
@@ -1698,12 +1704,14 @@ def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override
     person_trip_data = data.get('person_trip_entries', [])
 
     # table1 设备硬件
-    if quotation and quotation.type == 'line':
+    # 优先用快照中的 quotation type，否则用 live 数据
+    quotation_type = data.get('quotation', {}).get('type') or (quotation.type if quotation else 'standalone')
+    if quotation_type == 'line':
         from collections import defaultdict
         modules_by_quotation = defaultdict(list)
         for mod in modules_data:
-            modules_by_quotation[mod.get('quotation_id', quotation.id)].append(mod)
-        child_names = {c.id: c.name for c in quotation.children.all()} if quotation else {}
+            modules_by_quotation[mod.get('quotation_id', quotation.id if quotation else None)].append(mod)
+        child_names = {c.id: c.name for c in quotation.children.all()} if quotation and hasattr(quotation, 'children') else {}
         table1_rows = []
         table1_total = 0.0
         for qid, mod_list in modules_by_quotation.items():
@@ -1712,8 +1720,16 @@ def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override
                 for mm in mod.get('materials', []):
                     cat = mm.get('category', 'standard')
                     rate = rate_large if cat == 'large' else (rate_standard if cat == 'standard' else rate_other)
-                    group_total += float(mm.get('unit_price', 0) or 0) * rate * float(mm.get('quantity', 0) or 0)
-            display_name = '(线体)' if qid == quotation.id else child_names.get(qid, f'子项目{qid}')
+                    # is_other 物料：用 unit_price_override
+                    is_other = mm.get('is_other', False)
+                    if is_other:
+                        up = float(mm.get('unit_price_override', 0) or 0)
+                        if up == 0:
+                            up = float(mm.get('unit_price', 0) or 0)
+                    else:
+                        up = float(mm.get('unit_price', 0) or 0)
+                    group_total += up * rate * float(mm.get('quantity', 0) or 0)
+            display_name = '(线体)' if qid == (quotation.id if quotation else None) else child_names.get(qid, f'子项目{qid}')
             table1_rows.append({'module_name': display_name, 'brand': 'RS', 'quantity': 1, 'unit': 'SET', 'subtotal': group_total})
             table1_total += group_total
     else:
@@ -1962,23 +1978,38 @@ def calculate_version_totals(data):
     category_totals = {'large': 0, 'standard': 0, 'other': 0}
     for module in modules:
         for mm in module.get('materials', []):
+            is_other = mm.get('is_other', False)
+            if is_other:
+                up = float(mm.get('unit_price_override', 0) or 0)
+                if up == 0:
+                    up = float(mm.get('unit_price', 0) or 0)
+            else:
+                up = float(mm.get('unit_price', 0) or 0)
+            amount = up * float(mm.get('quantity', 0) or 0)
+            # 标准化 category：large/standard 保留，其他归入 other
             cat = mm.get('category', 'standard')
-            amount = float(mm.get('unit_price', 0) or 0) * float(mm.get('quantity', 0) or 0)
+            if cat not in ('large', 'standard'):
+                cat = 'other'
             category_totals[cat] = category_totals.get(cat, 0) + amount
-    
-    # 获取费用系数（优先用快照中的报价单系数，否则用系统费率）
-    coeff = data.get('coefficients')
-    if coeff:
-        rate_large = coeff.get('large', 1.0)
-        rate_standard = coeff.get('standard', 1.0)
-        rate_other = coeff.get('other', 1.0)
-        fee_rates = coeff
+
+    # 获取费用系数：优先用快照中的 coefficients，其次用报价单系数，最后用系统费率
+    snapshot_coeff = data.get('coefficients', {}) or {}
+    if snapshot_coeff:
+        rate_large = snapshot_coeff.get('large', 1.0)
+        rate_standard = snapshot_coeff.get('standard', 1.0)
+        rate_other = snapshot_coeff.get('other', 1.0)
+        fee_rates = snapshot_coeff
+    elif quotation and getattr(quotation, 'coefficients', None):
+        fee_rates = quotation.coefficients
+        rate_large = fee_rates.get('large', 1.0)
+        rate_standard = fee_rates.get('standard', 1.0)
+        rate_other = fee_rates.get('other', 1.0)
     else:
         fee_rates = {fr.category: float(fr.rate) for fr in FeeRate.query.all()}
         rate_large = fee_rates.get('large', 1.0)
         rate_standard = fee_rates.get('standard', 1.0)
         rate_other = fee_rates.get('other', 1.0)
-    
+
     material_with_rates = (
         category_totals.get('large', 0) * rate_large +
         category_totals.get('standard', 0) * rate_standard +
@@ -1987,6 +2018,11 @@ def calculate_version_totals(data):
 
     material_total = sum(category_totals.values())
     fees_total = sum(float(fee.get('amount', 0)) for fee in fees)
+    # 运输包装 + 差旅人天 + 差旅人次 小计
+    packing_total = sum(float(e.get('total') or 0) for e in data.get('packing_entries', []))
+    person_days_total = sum(float(e.get('total') or 0) for e in data.get('person_days_entries', []))
+    person_trips_total = sum(float(e.get('total') or 0) for e in data.get('person_trip_entries', []))
+    fees_total += packing_total + person_days_total + person_trips_total
     labor_total = sum(float(l.get('total', 0)) for l in data.get('labor_hours', []))
     subtotal = material_with_rates + fees_total + labor_total
 

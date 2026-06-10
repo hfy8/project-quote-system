@@ -125,7 +125,7 @@ def compare_versions(version_id, other_id):
         return jsonify({'error': '版本不存在'}), 404
 
     def normalize(snapshot):
-        """统一快照数据格式：确保 {quotation, modules, fees} 顶层结构"""
+        """统一快照数据格式：确保 {quotation, modules, fees, labor_hours, packing_entries, person_days_entries, person_trip_entries} 顶层结构"""
         if 'quotation' in snapshot:
             return snapshot
         if 'modules' in snapshot or 'fees' in snapshot:
@@ -135,10 +135,22 @@ def compare_versions(version_id, other_id):
                 'modules': snapshot.get('modules', []),
                 'fees': snapshot.get('fees', []),
                 'labor_hours': snapshot.get('labor_hours', []),
+                'packing_entries': snapshot.get('packing_entries', []),
+                'person_days_entries': snapshot.get('person_days_entries', []),
+                'person_trip_entries': snapshot.get('person_trip_entries', []),
                 'coefficients': coeff
             }
         coeff = snapshot.get('coefficients')
-        return {'quotation': snapshot, 'modules': [], 'fees': [], 'labor_hours': snapshot.get('labor_hours', []), 'coefficients': coeff}
+        return {
+            'quotation': snapshot,
+            'modules': [],
+            'fees': [],
+            'labor_hours': snapshot.get('labor_hours', []),
+            'packing_entries': snapshot.get('packing_entries', []),
+            'person_days_entries': snapshot.get('person_days_entries', []),
+            'person_trip_entries': snapshot.get('person_trip_entries', []),
+            'coefficients': coeff
+        }
 
     v1_data = normalize(json.loads(version1.snapshot_data))
     v2_data = normalize(json.loads(version2.snapshot_data))
@@ -204,6 +216,23 @@ def compare_versions_by_quotaion(quotation_id):
     if not v1 or not v2:
         return jsonify({'error': '版本不存在'}), 404
 
+    # 线体报价单：聚合所有子报价单同 version_no 的快照数据
+    quotation = Quotation.query.get(quotation_id)
+    if quotation and quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children]
+        # 收集所有子报价单对应 version_no 的快照
+        extra_snapshots_v1 = VersionSnapshot.query.filter(
+            VersionSnapshot.quotation_id.in_(child_ids),
+            VersionSnapshot.version_no == v1_no
+        ).all()
+        extra_snapshots_v2 = VersionSnapshot.query.filter(
+            VersionSnapshot.quotation_id.in_(child_ids),
+            VersionSnapshot.version_no == v2_no
+        ).all()
+    else:
+        extra_snapshots_v1 = []
+        extra_snapshots_v2 = []
+
     # 复用已有的 compare logic，复用 normalize/enrich
     def normalize(snapshot):
         if 'quotation' in snapshot:
@@ -215,10 +244,22 @@ def compare_versions_by_quotaion(quotation_id):
                 'modules': snapshot.get('modules', []),
                 'fees': snapshot.get('fees', []),
                 'labor_hours': snapshot.get('labor_hours', []),
+                'packing_entries': snapshot.get('packing_entries', []),
+                'person_days_entries': snapshot.get('person_days_entries', []),
+                'person_trip_entries': snapshot.get('person_trip_entries', []),
                 'coefficients': coeff
             }
         coeff = snapshot.get('coefficients')
-        return {'quotation': snapshot, 'modules': [], 'fees': [], 'labor_hours': snapshot.get('labor_hours', []), 'coefficients': coeff}
+        return {
+            'quotation': snapshot,
+            'modules': [],
+            'fees': [],
+            'labor_hours': snapshot.get('labor_hours', []),
+            'packing_entries': snapshot.get('packing_entries', []),
+            'person_days_entries': snapshot.get('person_days_entries', []),
+            'person_trip_entries': snapshot.get('person_trip_entries', []),
+            'coefficients': coeff
+        }
 
     from app.models import Material
     material_cache = {}
@@ -249,6 +290,19 @@ def compare_versions_by_quotaion(quotation_id):
 
     v1_data = normalize(json.loads(v1.snapshot_data))
     v2_data = normalize(json.loads(v2.snapshot_data))
+
+    # 线体：合并子报价单同 version_no 的快照数据
+    def merge_extra(data, extra_snapshots):
+        if not extra_snapshots:
+            return
+        for es in extra_snapshots:
+            es_data = normalize(json.loads(es.snapshot_data))
+            for key in ['modules', 'fees', 'labor_hours', 'packing_entries',
+                        'person_days_entries', 'person_trip_entries']:
+                data[key] = data.get(key, []) + es_data.get(key, [])
+    merge_extra(v1_data, extra_snapshots_v1)
+    merge_extra(v2_data, extra_snapshots_v2)
+
     v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
 

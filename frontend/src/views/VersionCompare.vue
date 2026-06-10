@@ -92,15 +92,17 @@
             {{ formatTotalChange('material_total') }}
           </div>
         </div>
-        <div class="summary-card" :class="totalChangeClass('fee_total')">
+        <!-- 其他费用汇总（4项细分） -->
+        <div class="summary-card">
           <div class="card-label">其他费用</div>
-          <div class="card-values">
-            <span class="v1">¥{{ totals1?.fee_total?.toFixed(2) ?? '-' }}</span>
-            <span class="arrow">→</span>
-            <span class="v2">¥{{ totals2?.fee_total?.toFixed(2) ?? '-' }}</span>
-          </div>
-          <div class="card-change" :class="totalChangeClass('fee_total')">
-            {{ formatTotalChange('fee_total') }}
+          <div class="fee-breakdown">
+            <div class="fee-row" v-for="item in getFeeBreakdown()" :key="item.key" :class="item.changeClass">
+              <span class="fee-name">{{ item.name }}</span>
+              <span class="fee-v1">¥{{ item.v1?.toFixed(2) ?? '0.00' }}</span>
+              <span class="fee-arrow">→</span>
+              <span class="fee-v2">¥{{ item.v2?.toFixed(2) ?? '0.00' }}</span>
+              <span class="fee-change" :class="item.changeClass">{{ item.changeText }}</span>
+            </div>
           </div>
         </div>
         <div class="summary-card" :class="totalChangeClass('labor_total')">
@@ -261,7 +263,113 @@
         <el-empty v-else description="无物料变化" :image-size="60" />
       </div>
 
-      <!-- 费用变化 -->
+      <!-- 运输包装变化 -->
+      <div class="compare-section card">
+        <h4 class="section-title">📦 运输包装变化 <span class="count-badge" v-if="getPackingChanges().length > 0">{{ getPackingChanges().length }} 项</span></h4>
+        <table class="compare-table" v-if="getPackingChanges().length > 0">
+          <thead>
+            <tr>
+              <th>包装类型</th>
+              <th>V{{ v1Select }} 数量</th>
+              <th>V{{ v2Select }} 数量</th>
+              <th>V{{ v1Select }} 单价</th>
+              <th>V{{ v2Select }} 单价</th>
+              <th>V{{ v1Select }} 小计</th>
+              <th>V{{ v2Select }} 小计</th>
+              <th>变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="item in getPackingChanges()" :key="item.key">
+              <tr :class="item.changeClass">
+                <td>{{ item.name }}</td>
+                <td>{{ item.q1 ?? '-' }}</td>
+                <td>{{ item.q2 ?? '-' }}</td>
+                <td>¥{{ item.p1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.p2?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s2?.toFixed(2) || '-' }}</td>
+                <td :class="item.changeClass">{{ item.changeText }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <el-empty v-else description="无运输包装变化" :image-size="60" />
+      </div>
+
+      <!-- 差旅人天变化 -->
+      <div class="compare-section card">
+        <h4 class="section-title">🧳 差旅人天变化 <span class="count-badge" v-if="getTravelDaysChanges().length > 0">{{ getTravelDaysChanges().length }} 项</span></h4>
+        <table class="compare-table" v-if="getTravelDaysChanges().length > 0">
+          <thead>
+            <tr>
+              <th>分类</th>
+              <th>V{{ v1Select }} 数量</th>
+              <th>V{{ v2Select }} 数量</th>
+              <th>V{{ v1Select }} 单价</th>
+              <th>V{{ v2Select }} 单价</th>
+              <th>V{{ v1Select }} 小计</th>
+              <th>V{{ v2Select }} 小计</th>
+              <th>变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="item in getTravelDaysChanges()" :key="item.key">
+              <tr :class="item.changeClass">
+                <td>{{ item.name }}</td>
+                <td>{{ item.q1 ?? '-' }}</td>
+                <td>{{ item.q2 ?? '-' }}</td>
+                <td>¥{{ item.p1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.p2?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s2?.toFixed(2) || '-' }}</td>
+                <td :class="item.changeClass">{{ item.changeText }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <el-empty v-else description="无差旅人天变化" :image-size="60" />
+      </div>
+
+      <!-- 差旅人次变化 -->
+      <div class="compare-section card">
+        <h4 class="section-title">✈️ 差旅人次变化 <span class="count-badge" v-if="getTravelTripChanges().length > 0">{{ getTravelTripChanges().length }} 项</span></h4>
+        <table class="compare-table" v-if="getTravelTripChanges().length > 0">
+          <thead>
+            <tr>
+              <th>出行方式</th>
+              <th>V{{ v1Select }} 人数</th>
+              <th>V{{ v2Select }} 人数</th>
+              <th>V{{ v1Select }} 人均</th>
+              <th>V{{ v2Select }} 人均</th>
+              <th>V{{ v1Select }} 签证费</th>
+              <th>V{{ v2Select }} 签证费</th>
+              <th>V{{ v1Select }} 小计</th>
+              <th>V{{ v2Select }} 小计</th>
+              <th>变化</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template v-for="item in getTravelTripChanges()" :key="item.key">
+              <tr :class="item.changeClass">
+                <td>{{ item.name }}</td>
+                <td>{{ item.q1 ?? '-' }}</td>
+                <td>{{ item.q2 ?? '-' }}</td>
+                <td>¥{{ item.p1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.p2?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.v1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.v2?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s1?.toFixed(2) || '-' }}</td>
+                <td>¥{{ item.s2?.toFixed(2) || '-' }}</td>
+                <td :class="item.changeClass">{{ item.changeText }}</td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+        <el-empty v-else description="无差旅人次变化" :image-size="60" />
+      </div>
+
+      <!-- 人力工时变化 -->
       <div class="compare-section card">
         <h4 class="section-title">💰 费用变化 <span class="count-badge" v-if="getFeeChanges().length > 0">{{ getFeeChanges().length }} 项</span></h4>
         <table class="compare-table" v-if="getFeeChanges().length > 0">
@@ -330,8 +438,14 @@ import { ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import request from '../utils/request'
 
+const props = defineProps({
+  versions: { type: Array, default: () => [] },
+  quotationId: { type: [Number, String], default: null }
+})
+
 const route = useRoute()
-const quotationId = computed(() => route.params.id)
+// 优先用 prop，弹窗场景下 prop 有值；路由场景 fallback 到 route.params.id
+const effectiveQuotationId = computed(() => props.quotationId ?? route.params.id)
 
 // 版本选择
 const versionOptions = ref([])
@@ -349,8 +463,21 @@ const selectedVersionNo = ref(null)
 
 // 加载版本列表
 async function loadVersions() {
+  // 优先使用父组件传入的版本列表（弹窗场景）
+  if (props.versions && props.versions.length > 0) {
+    versionOptions.value = props.versions
+    // 默认选中最后两个版本
+    if (versionOptions.value.length >= 2) {
+      const sorted = [...versionOptions.value].sort((a, b) => a.version_no - b.version_no)
+      v1Select.value = sorted[sorted.length - 2].version_no
+      v2Select.value = sorted[sorted.length - 1].version_no
+      await doCompare()
+    }
+    return
+  }
+  // 兜底：从 API 获取（独立路由场景）
   try {
-    const res = await request.get(`/quotations/${quotationId.value}/versions`)
+    const res = await request.get(`/quotations/${effectiveQuotationId.value}/versions`)
     versionOptions.value = res || []
     // 默认选中最后两个版本
     if (versionOptions.value.length >= 2) {
@@ -382,7 +509,7 @@ async function doCompare() {
 
   loading.value = true
   try {
-    const res = await request.get(`/quotations/${quotationId.value}/versions/compare`, {
+    const res = await request.get(`/quotations/${effectiveQuotationId.value}/versions/compare`, {
       params: { v1: v1Select.value, v2: v2Select.value }
     })
     compareData.value = res
@@ -413,7 +540,7 @@ function handleExport(format) {
     ElMessage.warning('请选择要导出的版本')
     return
   }
-  window.open(`/api/quotations/${quotationId.value}/versions/${selectedVersionNo.value}/export/${format}`, '_blank')
+  window.open(`/api/quotations/${effectiveQuotationId.value}/versions/${selectedVersionNo.value}/export/${format}`, '_blank')
 }
 
 // 工具函数
@@ -494,18 +621,19 @@ function getModuleRowClass(name) {
 
 // 物料相关
 function getMaterialsMap(data) {
-  const map = new Map()
-  if (!data?.modules) return map
-  for (const mod of data.modules) {
-    if (mod.materials) {
-      for (const mat of mod.materials) {
-        const key = mat.material_id || mat.id
-        map.set(key, { ...mat, moduleName: mod.name })
+    const map = new Map()
+    if (!data?.modules) return map
+    for (const mod of data.modules) {
+      if (mod.materials) {
+        for (const mat of mod.materials) {
+          // 用 mm_id（ModuleMaterial 主键）做 key，同物料在不同模块下的实例不合并
+          const key = mat.id || mat.material_id
+          map.set(key, { ...mat, moduleName: mod.name })
+        }
       }
     }
+    return map
   }
-  return map
-}
 
 function getMaterialChanges() {
   const changes = []
@@ -580,6 +708,126 @@ function getFeeChanges() {
 
 function getFeeRowClass(fee) {
   return fee.changeClass === 'cell-added' ? 'row-added' : fee.changeClass === 'cell-removed' ? 'row-removed' : fee.changeClass === 'cell-modified' ? 'row-modified' : ''
+}
+
+// ========== 其他费用四项汇总 ==========
+function getFeeBreakdown() {
+  const items = [
+    { key: 'packing', name: '运输包装', getV1: () => (data1.value?.packing_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0), getV2: () => (data2.value?.packing_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0) },
+    { key: 'person_days', name: '差旅人天', getV1: () => (data1.value?.person_days_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0), getV2: () => (data2.value?.person_days_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0) },
+    { key: 'person_trips', name: '差旅人次', getV1: () => (data1.value?.person_trip_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0), getV2: () => (data2.value?.person_trip_entries || []).reduce((s, e) => s + (parseFloat(e.total) || 0), 0) },
+    { key: 'fees', name: '其他费用', getV1: () => (data1.value?.fees || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0), getV2: () => (data2.value?.fees || []).reduce((s, e) => s + (parseFloat(e.amount) || 0), 0) },
+  ]
+  return items.map(item => {
+    const v1 = item.getV1()
+    const v2 = item.getV2()
+    const change = v2 - v1
+    let changeClass = ''
+    let changeText = '-'
+    if (change !== 0) {
+      changeClass = change > 0 ? 'cell-modified' : 'cell-modified'
+      changeText = `${change > 0 ? '+' : ''}¥${change.toFixed(2)}`
+    }
+    return { key: item.key, name: item.name, v1, v2, change, changeClass, changeText }
+  })
+}
+
+// ========== 运输包装对比 ==========
+function getPackingChanges() {
+  const changes = []
+  const list1 = data1.value?.packing_entries || []
+  const list2 = data2.value?.packing_entries || []
+  const map1 = new Map(list1.map(p => [p.packing_type_name || p.packing_type_id, p]))
+  const map2 = new Map(list2.map(p => [p.packing_type_name || p.packing_type_id, p]))
+  const allKeys = [...new Set([...map1.keys(), ...map2.keys()])]
+
+  for (const key of allKeys) {
+    const p1 = map1.get(key)
+    const p2 = map2.get(key)
+    // 快照用 total 字段
+    const s1 = p1?.total || p1?.subtotal || 0
+    const s2 = p2?.total || p2?.subtotal || 0
+    const name = p1?.packing_type_name || p2?.packing_type_name || key
+    // 单价和数量都要比
+    const up1 = p1?.unit_price || 0
+    const up2 = p2?.unit_price || 0
+    const q1 = p1?.quantity || 0
+    const q2 = p2?.quantity || 0
+
+    if (!p1 && p2) {
+      changes.push({ key, name, q1: null, q2, p1: null, p2: up2, s1: null, s2, changeClass: 'cell-added', changeText: `+ ¥${s2.toFixed(2)}` })
+    } else if (p1 && !p2) {
+      changes.push({ key, name, q1, q2: null, p1: up1, p2: null, s1, s2: null, changeClass: 'cell-removed', changeText: `- ¥${s1.toFixed(2)}` })
+    } else if (up1 !== up2 || q1 !== q2) {
+      const change = s2 - s1
+      changes.push({ key, name, q1, q2, p1: up1, p2: up2, s1, s2, changeClass: change !== 0 ? 'cell-modified' : '', changeText: `${change > 0 ? '+' : ''}¥${change.toFixed(2)}` })
+    }
+  }
+  return changes
+}
+
+// ========== 差旅人天对比 ==========
+function getTravelDaysChanges() {
+  const changes = []
+  const list1 = data1.value?.person_days_entries || []
+  const list2 = data2.value?.person_days_entries || []
+  const map1 = new Map(list1.map(t => [t.travel_category_name || t.travel_category_id, t]))
+  const map2 = new Map(list2.map(t => [t.travel_category_name || t.travel_category_id, t]))
+  const allKeys = [...new Set([...map1.keys(), ...map2.keys()])]
+
+  for (const key of allKeys) {
+    const t1 = map1.get(key)
+    const t2 = map2.get(key)
+    const s1 = t1?.total || 0
+    const s2 = t2?.total || 0
+    const name = t1?.destination || t2?.destination || key
+    const up1 = t1?.unit_price || 0
+    const up2 = t2?.unit_price || 0
+    const q1 = t1?.quantity || 0
+    const q2 = t2?.quantity || 0
+
+    if (!t1 && t2) {
+      changes.push({ key, name, q1: null, q2, p1: null, p2: up2, s1: null, s2, changeClass: 'cell-added', changeText: `+ ¥${s2.toFixed(2)}` })
+    } else if (t1 && !t2) {
+      changes.push({ key, name, q1, q2: null, p1: up1, p2: null, s1, s2: null, changeClass: 'cell-removed', changeText: `- ¥${s1.toFixed(2)}` })
+    } else if (up1 !== up2 || q1 !== q2) {
+      const change = s2 - s1
+      changes.push({ key, name, q1, q2, p1: up1, p2: up2, s1, s2, changeClass: change !== 0 ? 'cell-modified' : '', changeText: `${change > 0 ? '+' : ''}¥${change.toFixed(2)}` })
+    }
+  }
+  return changes
+}
+
+// ========== 差旅人次对比 ==========
+function getTravelTripChanges() {
+  const changes = []
+  const list1 = data1.value?.person_trip_entries || []
+  const list2 = data2.value?.person_trip_entries || []
+  const map1 = new Map(list1.map(t => [t.destination || t.id, t]))
+  const map2 = new Map(list2.map(t => [t.destination || t.id, t]))
+  const allKeys = [...new Set([...map1.keys(), ...map2.keys()])]
+
+  for (const key of allKeys) {
+    const t1 = map1.get(key)
+    const t2 = map2.get(key)
+    const s1 = t1?.total || 0
+    const s2 = t2?.total || 0
+    const name = t1?.destination || t2?.destination || key
+    const up1 = t1?.unit_price || 0
+    const up2 = t2?.unit_price || 0
+    const q1 = t1?.quantity || 0
+    const q2 = t2?.quantity || 0
+
+    if (!t1 && t2) {
+      changes.push({ key, name, q1: null, q2, p1: null, p2: up2, v1: null, v2: t2.visa_fee, s1: null, s2, changeClass: 'cell-added', changeText: `+ ¥${s2.toFixed(2)}` })
+    } else if (t1 && !t2) {
+      changes.push({ key, name, q1, q2: null, p1: up1, p2: null, v1: t1.visa_fee, v2: null, s1, s2: null, changeClass: 'cell-removed', changeText: `- ¥${s1.toFixed(2)}` })
+    } else if (up1 !== up2 || q1 !== q2 || t1?.visa_fee !== t2?.visa_fee) {
+      const change = s2 - s1
+      changes.push({ key, name, q1, q2, p1: up1, p2: up2, v1: t1.visa_fee, v2: t2.visa_fee, s1, s2, changeClass: change !== 0 ? 'cell-modified' : '', changeText: `${change > 0 ? '+' : ''}¥${change.toFixed(2)}` })
+    }
+  }
+  return changes
 }
 
 // 人力工时相关
@@ -900,5 +1148,65 @@ onMounted(() => {
   .summary-cards {
     grid-template-columns: 1fr;
   }
+}
+
+/* 其他费用四项汇总 */
+.fee-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fee-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.fee-row.cell-modified {
+  background: #fef0f0;
+}
+
+.fee-row.cell-added {
+  background: #f0f9eb;
+}
+
+.fee-row.cell-removed {
+  background: #fdf6ec;
+}
+
+.fee-name {
+  width: 70px;
+  color: #606266;
+  font-weight: 500;
+}
+
+.fee-v1, .fee-v2 {
+  color: #303133;
+  min-width: 70px;
+}
+
+.fee-arrow {
+  color: #909399;
+}
+
+.fee-change {
+  margin-left: auto;
+  font-weight: 600;
+}
+
+.fee-change.cell-modified {
+  color: #f56c6c;
+}
+
+.fee-change.cell-added {
+  color: #67c23a;
+}
+
+.fee-change.cell-removed {
+  color: #e6a23c;
 }
 </style>

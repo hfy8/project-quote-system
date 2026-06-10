@@ -67,6 +67,9 @@ ALL_PERMISSIONS = [
     # 参与人权限
     {'code': 'participant_type_permission.view', 'name': '查看参与人权限', 'group': '参与人权限'},
     {'code': 'participant_type_permission.edit', 'name': '编辑参与人权限', 'group': '参与人权限'},
+    # 运输差旅配置
+    {'code': 'travel_fee_config.view', 'name': '查看运输差旅配置', 'group': '运输差旅'},
+    {'code': 'travel_fee_config.edit', 'name': '编辑运输差旅配置', 'group': '运输差旅'},
 ]
 
 # 默认角色配置

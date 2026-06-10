@@ -250,6 +250,10 @@ const permissionGroups = ref([
     { code: 'participant_type_permission.view', name: '查看参与人权限' },
     { code: 'participant_type_permission.edit', name: '编辑参与人权限' },
   ]},
+  { name: '运输差旅', permissions: [
+    { code: 'travel_fee_config.view', name: '查看运输差旅配置' },
+    { code: 'travel_fee_config.edit', name: '编辑运输差旅配置' },
+  ]},
 ])
 
 const formatPermission = (perm) => {

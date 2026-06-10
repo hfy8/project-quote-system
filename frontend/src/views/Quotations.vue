@@ -260,6 +260,10 @@ const currentQuotationId = ref(null)
 
 // 打开版本对比
 const openVersionCompare = () => {
+  if (!currentQuotationId.value) {
+    ElMessage.warning('请先选择一个报价单')
+    return
+  }
   versionCompareVisible.value = true
 }
 

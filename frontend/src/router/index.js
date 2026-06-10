@@ -175,7 +175,7 @@ const router = createRouter({
 })
 
 // 路由守卫
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const token = localStorage.getItem('token')
 
   // 登录页可以直接访问
@@ -190,8 +190,18 @@ router.beforeEach((to, from, next) => {
     return
   }
 
-  // 动态权限检查：从 authStore 获取用户权限
+  // 刷新权限（确保角色权限变更实时生效）
   const authStore = useAuthStore()
+  try {
+    await authStore.getUserInfo()
+  } catch (e) {
+    // token 无效或过期，跳转登录
+    authStore.clearAuth()
+    next('/login')
+    return
+  }
+
+  // 动态权限检查
   const userPermissions = authStore.userInfo?.permissions || []
   const routeName = to.name
 

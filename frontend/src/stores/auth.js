@@ -34,6 +34,14 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
+    // 仅清除本地状态（不调 API，用于路由守卫中避免 401 死循环）
+    clearAuth() {
+      this.token = ''
+      this.userInfo = null
+      localStorage.removeItem('token')
+      localStorage.removeItem(USER_INFO_KEY)
+    },
+
     async getUserInfo() {
       const res = await authAPI.getUserInfo()
       this.userInfo = res
