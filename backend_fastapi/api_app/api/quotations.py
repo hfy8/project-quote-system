@@ -462,10 +462,88 @@ def create_quotation(
 
     return JSONResponse(content=quotation.to_dict(), status_code=201)
 
+# ---- 我的参与 ----
+
+@router.get("/quotations/my-assignments")
+def get_my_assignments(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    uid = int(user_id)
+    user = db.query(User).get(uid)
+    if not user:
+        raise HTTPException(status_code=401, detail='用户不存在')
+
+    participant_records = db.query(QuotationParticipant).filter_by(user_id=uid).all()
+
+    result = []
+    for p in participant_records:
+        quotation = db.query(Quotation).get(p.quotation_id)
+        if not quotation:
+            continue
+
+        module_count = db.query(Module).filter_by(quotation_id=quotation.id).count()
+        material_count = db.query(sa_func.count(ModuleMaterial.id)).join(Module).filter(
+            Module.quotation_id == quotation.id
+        ).scalar() or 0
+
+        result.append({
+            'quotation_id': quotation.id,
+            'quotation_name': quotation.name,
+            'quotation_scheme_no': quotation.scheme_no,
+            'quotation_status': quotation.status,
+            'participant_type': p.participant_type,
+            'business_owner_name': quotation.business_owner.real_name if quotation.business_owner else None,
+            'module_count': module_count,
+            'material_count': material_count,
+            'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
+        })
+
+    return JSONResponse(content=result, status_code=200)
+
+
+@router.get("/quotations/my-assigned-modules")
+def get_my_assigned_modules(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    uid = int(user_id)
+    user = db.query(User).get(uid)
+    if not user:
+        raise HTTPException(status_code=401, detail='用户不存在')
+    # 获取用户作为模块参与者的所有模块
+
+    participant_records = db.query(ModuleParticipant).filter_by(user_id=uid).all()
+
+    module_ids = [p.module_id for p in participant_records]
+
+    if not module_ids:
+        return JSONResponse(content=[], status_code=200)
+
+    modules = db.query(Module).filter(Module.id.in_(module_ids)).all()
+
+    result = []
+    for mod in modules:
+        material_count = db.query(ModuleMaterial).filter_by(module_id=mod.id).count()
+        quotation = db.query(Quotation).get(mod.quotation_id)
+
+        result.append({
+            'id': mod.id,
+            'module_name': mod.name,
+            'module_code': mod.code,
+            'quotation_id': mod.quotation_id,
+            'quotation_name': quotation.name if quotation else None,
+            'quotation_scheme_no': quotation.scheme_no if quotation else None,
+            'quotation_status': quotation.status if quotation else None,
+            'material_count': material_count
+        })
+
+    return JSONResponse(content=result, status_code=200)
+
 
 @router.get("/quotations/{quotation_id}")
 def get_quotation(
-    quotation_id: str,
+    quotation_id: int,
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -475,7 +553,7 @@ def get_quotation(
 
 @router.get("/quotations/{quotation_id}/permissions")
 def get_quotation_permissions(
-    quotation_id: str,
+    quotation_id: int,
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -536,7 +614,7 @@ def get_quotation_permissions(
 
 @router.put("/quotations/{quotation_id}")
 def update_quotation(
-    quotation_id: str,
+    quotation_id: int,
     body: QuotationUpdate,
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
@@ -570,7 +648,7 @@ def update_quotation(
 
 @router.delete("/quotations/{quotation_id}")
 def delete_quotation(
-    quotation_id: str,
+    quotation_id: int,
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
@@ -1182,80 +1260,3 @@ def get_quotation_summary(
     }
 
 
-# ---- 我的参与 ----
-
-@router.get("/my-assignments")
-def get_my_assignments(
-    db=Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    uid = int(user_id)
-    user = db.query(User).get(uid)
-    if not user:
-        raise HTTPException(status_code=401, detail='用户不存在')
-
-    participant_records = db.query(QuotationParticipant).filter_by(user_id=uid).all()
-
-    result = []
-    for p in participant_records:
-        quotation = db.query(Quotation).get(p.quotation_id)
-        if not quotation:
-            continue
-
-        module_count = db.query(Module).filter_by(quotation_id=quotation.id).count()
-        material_count = db.query(sa_func.count(ModuleMaterial.id)).join(Module).filter(
-            Module.quotation_id == quotation.id
-        ).scalar() or 0
-
-        result.append({
-            'quotation_id': quotation.id,
-            'quotation_name': quotation.name,
-            'quotation_scheme_no': quotation.scheme_no,
-            'quotation_status': quotation.status,
-            'participant_type': p.participant_type,
-            'business_owner_name': quotation.business_owner.real_name if quotation.business_owner else None,
-            'module_count': module_count,
-            'material_count': material_count,
-            'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
-        })
-
-    return JSONResponse(content=result, status_code=200)
-
-
-@router.get("/my-assigned-modules")
-def get_my_assigned_modules(
-    db=Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    uid = int(user_id)
-    user = db.query(User).get(uid)
-    if not user:
-        raise HTTPException(status_code=401, detail='用户不存在')
-    # 获取用户作为模块参与者的所有模块
-
-    participant_records = db.query(ModuleParticipant).filter_by(user_id=uid).all()
-
-    module_ids = [p.module_id for p in participant_records]
-
-    if not module_ids:
-        return JSONResponse(content=[], status_code=200)
-
-    modules = db.query(Module).filter(Module.id.in_(module_ids)).all()
-
-    result = []
-    for mod in modules:
-        material_count = db.query(ModuleMaterial).filter_by(module_id=mod.id).count()
-        quotation = db.query(Quotation).get(mod.quotation_id)
-
-        result.append({
-            'id': mod.id,
-            'module_name': mod.name,
-            'module_code': mod.code,
-            'quotation_id': mod.quotation_id,
-            'quotation_name': quotation.name if quotation else None,
-            'quotation_scheme_no': quotation.scheme_no if quotation else None,
-            'quotation_status': quotation.status if quotation else None,
-            'material_count': material_count
-        })
-
-    return JSONResponse(content=result, status_code=200)
