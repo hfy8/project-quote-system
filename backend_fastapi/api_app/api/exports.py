@@ -208,11 +208,21 @@ def export_word(
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
 
-    modules = Module.query.filter_by(quotation_id=quotation_id).all()
-    for module in modules:
-        module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
-    fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
-    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
+    # 线体：聚合所有子报价单数据
+    if quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children.all()]
+        all_ids = [quotation_id] + child_ids
+        modules = Module.query.filter(Module.quotation_id.in_(all_ids)).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter(OtherFee.quotation_id.in_(all_ids)).all()
+        labor_hours = LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all()
+    else:
+        modules = Module.query.filter_by(quotation_id=quotation_id).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
+        labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
 
     totals = calculate_totals_with_rates(quotation, modules, fees, labor_hours)
 
@@ -388,11 +398,21 @@ def export_excel(
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
 
-    modules = Module.query.filter_by(quotation_id=quotation_id).all()
-    for module in modules:
-        module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
-    fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
-    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
+    # 线体：聚合所有子报价单数据
+    if quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children.all()]
+        all_ids = [quotation_id] + child_ids
+        modules = Module.query.filter(Module.quotation_id.in_(all_ids)).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter(OtherFee.quotation_id.in_(all_ids)).all()
+        labor_hours = LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all()
+    else:
+        modules = Module.query.filter_by(quotation_id=quotation_id).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
+        labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
 
     totals = calculate_totals_with_rates(quotation, modules, fees, labor_hours)
 
@@ -970,14 +990,27 @@ def export_pdf(
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
 
-    modules = Module.query.filter_by(quotation_id=quotation_id).all()
-    for module in modules:
-        module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
-    fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
-    labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
-    packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
-    person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
-    person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
+    # 线体：聚合所有子报价单数据；普通：只查自己（与 Flask 一致）
+    if quotation.type == 'line':
+        child_ids = [c.id for c in quotation.children.all()]
+        all_ids = [quotation_id] + child_ids
+        modules = Module.query.filter(Module.quotation_id.in_(all_ids)).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter(OtherFee.quotation_id.in_(all_ids)).all()
+        labor_hours = LaborHour.query.filter(LaborHour.quotation_id.in_(all_ids)).all()
+        packing_entries = PackingEntry.query.filter(PackingEntry.quotation_id.in_(all_ids)).all()
+        person_days_entries = TravelPersonDays.query.filter(TravelPersonDays.quotation_id.in_(all_ids)).all()
+        person_trip_entries = TravelPersonTrip.query.filter(TravelPersonTrip.quotation_id.in_(all_ids)).all()
+    else:
+        modules = Module.query.filter_by(quotation_id=quotation_id).all()
+        for module in modules:
+            module.materials = ModuleMaterial.query.filter_by(module_id=module.id).all()
+        fees = OtherFee.query.filter_by(quotation_id=quotation_id).all()
+        labor_hours = LaborHour.query.filter_by(quotation_id=quotation_id).all()
+        packing_entries = PackingEntry.query.filter_by(quotation_id=quotation_id).all()
+        person_days_entries = TravelPersonDays.query.filter_by(quotation_id=quotation_id).all()
+        person_trip_entries = TravelPersonTrip.query.filter_by(quotation_id=quotation_id).all()
 
     coeff = (quotation.coefficients if hasattr(quotation, 'coefficients') and quotation.coefficients else
              {fr.category: float(fr.rate) for fr in FeeRate.query.all()})
