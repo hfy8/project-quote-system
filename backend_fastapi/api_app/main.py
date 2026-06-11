@@ -11,8 +11,8 @@ import os
 import sys
 import logging
 
-# 关键：backend/ 在 sys.path，让 backend.app.create_app() 内部的 'app.xxx' 引用能找到
-BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+# 关键：backend_fastapi/ 在 sys.path，让 app.xxx 引用能找到
+BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, BACKEND_DIR)
 
 from fastapi import FastAPI, Depends, HTTPException
@@ -32,10 +32,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(na
 # ============== 加载 Flask 后端（启动时） ==============
 import importlib.util
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-BACKEND_DIR = os.path.join(PROJECT_ROOT, 'backend')
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+BACKEND_DIR = PROJECT_ROOT
 
-# backend/ 不是 package，把 backend 加到 sys.path
+# backend_fastapi/ 在 sys.path，让 app.xxx 引用能找到
 sys.path.insert(0, BACKEND_DIR)
 
 # 现在可以直接 `from app.xxx` 加载

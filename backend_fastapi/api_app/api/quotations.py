@@ -348,7 +348,7 @@ def _create_version_snapshot(db, quotation, operator_id, operation_type, remark=
                 flask_app = flask_create_app()
                 with flask_app.app_context():
                     from app.models import VersionSnapshot as FlaskVersion
-                    from app.routes.exports import generate_version_files
+                    from app.services.export_service import generate_version_files
                     ver = FlaskVersion.query.filter_by(
                         quotation_id=async_quotation_id,
                         version_no=async_version_no
@@ -901,7 +901,7 @@ def compare_versions_by_quotation(
     v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
 
-    from app.routes.exports import calculate_version_totals
+    from app.services.export_service import calculate_version_totals
     v1_totals = calculate_version_totals(v1_data)
     v2_totals = calculate_version_totals(v2_data)
 
@@ -964,7 +964,7 @@ def archive_quotation(
     # 归档时生成中英 PDF（通过 Flask legacy 的导出模块）
     try:
         from app import create_app as flask_create_app
-        from app.routes.exports import generate_version_pdfs
+        from app.services.export_service import generate_version_pdfs
         flask_app = flask_create_app()
         with flask_app.app_context():
             generate_version_pdfs(quotation.id, version.version_no)
@@ -981,7 +981,7 @@ def archive_quotation(
                     db, child, int(user_id), 'archive', '随线体报价单归档')
                 try:
                     from app import create_app as flask_create_app
-                    from app.routes.exports import generate_version_pdfs
+                    from app.services.export_service import generate_version_pdfs
                     flask_app = flask_create_app()
                     with flask_app.app_context():
                         generate_version_pdfs(child.id, child_version.version_no)

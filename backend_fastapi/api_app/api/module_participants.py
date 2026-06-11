@@ -49,7 +49,7 @@ def add_module_participants(
 ):
     """添加模块参与人员（1:1 复刻 Flask 逻辑，含消息通知）"""
     from app.models.module import ModuleParticipant, Module
-    from app.services.message_service import MessageService
+    from api_app.services.message_service import MessageService
 
     user_ids = body.user_ids
     if not user_ids:
