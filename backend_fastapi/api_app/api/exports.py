@@ -37,7 +37,7 @@ from fpdf import FPDF
 
 # 中文字体路径
 import os
-FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'backend', 'fonts')
+FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts')
 FONT_REGULAR = os.path.join(FONT_DIR, 'simhei.ttf')
 FONT_BOLD = os.path.join(FONT_DIR, 'simhei.ttf')
 
@@ -1044,34 +1044,46 @@ def export_pdf(
     )
 
 
-# ==================== 版本导出（代理到 Flask 5000） ====================
-# FastAPI 尚未完全迁移版本导出逻辑，临时代理到 Flask 后端
+# ==================== 版本导出（原地生成，不再代理 Flask 5000） ====================
 
-from fastapi.responses import Response
-import httpx
-from fastapi.responses import Response
+import os
+from fastapi.responses import FileResponse
 
 @router.get('/quotations/{quotation_id}/versions/{version_no}/export/{fmt}')
 def export_version(
-quotation_id: int,
-version_no: int,
-fmt: str,
-lang: str = Query('zh'),
-auth: str = Query(None, alias='Authorization'),
+    quotation_id: int,
+    version_no: int,
+    fmt: str,
+    lang: str = Query('zh'),
+    db=Depends(get_db),
 ):
-    """导出版本文件，代理到 Flask 5000"""
-    flask_url = f'http://localhost:5000/api/quotations/{quotation_id}/versions/{version_no}/export/{fmt}?lang={lang}'
-    # 透传前端 token，否则 Flask JWT 拒绝
-    headers = {}
-    if auth:
-        headers['Authorization'] = auth
-    with httpx.Client() as client:
-        resp = client.get(flask_url, headers=headers, follow_redirects=True, timeout=30)
-    return Response(
-        content=resp.content,
-        status_code=resp.status_code,
-        media_type=resp.headers.get('content-type', 'application/octet-stream'),
-        headers={
-            'Content-Disposition': resp.headers.get('content-disposition', ''),
-        },
+    """导出版本文件，从已归档的文件系统路径读取"""
+    base_dir = f'/mnt/c/Users/rs8568/Desktop/Project/project-quote-system/backend/versions/{quotation_id}'
+
+    mime_map = {
+        'pdf': 'application/pdf',
+        'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    }
+
+    if fmt == 'pdf':
+        # PDF：优先 _zh.pdf（新版），fallback v{no}.pdf（旧版）
+        filepath = os.path.join(base_dir, f'v{version_no}_zh.pdf')
+        if not os.path.exists(filepath):
+            filepath = os.path.join(base_dir, f'v{version_no}.pdf')
+    elif fmt == 'word':
+        filepath = os.path.join(base_dir, f'v{version_no}.docx')
+    elif fmt == 'excel':
+        # Excel 导出从报价单层走，版本层没有
+        raise HTTPException(status_code=400, detail='版本暂不支持 Excel 导出')
+    else:
+        raise HTTPException(status_code=400, detail=f'不支持的格式: {fmt}')
+
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail=f'文件未找到，请先归档生成')
+
+    return FileResponse(
+        filepath,
+        media_type=mime_map.get(fmt, 'application/octet-stream'),
+        filename=os.path.basename(filepath),
     )
