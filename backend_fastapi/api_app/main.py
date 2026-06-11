@@ -22,6 +22,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
 from typing import Optional
 from datetime import datetime, timedelta
+from decimal import Decimal
+import json
 
 logger = logging.getLogger("fastapi-app")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
@@ -58,7 +60,11 @@ _app_ctx.push()  # 进程级，常驻
 def get_db():
     """FastAPI 依赖：app context 已在启动时 push，直接返回 session"""
     from app import db
-    yield db.session
+    try:
+        yield db.session
+    except Exception:
+        db.session.rollback()
+        raise
 
 
 # ============== JWT（FastAPI 自己的鉴权） ==============
@@ -135,12 +141,28 @@ fastapi_app.add_middleware(
 )
 
 
-# ============== 全局异常处理：Flask 兼容格式 ==============
+# 全局异常处理：Flask 兼容格式
 # 把 FastAPI 默认的 {"detail": "..."} 转成 Flask 的 {"error": "..."}
 # 这样前端 axios 拦截器无需区分 FastAPI/Flask
 
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.exceptions import RequestValidationError
+
+# 自定义 JSON 编码器：处理 Decimal 等类型
+class DecimalJSONEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
+
+# 覆写 FastAPI 的默认 JSONResponse 序列化
+# Starlette 用 json.dumps 序列化，我们可以 monkey-patch 让 fastapi.responses.JSONResponse 用自定义 encoder
+import fastapi.responses as resp_mod
+_orig_dumps = json.dumps
+def _patched_dumps(obj, **kwargs):
+    kwargs.setdefault('cls', DecimalJSONEncoder)
+    return _orig_dumps(obj, **kwargs)
+json.dumps = _patched_dumps
 
 async def http_exception_handler(request, exc):
     """HTTPException -> {"error": detail}"""
@@ -166,6 +188,7 @@ async def validation_exception_handler(request, exc):
 
 
 # ============== Health ==============
+@fastapi_app.get("/health", tags=["系统"])
 def health():
     return {
         "status": "ok",
@@ -180,12 +203,22 @@ from api_app.api.auth import router as auth_router
 from api_app.api.materials import router as materials_router
 from api_app.api.modules import router as modules_router
 from api_app.api.quotations import router as quotations_router
+from api_app.api.fees import router as fees_router
+from api_app.api.fee_rates import router as fee_rates_router
+from api_app.api.labor_hours import router as labor_hours_router
+from api_app.api.travel_entries import router as travel_entries_router
+from api_app.api.travel_fees import router as travel_fees_router
 fastapi_app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
 fastapi_app.include_router(materials_router, prefix="/api/materials", tags=["物料库"])
 # module_bp 注册到 /api 蓝本（Flask 同 prefix）
 fastapi_app.include_router(modules_router, prefix="/api", tags=["模块"])
 # quotation_bp 注册到 /api 蓝本（Flask 同 prefix）
 fastapi_app.include_router(quotations_router, prefix="/api", tags=["报价单"])
+fastapi_app.include_router(fees_router, prefix="/api", tags=["其他费用"])
+fastapi_app.include_router(fee_rates_router, prefix="/api", tags=["费率"])
+fastapi_app.include_router(labor_hours_router, prefix="/api", tags=["人力工时"])
+fastapi_app.include_router(travel_entries_router, prefix="/api", tags=["差旅条目"])
+fastapi_app.include_router(travel_fees_router, prefix="/api", tags=["差旅配置"])
 
 
 # ============== 挂载 Flask 老路由到 /legacy ==============
