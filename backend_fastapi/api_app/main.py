@@ -179,10 +179,13 @@ def health():
 from api_app.api.auth import router as auth_router
 from api_app.api.materials import router as materials_router
 from api_app.api.modules import router as modules_router
+from api_app.api.quotations import router as quotations_router
 fastapi_app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
 fastapi_app.include_router(materials_router, prefix="/api/materials", tags=["物料库"])
 # module_bp 注册到 /api 蓝本（Flask 同 prefix）
 fastapi_app.include_router(modules_router, prefix="/api", tags=["模块"])
+# quotation_bp 注册到 /api 蓝本（Flask 同 prefix）
+fastapi_app.include_router(quotations_router, prefix="/api", tags=["报价单"])
 
 
 # ============== 挂载 Flask 老路由到 /legacy ==============
