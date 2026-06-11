@@ -86,3 +86,30 @@ def delete(id: int, db=Depends(get_db)):
     db.delete(p)
     db.commit()
     return JSONResponse(content={"message": "删除成功"})
+
+
+class PtpCreateType(BaseModel):
+    participant_type: str
+    type_name: str = ""
+
+
+@router.post("/types", status_code=201)
+def create_type(body: PtpCreateType, db=Depends(get_db)):
+    """创建新参与类型"""
+    if not body.participant_type:
+        raise HTTPException(status_code=400, detail="participant_type 不能为空")
+    existing = db.query(ParticipantTypePermission).filter_by(participant_type=body.participant_type).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="该类型已存在")
+    p = ParticipantTypePermission(
+        participant_type=body.participant_type,
+        tab_name="__type__",
+        tab_label=body.type_name or body.participant_type,
+        type_name=body.type_name or body.participant_type,
+        description="类型标记",
+        sort_order=0,
+        is_disabled=False,
+    )
+    db.add(p)
+    db.commit()
+    return {"message": "创建成功", "participant_type": body.participant_type}
