@@ -113,3 +113,10 @@ def create_type(body: PtpCreateType, db=Depends(get_db)):
     db.add(p)
     db.commit()
     return {"message": "创建成功", "participant_type": body.participant_type}
+
+@router.delete("/types/{ptype}")
+def delete_type(ptype: str, db=Depends(get_db)):
+    """删除某类型的所有权限配置"""
+    db.query(ParticipantTypePermission).filter_by(participant_type=ptype).delete()
+    db.commit()
+    return {"message": "删除成功"}
