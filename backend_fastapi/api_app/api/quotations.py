@@ -892,24 +892,11 @@ def compare_versions_by_quotation(
     v1_data = normalize(json.loads(v1_obj.snapshot_data))
     v2_data = normalize(json.loads(v2_obj.snapshot_data))
 
-    # 线体：合并子报价单同 version_no 的快照数据
-    def merge_extra(data, extra_snapshots):
-        if not extra_snapshots:
-            return
-        for es in extra_snapshots:
-            es_data = normalize(json.loads(es.snapshot_data))
-            for key in [
-                'modules',
-                'fees',
-                'labor_hours',
-                'packing_entries',
-                'person_days_entries',
-                'person_trip_entries',
-            ]:
-                data[key] = data.get(key, []) + es_data.get(key, [])
-
-    merge_extra(v1_data, extra_snapshots_v1)
-    merge_extra(v2_data, extra_snapshots_v2)
+    # 线体主报价单的 snapshot 在归档时已聚合子报价单数据
+    # （_create_version_snapshot 用 all_ids=[主]+子 一次聚合）
+    # 所以这里不需要再 merge，否则 labor_hours/modules 等会重复。
+    # extra_snapshots_v1/v2 留作接口兼容返回，但不再合并。
+    _ = extra_snapshots_v1, extra_snapshots_v2
 
     v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
