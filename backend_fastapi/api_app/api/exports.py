@@ -197,7 +197,7 @@ def calculate_totals_with_rates(quotation, modules, fees, labor_hours):
 
 # ==================== 导出 Word ====================
 
-@router.get('/exports/quotations/{quotation_id}/word')
+@router.get('/quotations/{quotation_id}/export/word')
 def export_word(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
@@ -377,7 +377,7 @@ def export_word(
 
 # ==================== 导出 Excel ====================
 
-@router.get('/exports/quotations/{quotation_id}/excel')
+@router.get('/quotations/{quotation_id}/export/excel')
 def export_excel(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
@@ -444,9 +444,9 @@ def export_excel(
             'item': l.name or '人力工时',
             'spec': f'{l.hours}h',
             'category': '人力工时',
-            'unit_price': f'¥{float(l.unit_price or 0):.2f}/h',
+            'unit_price': f'{float(l.unit_price or 0):.2f}',
             'quantity': '1',
-            'subtotal': f'¥{float(l.total or 0):.2f}',
+            'subtotal': f'{float(l.total or 0):.2f}',
         })
     if fee_items:
         module_groups.append({
@@ -959,7 +959,7 @@ def render_pdf_bytes(tables, currency, currency_symbol, material_with_rates, tab
 
 # ==================== 导出 PDF（实时） ====================
 
-@router.get('/exports/quotations/{quotation_id}/pdf')
+@router.get('/quotations/{quotation_id}/export/pdf')
 def export_pdf(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
