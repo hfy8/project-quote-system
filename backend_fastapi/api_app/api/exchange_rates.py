@@ -10,6 +10,15 @@ from api_app.main import get_db, get_current_user_id
 router = APIRouter(prefix='/api/exchange_rates')
 
 
+@router.get('/base')
+def get_base_currency(db=Depends(get_db)):
+    """获取基准货币"""
+    base = db.query(ExchangeRate).filter_by(is_base=True).first()
+    if not base:
+        return {'currency': 'CNY', 'rate': 1.0, 'is_base': True}
+    return base.to_dict()
+
+
 class ExchangeRateCreate(BaseModel):
     currency: str
     rate: float = 1.0
