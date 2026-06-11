@@ -1009,3 +1009,36 @@ def export_pdf(
         media_type='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
+
+
+# ==================== 版本导出（代理到 Flask 5000） ====================
+# FastAPI 尚未完全迁移版本导出逻辑，临时代理到 Flask 后端
+
+from fastapi.responses import Response
+import httpx
+from fastapi.responses import Response
+
+@router.get('/quotations/{quotation_id}/versions/{version_no}/export/{fmt}')
+def export_version(
+quotation_id: int,
+version_no: int,
+fmt: str,
+lang: str = Query('zh'),
+auth: str = Query(None, alias='Authorization'),
+):
+    """导出版本文件，代理到 Flask 5000"""
+    flask_url = f'http://localhost:5000/api/quotations/{quotation_id}/versions/{version_no}/export/{fmt}?lang={lang}'
+    # 透传前端 token，否则 Flask JWT 拒绝
+    headers = {}
+    if auth:
+        headers['Authorization'] = auth
+    with httpx.Client() as client:
+        resp = client.get(flask_url, headers=headers, follow_redirects=True, timeout=30)
+    return Response(
+        content=resp.content,
+        status_code=resp.status_code,
+        media_type=resp.headers.get('content-type', 'application/octet-stream'),
+        headers={
+            'Content-Disposition': resp.headers.get('content-disposition', ''),
+        },
+    )

@@ -2063,6 +2063,7 @@ def calculate_version_totals(data):
 @export_bp.route('/quotations/<int:quotation_id>/versions/<int:version_no>/export/word', methods=['GET'])
 def export_version_word(quotation_id, version_no):
     """导出版本 Word 格式（直接下载预生成文件）"""
+    lang = request.args.get('lang', 'zh')
     version = VersionSnapshot.query.filter_by(
         quotation_id=quotation_id,
         version_no=version_no
