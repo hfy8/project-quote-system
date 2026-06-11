@@ -208,6 +208,17 @@ from api_app.api.fee_rates import router as fee_rates_router
 from api_app.api.labor_hours import router as labor_hours_router
 from api_app.api.travel_entries import router as travel_entries_router
 from api_app.api.travel_fees import router as travel_fees_router
+from api_app.api.exchange_rates import router as exchange_rates_router
+from api_app.api.logs import router as logs_router
+from api_app.api.module_participants import router as module_participants_router
+from api_app.api.sync import router as sync_router
+from api_app.api.messages import router as messages_router
+from api_app.api.change_requests import router as change_requests_router
+from api_app.api.roles import router as roles_router
+from api_app.api.participant_type_permissions import router as participant_type_permissions_router
+from api_app.api.users import router as users_router
+from api_app.api.versions import router as versions_router
+from api_app.api.exports import router as exports_router
 fastapi_app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
 fastapi_app.include_router(materials_router, prefix="/api/materials", tags=["物料库"])
 # module_bp 注册到 /api 蓝本（Flask 同 prefix）
@@ -219,6 +230,17 @@ fastapi_app.include_router(fee_rates_router, prefix="/api", tags=["费率"])
 fastapi_app.include_router(labor_hours_router, prefix="/api", tags=["人力工时"])
 fastapi_app.include_router(travel_entries_router, prefix="/api", tags=["差旅条目"])
 fastapi_app.include_router(travel_fees_router, prefix="/api", tags=["差旅配置"])
+fastapi_app.include_router(exchange_rates_router, tags=["汇率"])
+fastapi_app.include_router(logs_router, tags=["操作日志"])
+fastapi_app.include_router(module_participants_router, tags=["模块参与者"])
+fastapi_app.include_router(sync_router, prefix="/api/sync", tags=["数据同步"])
+fastapi_app.include_router(messages_router, tags=["消息"])
+fastapi_app.include_router(change_requests_router, prefix="/api/change-requests", tags=["变更申请"])
+fastapi_app.include_router(roles_router, tags=["角色管理"])
+fastapi_app.include_router(participant_type_permissions_router, tags=["参与者类型权限"])
+fastapi_app.include_router(users_router, tags=["用户管理"])
+fastapi_app.include_router(versions_router, tags=["版本快照"])
+fastapi_app.include_router(exports_router, tags=["导出"])
 
 
 # ============== 挂载 Flask 老路由到 /legacy ==============
