@@ -253,3 +253,15 @@ def toggle_user_status(
             "user": user.to_dict(),
         }
     )
+
+
+# ──────────────────────────────────────────────
+# GET /api/users/roles — 获取角色列表（动态从用户表）
+# 必须在 /{user_id} 路由之前注册（Starlette 按注册顺序匹配）
+# ──────────────────────────────────────────────
+
+@router.get("/roles")
+def get_user_roles(db=Depends(get_db)):
+    """获取角色列表（从用户表 distinct）"""
+    rows = db.query(User.role).distinct().all()
+    return JSONResponse(content=[r[0] for r in rows if r[0]])

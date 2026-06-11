@@ -46,9 +46,12 @@ def create_app():
     app.register_blueprint(travel_fee_bp, url_prefix='/api')
     app.register_blueprint(travel_entry_bp, url_prefix='/api')
 
-    # 初始化定时任务调度器
-    from app.tasks import init_scheduler
-    global scheduler
-    scheduler = init_scheduler(app)
+    # 初始化定时任务调度器（FastAPI 端已迁移到 lifespan 启动）
+    # 通过环境变量 SKIP_FLASK_SCHEDULER=1 让 Flask 端不再启动，避免重复触发
+    import os
+    if not os.environ.get("SKIP_FLASK_SCHEDULER"):
+        from app.tasks import init_scheduler
+        global scheduler
+        scheduler = init_scheduler(app)
 
     return app

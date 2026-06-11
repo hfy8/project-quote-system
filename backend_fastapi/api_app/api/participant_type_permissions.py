@@ -120,3 +120,28 @@ def delete_type(ptype: str, db=Depends(get_db)):
     db.query(ParticipantTypePermission).filter_by(participant_type=ptype).delete()
     db.commit()
     return {"message": "删除成功"}
+
+
+# ──────────────────────────────────────────────
+# POST /api/participant-type-permissions/initialize
+# 初始化默认权限配置（幂等）
+# ──────────────────────────────────────────────
+
+@router.post("/initialize")
+def initialize_default_permissions(db=Depends(get_db)):
+    """初始化默认权限配置（幂等）"""
+    # 复用 Flask 端定义的 DEFAULT_TABS（在原 routes 文件里）
+    from app.routes.participant_type_permissions import DEFAULT_TABS
+
+    created = 0
+    for tab in DEFAULT_TABS:
+        existing = db.query(ParticipantTypePermission).filter_by(
+            participant_type=tab['participant_type'],
+            tab_name=tab['tab_name']
+        ).first()
+        if not existing:
+            p = ParticipantTypePermission(**tab)
+            db.add(p)
+            created += 1
+    db.commit()
+    return JSONResponse(content={"created": created, "message": f"初始化完成，新增 {created} 条"})

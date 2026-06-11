@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from api_app.main import get_db
+from api_app.main import get_db, get_current_user_id
 
 router = APIRouter(prefix='/api/roles')
 
@@ -93,6 +93,40 @@ def create_role(body: RoleCreate, db=Depends(get_db)):
 
     db.commit()
     return JSONResponse(content=role.to_dict(), status_code=201)
+
+
+# ──────────────────────────────────────────────
+# 2a. GET /api/roles/permissions — 获取所有可用权限（按分组）
+# 必须在 /{role_id} 路由之前注册（Starlette 按注册顺序匹配，
+# "permissions" 会被 /{role_id} 当作 role_id 吃掉）
+# ──────────────────────────────────────────────
+
+@router.get("/permissions")
+def get_all_permissions(db=Depends(get_db)):
+    """获取所有可用权限列表（按分组）"""
+    from app.models import Permission
+    return JSONResponse(content={"items": [p.to_dict() for p in db.query(Permission).all()]})
+
+
+# ──────────────────────────────────────────────
+# 2b. POST /api/roles/seed — 初始化/重置权限和角色数据
+# 必须在 /{role_id} 路由之前注册（同上）
+# ──────────────────────────────────────────────
+
+@router.post("/seed")
+def seed_permissions_and_roles_endpoint(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """初始化/重置权限和角色数据"""
+    from app.models import User
+    from app.utils.permissions import seed_permissions_and_roles, has_permission
+
+    user = db.query(User).get(int(user_id))
+    if not has_permission(user.role, 'role.create'):
+        raise HTTPException(status_code=403, detail="没有权限")
+    seed_permissions_and_roles()
+    return JSONResponse(content={"message": "初始化完成"})
 
 
 # ──────────────────────────────────────────────
@@ -213,3 +247,4 @@ def update_role_permissions(role_id: int, body: RolePermissionsUpdate, db=Depend
         "role_name": role.name,
         "permissions": [p.to_dict() for p in role.permissions],
     })
+

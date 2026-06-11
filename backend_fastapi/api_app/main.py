@@ -46,6 +46,9 @@ Config = config_module.Config
 create_flask_app = app_module.create_app
 
 # 先创建 Flask app（这一步注册所有 SQLAlchemy models 到 metadata）
+# 关键：Flask create_app 内部默认会启动 APScheduler（用于 22:00 数据同步 / 03:00 清理过期消息）。
+# 这里由 FastAPI lifespan 统一接管定时任务，所以临时设环境变量让 Flask 不启动自己的 scheduler。
+os.environ.setdefault("SKIP_FLASK_SCHEDULER", "1")
 _flask_app = create_flask_app()
 logger.info(f"✅ Flask app created: {Config.SQLALCHEMY_DATABASE_URI[:50]}...")
 
@@ -105,7 +108,54 @@ async def get_current_user_id(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 FastAPI 启动")
+
+    # 启动后台定时任务（从 Flask tasks 复用）
+    # 避免与 Flask legacy 重复触发：如果 5000 端口也在跑，Flask 也会初始化 scheduler
+    # 这里的策略：FastAPI 端负责调度；Flask 5000 端如果有 init_scheduler 调用会重复
+    # 解决：通过环境变量 FASTAPI_OWNS_SCHEDULER=1 标记拥有方
+    import os
+    _scheduler = None
+    if os.environ.get("FASTAPI_OWNS_SCHEDULER", "1") == "1":
+        try:
+            from apscheduler.schedulers.background import BackgroundScheduler
+            from apscheduler.triggers.cron import CronTrigger
+            from app.tasks.sync_task import sync_all, cleanup_expired_messages
+
+            _scheduler = BackgroundScheduler()
+
+            # 每天 22:00 数据同步（SQL Server → PostgreSQL）
+            _scheduler.add_job(
+                func=lambda: sync_all(_flask_app),
+                trigger=CronTrigger(hour=22, minute=0),
+                id='daily_sync',
+                name='每日数据同步',
+                replace_existing=True,
+            )
+
+            # 每天 03:00 清理过期消息
+            _scheduler.add_job(
+                func=lambda: cleanup_expired_messages(_flask_app),
+                trigger=CronTrigger(hour=3, minute=0),
+                id='message_cleanup',
+                name='清理过期消息',
+                replace_existing=True,
+            )
+
+            _scheduler.start()
+            logger.info("✅ 定时任务已启动：22:00 数据同步 / 03:00 清理过期消息")
+        except Exception as e:
+            logger.exception(f"⚠️ 定时任务启动失败: {e}")
+
     yield
+
+    # 关闭时停止 scheduler
+    if _scheduler is not None:
+        try:
+            _scheduler.shutdown(wait=False)
+            logger.info("⏹ 定时任务调度器已停止")
+        except Exception:
+            pass
+
     logger.info("👋 FastAPI 关闭")
 
 
