@@ -96,6 +96,20 @@ def create_role(body: RoleCreate, db=Depends(get_db)):
 
 
 # ──────────────────────────────────────────────
+# 3a. GET /api/roles/{role_id} — 获取角色详情
+# ──────────────────────────────────────────────
+
+@router.get("/{role_id}")
+def get_role(role_id: int, db=Depends(get_db)):
+    """获取单个角色详情"""
+    from app.models import Role
+    role = db.query(Role).get(role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="角色不存在")
+    return JSONResponse(content=role.to_dict())
+
+
+# ──────────────────────────────────────────────
 # 3. PUT /api/roles/{role_id} — 更新角色
 # ──────────────────────────────────────────────
 

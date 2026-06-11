@@ -154,6 +154,21 @@ def get_change_request_detail(
     return JSONResponse(content=change_request.to_dict())
 
 
+# 兼容 Flask legacy: 前端可能用 POST 调用 approve/reject
+# FastAPI 主路由用 PUT（符合 REST 改状态语义），同时 alias POST 不破坏现有调用
+@router.post("/{request_id}/approve")
+def approve_change_request_post_alias(
+    request_id: int,
+    body: ReviewRequest = ReviewRequest(),
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """批准变更申请（POST alias，兼容 Flask legacy）"""
+    return approve_change_request(
+        request_id=request_id, body=body, db=db, user_id=user_id
+    )
+
+
 @router.put("/{request_id}/approve")
 def approve_change_request(
     request_id: int,
@@ -323,6 +338,19 @@ def approve_change_request(
             "message": "变更申请已批准",
             "change_request": change_request.to_dict(),
         }
+    )
+
+
+@router.post("/{request_id}/reject")
+def reject_change_request_post_alias(
+    request_id: int,
+    body: ReviewRequest = ReviewRequest(),
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """拒绝变更申请（POST alias，兼容 Flask legacy）"""
+    return reject_change_request(
+        request_id=request_id, body=body, db=db, user_id=user_id
     )
 
 

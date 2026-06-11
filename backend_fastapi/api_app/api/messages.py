@@ -76,6 +76,15 @@ def mark_messages_read(
     return JSONResponse(content={"success": True, "updated": updated})
 
 
+@router.put("/read-all")
+def mark_all_as_read_put_alias(
+    db=Depends(get_db),
+    user_id=Depends(get_current_user_id),
+):
+    """标记所有消息为已读（PUT alias，兼容 Flask legacy）"""
+    return mark_all_as_read(db=db, user_id=user_id)
+
+
 @router.post("/read-all")
 def mark_all_as_read(
     db=Depends(get_db),
