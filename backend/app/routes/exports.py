@@ -1851,20 +1851,24 @@ def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override
 
 
 def calculate_totals(tables, coeff, currency):
-    """计算 PDF 汇总数据"""
-    rate_large = float(coeff.get('large', 1.0))
-    rate_standard = float(coeff.get('standard', 1.0))
-    rate_other = float(coeff.get('other', 1.0))
+    """计算 PDF 汇总数据
+    tables 已含 profit_amount / tax_amount / subtotal_with_profit
+    （_build_pdf_tables 和 _build_pdf_tables_from_snapshot 都算好了）
+    """
     material_with_rates = tables['table1']['total']
     table2_total = tables['table2']['total']
     fees_subtotal = tables['fees_subtotal']
-    subtotal = material_with_rates + table2_total + fees_subtotal
-    # 这些从 quotation/data 中取，此处用默认值
-    profit_rate = 0.0
-    subtotal_with_profit = subtotal
-    tax_rate = 0.13
-    tax_amount = subtotal_with_profit * tax_rate
+    # base_subtotal = 1+2+table3 基础部分（不含利润/税）
+    profit_amount = tables.get('profit_amount', 0)
+    tax_amount = tables.get('tax_amount', 0)
+    subtotal_with_profit = tables.get('subtotal_with_profit', material_with_rates + table2_total + fees_subtotal - profit_amount - tax_amount)
+    # 从 subtotal_with_profit 反推 profit_rate（如果需要展示）
+    base = subtotal_with_profit - profit_amount
+    profit_rate = (profit_amount / base) if base else 0
+    # 反推 tax_rate
+    tax_rate = (tax_amount / subtotal_with_profit) if subtotal_with_profit else 0
     grand_total = subtotal_with_profit + tax_amount
+    subtotal = material_with_rates + table2_total + fees_subtotal
     return {
         'material_with_rates': material_with_rates,
         'table2_total': table2_total,
