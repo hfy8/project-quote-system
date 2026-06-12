@@ -94,6 +94,23 @@ def create_exchange_rate(body: ExchangeRateCreate, db=Depends(get_db), user_id: 
     return JSONResponse(content=rate.to_dict(), status_code=201)
 
 
+@router.post('/{rate_id}/set-base')
+def set_base_currency(rate_id: int, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """设置基准货币（前端专用接口，相当于 is_base=True）"""
+    from utils.logger import log_operation
+
+    rate = db.query(ExchangeRate).get(rate_id)
+    if not rate:
+        raise HTTPException(status_code=404, detail="汇率不存在")
+
+    _set_base_currency(db, rate.currency, rate.rate, user_id, exclude_id=rate_id)
+    rate.is_base = True
+    rate.rate = 1.0  # 基准货币固定为1
+    db.commit()
+    log_operation(user_id, 'update', 'exchange_rate', f'设置基准货币为 "{rate.currency}"')
+    return JSONResponse(content=rate.to_dict())
+
+
 @router.put('/{rate_id}')
 def update_exchange_rate(rate_id: int, body: ExchangeRateUpdate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """更新汇率配置"""
