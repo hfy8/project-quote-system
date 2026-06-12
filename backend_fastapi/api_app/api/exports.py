@@ -1057,8 +1057,15 @@ def export_version(
     lang: str = Query('zh'),
     db=Depends(get_db),
 ):
-    """导出版本文件，从已归档的文件系统路径读取"""
-    base_dir = f'/mnt/c/Users/rs8568/Desktop/Project/project-quote-system/backend/versions/{quotation_id}'
+    """导出版本文件：从数据库 pdf_file/word_file 字段读取真实路径"""
+    import json as _json
+    from app.models.version import VersionSnapshot
+
+    ver = db.query(VersionSnapshot).filter_by(
+        quotation_id=quotation_id, version_no=version_no
+    ).first()
+    if not ver:
+        raise HTTPException(status_code=404, detail=f'版本 v{version_no} 不存在')
 
     mime_map = {
         'pdf': 'application/pdf',
@@ -1067,20 +1074,26 @@ def export_version(
     }
 
     if fmt == 'pdf':
-        # PDF：优先 _zh.pdf（新版），fallback v{no}.pdf（旧版）
-        filepath = os.path.join(base_dir, f'v{version_no}_zh.pdf')
-        if not os.path.exists(filepath):
-            filepath = os.path.join(base_dir, f'v{version_no}.pdf')
+        # pdf_file 字段是 JSON 字符串 {"zh": "path", "en": "path"}
+        pdf_paths = _json.loads(ver.pdf_file) if isinstance(ver.pdf_file, str) and ver.pdf_file else (ver.pdf_file or {})
+        lang_key = 'zh' if lang != 'en' else 'en'
+        filepath = pdf_paths.get(lang_key) or pdf_paths.get('zh')
+        if not filepath:
+            raise HTTPException(status_code=404, detail='版本 PDF 不存在，请先归档')
     elif fmt == 'word':
-        filepath = os.path.join(base_dir, f'v{version_no}.docx')
+        filepath = ver.word_file
+        if not filepath:
+            raise HTTPException(status_code=404, detail='版本 Word 不存在')
     elif fmt == 'excel':
-        # Excel 导出从报价单层走，版本层没有
         raise HTTPException(status_code=400, detail='版本暂不支持 Excel 导出')
     else:
         raise HTTPException(status_code=400, detail=f'不支持的格式: {fmt}')
 
     if not os.path.exists(filepath):
-        raise HTTPException(status_code=404, detail=f'文件未找到，请先归档生成')
+        raise HTTPException(
+            status_code=404,
+            detail=f'文件已被清理或归档路径失效，请重新归档生成（路径: {filepath}）'
+        )
 
     return FileResponse(
         filepath,

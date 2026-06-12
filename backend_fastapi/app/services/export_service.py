@@ -1367,26 +1367,88 @@ def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override
         table2_rows.append({'division': lh.get('name', ''), 'hours': float(lh.get('hours', 0)), 'subtotal': float(lh.get('total', 0))})
         table2_total += float(lh.get('total', 0))
 
-    # table3 其他合计（三个固定条目）
+    # ===== 三大新费用汇总（与 Tab 版 _build_pdf_tables 完全一致）=====
+    total_person_days = 0.0
+    total_person_days_count = 0.0
+    for entry in person_days_data:
+        up = float(entry.get('unit_price', 0) or 0)
+        days = float(entry.get('person_days') or entry.get('days') or entry.get('quantity') or 0)
+        total_person_days += up * days
+        total_person_days_count += days
+
+    total_person_trips = 0.0
+    total_person_trips_count = 0.0
+    for entry in person_trip_data:
+        up = float(entry.get('unit_price', 0) or 0)
+        vf = float(entry.get('visa_fee', 0) or 0)
+        # 已存 total = quantity * (unit_price + visa_fee) ，即与 Tab 版 cat_code != 'domestic' 一致
+        total = float(entry.get('total', 0) or 0)
+        if total == 0:
+            # 兼容没有 total 字段的旧快照
+            cat_code = entry.get('travel_category_code', '') or entry.get('cat_code', '')
+            count = float(entry.get('person_count') or entry.get('quantity') or 0)
+            total = count * (up + (vf if cat_code != 'domestic' else 0))
+        else:
+            count = float(entry.get('person_count') or entry.get('quantity') or 0)
+        total_person_trips += total
+        total_person_trips_count += count
+
+    total_packing = 0.0
+    total_packing_count = 0.0
+    for entry in packing_data:
+        up = float(entry.get('unit_price', 0) or 0)
+        qty = float(entry.get('quantity', 0) or 0)
+        total_packing += up * qty
+        total_packing_count += qty
+
+    # ===== 表格3：其他合计（与 Tab 版完全一致）=====
     table3_rows = []
     table3_total = 0.0
-    for f in fees_data:
-        table3_rows.append({'name': f.get('name', '') or f.get('fee_type', ''), 'quantity': 1, 'unit': 'SET', 'unit_price': float(f.get('amount', 0))})
-        table3_total += float(f.get('amount', 0))
-    for pe in packing_data:
-        table3_rows.append({'name': '运输包装费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pe.get('total', 0))})
-        table3_total += float(pe.get('total', 0))
-    for pd_item in person_days_data:
-        table3_rows.append({'name': '差旅住宿费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pd_item.get('total', 0))})
-        table3_total += float(pd_item.get('total', 0))
-    for pt_item in person_trip_data:
-        table3_rows.append({'name': '差旅交通签证费', 'quantity': 1, 'unit': 'SET', 'unit_price': float(pt_item.get('total', 0))})
-        table3_total += float(pt_item.get('total', 0))
+
+    if total_person_days > 0:
+        table3_rows.append({
+            'name': '差旅住宿费',
+            'quantity': round(total_person_days_count, 1),
+            'unit': '人天',
+            'unit_price': round(total_person_days, 2),
+        })
+        table3_total += total_person_days
+
+    if total_person_trips > 0:
+        table3_rows.append({
+            'name': '差旅交通签证费',
+            'quantity': round(total_person_trips_count, 0),
+            'unit': '人次',
+            'unit_price': round(total_person_trips, 2),
+        })
+        table3_total += total_person_trips
+
+    if total_packing > 0:
+        table3_rows.append({
+            'name': '设备包装运输费',
+            'quantity': round(total_packing_count, 0),
+            'unit': '单元',
+            'unit_price': round(total_packing, 2),
+        })
+        table3_total += total_packing
+
+    # 动态费用（OtherFee 记录：每条一行）
+    dynamic_fees_total = 0.0
+    for fee in fees_data:
+        fee_amount = float(fee.get('amount', 0) or 0)
+        table3_rows.append({
+            'name': fee.get('fee_type', '') or fee.get('name', ''),
+            'quantity': 1,
+            'unit': 'SET',
+            'unit_price': round(fee_amount, 2),
+        })
+        dynamic_fees_total += fee_amount
+    table3_total += dynamic_fees_total
 
     # 项目利润和项目税额（基于 base table3_total）
     base_table3_total = table3_total
-    profit_rate_val = profit_rate_override if profit_rate_override is not None else float(data.get('profit_rate', 0))
-    tax_rate_val = tax_rate_override if tax_rate_override is not None else float(data.get('tax_rate', 0))
+    profit_rate_val = profit_rate_override if profit_rate_override is not None else float(data.get('profit_rate', 0) or 0)
+    tax_rate_val = tax_rate_override if tax_rate_override is not None else float(data.get('tax_rate', 0) or 0)
     profit_amount = (table1_total + table2_total + base_table3_total) * profit_rate_val
     subtotal_with_profit = table1_total + table2_total + base_table3_total + profit_amount
     tax_amount = subtotal_with_profit * tax_rate_val
@@ -1408,13 +1470,13 @@ def _build_pdf_tables_from_snapshot(data, quotation, coeff, profit_rate_override
     table3_total += profit_amount
     table3_total += tax_amount
 
-    # fees_subtotal = 基础费用 + 利润 + 税额（传给 render_pdf_bytes 最终报价用）
+    # fees_subtotal = 基础费用 + 利润 + 税额（与 Tab 版一致）
     fees_subtotal = table3_total
 
     return {
-        'table1': {'rows': table1_rows, 'total': table1_total},
-        'table2': {'rows': table2_rows, 'total': table2_total},
-        'table3': {'rows': table3_rows, 'total': table3_total},
+        'table1': {'rows': table1_rows, 'total': round(table1_total, 2)},
+        'table2': {'rows': table2_rows, 'total': round(table2_total, 2)},
+        'table3': {'rows': table3_rows, 'total': round(table3_total, 2)},
         'fees_subtotal': fees_subtotal,
         'profit_amount': profit_amount,
         'tax_amount': tax_amount,
@@ -1463,13 +1525,17 @@ def calculate_totals(tables, coeff, currency):
 def generate_version_pdfs(quotation_id, version_no):
     """归档时生成中英两个 PDF，保存路径到 version.pdf_file，与 export_pdf 逻辑完全一致"""
     import json, os
+    print(f"[gen_pdfs] qid={quotation_id} vno={version_no} start", flush=True)
     version = VersionSnapshot.query.filter_by(quotation_id=quotation_id, version_no=version_no).first()
     if not version:
+        print(f"[gen_pdfs] version not found", flush=True)
         return
 
     data = get_version_snapshot_data(quotation_id, version_no)
     if not data:
+        print(f"[gen_pdfs] get_version_snapshot_data returned None", flush=True)
         return
+    print(f"[gen_pdfs] data loaded: type={data.get('type')} modules={len(data.get('modules',[]))}", flush=True)
 
     quotation = Quotation.query.get(quotation_id)
     currency = quotation.currency if quotation and quotation.currency else 'CNY'
@@ -1497,11 +1563,12 @@ def generate_version_pdfs(quotation_id, version_no):
     total_before_profit = tables['table1']['total'] + tables['table2']['total'] + tables['fees_subtotal'] - tables.get('profit_amount', 0) - tables.get('tax_amount', 0)
     totals['profit_rate'] = totals['profit_amount'] / total_before_profit if total_before_profit else 0
     grand_total_converted = convert_currency(totals['grand_total'], currency, exchange_rates)
-
-    # 快照的 data 需要 version_no
-    data['version_no'] = version_no
+    # 保存到 static/versions/（统一存放在 backend_fastapi/static/versions/）
+    base_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'versions')
+    os.makedirs(base_dir, exist_ok=True)
 
     pdf_paths = {}
+    word_path = None
     for lang in ['zh', 'en']:
         pdf_bytes = render_pdf_bytes(
             tables, currency, currency_symbol,
@@ -1510,13 +1577,46 @@ def generate_version_pdfs(quotation_id, version_no):
             totals['tax_amount'], grand_total_converted,
             quotation, data, lang
         )
-
-        # 保存到 static/versions/
-        version_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'static', 'versions')
-        os.makedirs(version_dir, exist_ok=True)
-        file_path = os.path.join(version_dir, f'quotation_{quotation_id}_v{version_no}_{lang}.pdf')
+        file_path = os.path.join(base_dir, f'quotation_{quotation_id}_v{version_no}_{lang}.pdf')
         with open(file_path, 'wb') as f:
             f.write(pdf_bytes)
         pdf_paths[lang] = file_path
 
+    # Word 导出（中文版）— 与 Tab 导出的 Word 格式对齐
+    try:
+        word_path = os.path.join(base_dir, f'quotation_{quotation_id}_v{version_no}.docx')
+        from app.services.export_service import _generate_version_word, calculate_version_totals
+        # 复用 _generate_version_word 所需格式（需要 totals 含 grand_total 等）
+        # 将 _build_pdf_tables_from_snapshot 的结果转为 calculate_version_totals 期望的格式
+        # 但这里直接用 totals 已有的字段构造
+        word_totals = {
+            'material_total_with_rates': totals['material_with_rates'],
+            'labor_total': totals['table2_total'],
+            'fees_total': totals['fees_subtotal'] - totals.get('profit_amount', 0) - totals.get('tax_amount', 0),
+            'fee_rates': coeff,
+            'profit_rate': totals['profit_rate'],
+            'subtotal_with_profit': totals['subtotal_with_profit'],
+            'tax_rate': totals['tax_rate'],
+            'tax_amount': totals['tax_amount'],
+            'grand_total': totals['subtotal_with_profit'] + totals['tax_amount'],
+        }
+        _generate_version_word(word_path, quotation_id, version_no, data, word_totals, quotation, 'zh')
+    except Exception as _we:
+        import traceback
+        print(f"生成 Word 失败: {_we}", flush=True)
+        traceback.print_exc()
+
     version.pdf_file = json.dumps(pdf_paths)
+    version.word_file = word_path
+
+    # 提交到数据库（持久化 pdf_file 字段）
+    try:
+        from app import db as _db
+        _db.session.add(version)
+        _db.session.commit()
+    except Exception as _e:
+        try:
+            _db.session.rollback()
+        except Exception:
+            pass
+        print(f"保存 version.pdf_file 失败: {_e}")

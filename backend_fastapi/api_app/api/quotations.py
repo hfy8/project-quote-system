@@ -333,41 +333,12 @@ def _create_version_snapshot(db, quotation, operator_id, operation_type, remark=
     db.add(version)
     db.flush()
 
-    # 异步生成版本文件
+    # 归档/重做的 PDF 生成统一由 archive_quotation 路由里的同步 generate_version_pdfs 完成（与 Tab 格式一致）
+    # 这里不再启动异步线程，避免 generate_version_files 用 _generate_version_pdf（明细+汇总格式）覆盖 pdf_file 字段
+    # 异步生成版本文件（已禁用：与 archive_quotation 同步逻辑重复）
     async_quotation_id = quotation.id
     async_snapshot_data = json.dumps(snapshot_data, ensure_ascii=False)
     async_version_no = new_version_no
-
-    try:
-        from threading import Thread
-        from api_app.main import fastapi_app
-
-        def generate_files_async():
-            try:
-                from app import create_app as flask_create_app
-                flask_app = flask_create_app()
-                with flask_app.app_context():
-                    from app.models import VersionSnapshot as FlaskVersion
-                    from app.services.export_service import generate_version_files
-                    ver = FlaskVersion.query.filter_by(
-                        quotation_id=async_quotation_id,
-                        version_no=async_version_no
-                    ).first()
-                    if ver:
-                        file_paths = generate_version_files(
-                            async_quotation_id, async_version_no, async_snapshot_data)
-                        ver.word_file = file_paths.get('word')
-                        ver.pdf_file = file_paths.get('pdf')
-                        from app import db as flask_db
-                        flask_db.session.commit()
-            except Exception as e:
-                print(f"异步生成版本文件失败: {e}")
-
-        thread = Thread(target=generate_files_async)
-        thread.daemon = True
-        thread.start()
-    except Exception as e:
-        print(f"启动文件生成线程失败: {e}")
 
     return version
 
@@ -960,16 +931,21 @@ def archive_quotation(
 
     remark = body.remark
     version = _create_version_snapshot(db, quotation, int(user_id), 'archive', remark)
+    db.commit()  # 必须先 commit，让 VersionSnapshot 在 DB 可见，generate_version_pdfs 才能查到
 
     # 归档时生成中英 PDF（通过 Flask legacy 的导出模块）
     try:
+        print(f"[archive {quotation_id}] generate_version_pdfs start", flush=True)
         from app import create_app as flask_create_app
         from app.services.export_service import generate_version_pdfs
         flask_app = flask_create_app()
         with flask_app.app_context():
-            generate_version_pdfs(quotation.id, version.version_no)
+            result = generate_version_pdfs(quotation.id, version.version_no)
+            print(f"[archive {quotation_id}] generate_version_pdfs result: {result}", flush=True)
     except Exception as e:
-        print(f"生成版本 PDF 失败: {e}")
+        import traceback
+        print(f"生成版本 PDF 失败: {e}", flush=True)
+        traceback.print_exc()
 
     quotation.status = 'approved'
 
@@ -979,6 +955,7 @@ def archive_quotation(
                 child.status = 'approved'
                 child_version = _create_version_snapshot(
                     db, child, int(user_id), 'archive', '随线体报价单归档')
+                db.commit()  # 同样：子版本需先 commit
                 try:
                     from app import create_app as flask_create_app
                     from app.services.export_service import generate_version_pdfs
@@ -986,7 +963,9 @@ def archive_quotation(
                     with flask_app.app_context():
                         generate_version_pdfs(child.id, child_version.version_no)
                 except Exception as e:
-                    print(f"生成子报价单版本 PDF 失败: {e}")
+                    import traceback
+                    print(f"生成子报价单版本 PDF 失败: {e}", flush=True)
+                    traceback.print_exc()
 
     db.commit()
 
