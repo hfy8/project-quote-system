@@ -10,6 +10,7 @@ build/
 .DS_Store
 *.log
 
-# 生成的 PDF 报告（测试产物，运行时动态生成）
+# 生成的 PDF/Word 报告（测试产物，运行时动态生成）
 backend/static/versions/*.pdf
 backend_fastapi/static/versions/*.pdf
+backend_fastapi/static/versions/*.docx
