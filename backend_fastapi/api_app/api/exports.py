@@ -9,16 +9,16 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from app.models.quotation import Quotation
-from app.models.module import Module
-from app.models.material import ModuleMaterial, Material
-from app.models.fee import OtherFee, FeeType
-from app.models.fee_rate import FeeRate
-from app.models.exchange_rate import ExchangeRate
-from app.models.user import User
-from app.models.labor_hour import LaborHour
-from app.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
-from app.models.travel import TravelPersonTripFee
+from api_app.app.models.quotation import Quotation
+from api_app.app.models.module import Module
+from api_app.app.models.material import ModuleMaterial, Material
+from api_app.app.models.fee import OtherFee, FeeType
+from api_app.app.models.fee_rate import FeeRate
+from api_app.app.models.exchange_rate import ExchangeRate
+from api_app.app.models.user import User
+from api_app.app.models.labor_hour import LaborHour
+from api_app.app.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
+from api_app.app.models.travel import TravelPersonTripFee
 from api_app.main import get_db
 
 # Word 导出
@@ -107,7 +107,7 @@ def get_fee_type_name(fee_type_id, lang='zh'):
     if not fee_type_id:
         return fee_type_id or ''
     if isinstance(fee_type_id, int):
-        from app import db as _flask_db
+        from api_app.app import db as _flask_db
         ft = _flask_db.session.get(FeeType, fee_type_id)
         if ft:
             return ft.name_en if (lang == 'en' and ft.name_en) else ft.name
@@ -136,7 +136,7 @@ def convert_currency(amount, to_currency, exchange_rates):
 
 def calculate_totals_with_rates(quotation, modules, fees, labor_hours):
     """计算报价单汇总（含费用系数）"""
-    from app.models.fee_rate import FeeRate
+    from api_app.app.models.fee_rate import FeeRate
     # 获取费用系数
     coeff = {}
     if hasattr(quotation, 'coefficients') and quotation.coefficients:
@@ -1059,7 +1059,7 @@ def export_version(
 ):
     """导出版本文件：从数据库 pdf_file/word_file 字段读取真实路径"""
     import json as _json
-    from app.models.version import VersionSnapshot
+    from api_app.app.models.version import VersionSnapshot
 
     ver = db.query(VersionSnapshot).filter_by(
         quotation_id=quotation_id, version_no=version_no

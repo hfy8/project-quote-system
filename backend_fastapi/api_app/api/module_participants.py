@@ -34,7 +34,7 @@ def get_module_participants(
     db=Depends(get_db),
 ):
     """获取模块参与人员"""
-    from app.models.module import ModuleParticipant
+    from api_app.app.models.module import ModuleParticipant
 
     participants = db.query(ModuleParticipant).filter_by(module_id=module_id).all()
     return JSONResponse(content={"participants": [p.to_dict() for p in participants]})
@@ -48,7 +48,7 @@ def add_module_participants(
     db=Depends(get_db),
 ):
     """添加模块参与人员（1:1 复刻 Flask 逻辑，含消息通知）"""
-    from app.models.module import ModuleParticipant, Module
+    from api_app.app.models.module import ModuleParticipant, Module
     from api_app.services.message_service import MessageService
 
     user_ids = body.user_ids
@@ -95,7 +95,7 @@ def remove_module_participant(
     db=Depends(get_db),
 ):
     """移除模块参与人员"""
-    from app.models.module import ModuleParticipant
+    from api_app.app.models.module import ModuleParticipant
 
     p = db.query(ModuleParticipant).filter_by(
         id=participant_id, module_id=module_id

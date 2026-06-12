@@ -14,3 +14,5 @@ build/
 backend/static/versions/*.pdf
 backend_fastapi/static/versions/*.pdf
 backend_fastapi/static/versions/*.docx
+backend_fastapi/api_app/static/versions/*.pdf
+backend_fastapi/api_app/static/versions/*.docx

@@ -38,7 +38,7 @@ def get_modules(
     db: Session = Depends(get_db),
 ):
     """获取某报价单下所有模块"""
-    from app.models import Module
+    from api_app.app.models import Module
     modules = db.query(Module).filter_by(quotation_id=quotation_id).all()
     return [m.to_dict() for m in modules]
 
@@ -56,8 +56,8 @@ def create_module(
     - 有 module.create 权限的可以建
     - 否则必须是该报价单的参与人
     """
-    from app.models import Module, User, QuotationParticipant
-    from app.utils.permissions import has_permission
+    from api_app.app.models import Module, User, QuotationParticipant
+    from api_app.app.utils.permissions import has_permission
 
     user = db.query(User).get(user_id)
     if not user:
@@ -89,7 +89,7 @@ def get_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import Module
+    from api_app.app.models import Module
     module = db.query(Module).get(module_id)
     if not module:
         raise HTTPException(status_code=404, detail="模块不存在")
@@ -103,7 +103,7 @@ def update_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import Module
+    from api_app.app.models import Module
     module = db.query(Module).get(module_id)
     if not module:
         raise HTTPException(status_code=404, detail="模块不存在")
@@ -121,7 +121,7 @@ def delete_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import Module
+    from api_app.app.models import Module
     module = db.query(Module).get(module_id)
     if not module:
         raise HTTPException(status_code=404, detail="模块不存在")
@@ -139,7 +139,7 @@ def get_module_materials(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import ModuleMaterial
+    from api_app.app.models import ModuleMaterial
     query = db.query(ModuleMaterial).filter_by(module_id=module_id)
     total = query.count()
     materials = query.offset((page - 1) * page_size).limit(page_size).all()
@@ -164,7 +164,7 @@ def add_material_to_module(
     - 如果添加的是 '其他' 物料, 检查模块是否已添加过
     - quantity 固定为 1 (其他物料)
     """
-    from app.models import ModuleMaterial
+    from api_app.app.models import ModuleMaterial
 
     # 查 '其他' 物料 ID
     other_material = db.execute(text(
@@ -202,7 +202,7 @@ def update_module_material(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import ModuleMaterial
+    from api_app.app.models import ModuleMaterial
     mm = db.query(ModuleMaterial).get(id)
     if not mm:
         raise HTTPException(status_code=404, detail="模块物料不存在")
@@ -223,7 +223,7 @@ def remove_module_material(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import ModuleMaterial
+    from api_app.app.models import ModuleMaterial
     mm = db.query(ModuleMaterial).get(id)
     if not mm:
         raise HTTPException(status_code=404, detail="模块物料不存在")
@@ -239,7 +239,7 @@ def get_module_summary(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import ModuleMaterial
+    from api_app.app.models import ModuleMaterial
     materials = db.query(ModuleMaterial).filter_by(module_id=module_id).all()
 
     total_quantity = sum(m.quantity for m in materials)
@@ -267,7 +267,7 @@ def get_all_modules(
 
     与 summary 不同: 这里只是把所有模块聚合, 每个模块带 quotation_name
     """
-    from app.models import Quotation, Module
+    from api_app.app.models import Quotation, Module
 
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:

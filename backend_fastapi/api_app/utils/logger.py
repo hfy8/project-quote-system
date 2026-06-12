@@ -4,7 +4,7 @@
 改用传入的 db session 和 user_id。
 """
 
-from app.models.operation_log import OperationLog, Action, Module
+from api_app.app.models.operation_log import OperationLog, Action, Module
 from datetime import datetime
 
 

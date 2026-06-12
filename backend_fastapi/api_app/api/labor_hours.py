@@ -4,8 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models.labor_hour import LaborHour
-from app.models.quotation import Quotation
+from api_app.app.models.labor_hour import LaborHour
+from api_app.app.models.quotation import Quotation
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter()

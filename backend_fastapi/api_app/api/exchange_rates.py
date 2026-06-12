@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models.exchange_rate import ExchangeRate
+from api_app.app.models.exchange_rate import ExchangeRate
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter(prefix='/api/exchange_rates')
@@ -34,7 +34,7 @@ class ExchangeRateUpdate(BaseModel):
 
 def _set_base_currency(db, currency: str, rate_value: float, user_id: str, exclude_id: Optional[int] = None):
     """内部：设置指定货币为基准货币，重新计算所有汇率"""
-    from app.utils.logger import log_operation
+    from api_app.app.utils.logger import log_operation
 
     old_base = db.query(ExchangeRate).filter_by(is_base=True).first()
 
@@ -66,7 +66,7 @@ def list_exchange_rates(db=Depends(get_db)):
 @router.post('', status_code=201)
 def create_exchange_rate(body: ExchangeRateCreate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """创建汇率配置"""
-    from app.utils.logger import log_operation
+    from api_app.app.utils.logger import log_operation
 
     if body.is_base:
         # 重新计算所有汇率：以新基准货币的汇率为基准
@@ -97,7 +97,7 @@ def create_exchange_rate(body: ExchangeRateCreate, db=Depends(get_db), user_id: 
 @router.put('/{rate_id}')
 def update_exchange_rate(rate_id: int, body: ExchangeRateUpdate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """更新汇率配置"""
-    from app.utils.logger import log_operation
+    from api_app.app.utils.logger import log_operation
 
     rate = db.query(ExchangeRate).get(rate_id)
     if not rate:
@@ -124,7 +124,7 @@ def update_exchange_rate(rate_id: int, body: ExchangeRateUpdate, db=Depends(get_
 @router.delete('/{rate_id}')
 def delete_exchange_rate(rate_id: int, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """删除汇率配置"""
-    from app.utils.logger import log_operation
+    from api_app.app.utils.logger import log_operation
 
     rate = db.query(ExchangeRate).get(rate_id)
     if not rate:

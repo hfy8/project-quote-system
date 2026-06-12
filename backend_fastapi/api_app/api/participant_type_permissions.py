@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models.participant_type_permission import ParticipantTypePermission
+from api_app.app.models.participant_type_permission import ParticipantTypePermission
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter(prefix="/api/participant-type-permissions")
@@ -131,7 +131,7 @@ def delete_type(ptype: str, db=Depends(get_db)):
 def initialize_default_permissions(db=Depends(get_db)):
     """初始化默认权限配置（幂等）"""
     # 复用 Flask 端定义的 DEFAULT_TABS（在原 routes 文件里）
-    from app.models.participant_type_permission import DEFAULT_TABS
+    from api_app.app.models.participant_type_permission import DEFAULT_TABS
 
     created = 0
     for tab in DEFAULT_TABS:

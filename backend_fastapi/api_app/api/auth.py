@@ -2,7 +2,7 @@
 
 为什么不能在模块顶部 import？
 - main.py 启动时 create_flask_app() 已经把 31 个 model 注册到 metadata 一次
-- 如果 auth.py 模块顶部 `from app.models import User` 会再次触发 User 类的 metaclass
+- 如果 auth.py 模块顶部 `from api_app.app.models import User` 会再次触发 User 类的 metaclass
 - SQLAlchemy 抛 "Table 'users' is already defined"
 
 解决：模块顶部只 import 与 model 无关的东西（logger 类、Action/Module 枚举常量）
@@ -41,9 +41,9 @@ class BadRequestError(Exception):
 def login(body: LoginRequest, db: Session = Depends(get_db)):
     """用户登录，返回 JWT access_token + 用户信息"""
     # 进入 app context 后再 import model（db.session 已经在 context 内）
-    from app.models import User
-    from app.utils.logger import log_operation_manual
-    from app.models.operation_log import Action, Module
+    from api_app.app.models import User
+    from api_app.app.utils.logger import log_operation_manual
+    from api_app.app.models.operation_log import Action, Module
 
     try:
         if not body.username or not body.password:
@@ -75,9 +75,9 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
 @router.post("/logout", summary="用户登出")
 def logout(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    from app.models import User
-    from app.utils.logger import log_operation_manual
-    from app.models.operation_log import Action, Module
+    from api_app.app.models import User
+    from api_app.app.utils.logger import log_operation_manual
+    from api_app.app.models.operation_log import Action, Module
 
     try:
         user = User.query.get(user_id)
@@ -98,7 +98,7 @@ def logout(user_id: str = Depends(get_current_user_id), db: Session = Depends(ge
 
 @router.get("/me", summary="获取当前用户信息")
 def me(user_id: str = Depends(get_current_user_id), db: Session = Depends(get_db)):
-    from app.models import User, Role
+    from api_app.app.models import User, Role
 
     try:
         user = User.query.get(user_id)
@@ -128,8 +128,8 @@ def change_password(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from app.models import User
-    from app import db as flask_db
+    from api_app.app.models import User
+    from api_app.app import db as flask_db
 
     try:
         user = User.query.get(user_id)

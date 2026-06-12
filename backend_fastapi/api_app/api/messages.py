@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models.message import Message
+from api_app.app.models.message import Message
 from api_app.main import get_db, get_current_user_id
 from datetime import datetime
 

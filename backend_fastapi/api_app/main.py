@@ -39,8 +39,8 @@ BACKEND_DIR = PROJECT_ROOT
 sys.path.insert(0, BACKEND_DIR)
 
 # 现在可以直接 `from app.xxx` 加载
-import app as app_module  # = backend.app.__init__
-import app.config as config_module
+import api_app.app as app_module  # = api_app.app.__init__
+import api_app.app.config as config_module
 
 Config = config_module.Config
 create_flask_app = app_module.create_app
@@ -62,7 +62,7 @@ _app_ctx.push()  # 进程级，常驻
 
 def get_db():
     """FastAPI 依赖：app context 已在启动时 push，直接返回 session"""
-    from app import db
+    from api_app.app import db
     try:
         yield db.session
     except Exception:
@@ -119,7 +119,7 @@ async def lifespan(app: FastAPI):
         try:
             from apscheduler.schedulers.background import BackgroundScheduler
             from apscheduler.triggers.cron import CronTrigger
-            from app.tasks.sync_task import sync_all, cleanup_expired_messages
+            from api_app.app.tasks.sync_task import sync_all, cleanup_expired_messages
 
             _scheduler = BackgroundScheduler()
 

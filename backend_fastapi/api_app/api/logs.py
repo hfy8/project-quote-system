@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import desc
-from app.models.operation_log import OperationLog
+from api_app.app.models.operation_log import OperationLog
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter(prefix="/api/logs")

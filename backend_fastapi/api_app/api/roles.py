@@ -38,7 +38,7 @@ def get_roles(
     db=Depends(get_db),
 ):
     """获取角色列表（分页 + 关键字搜索）"""
-    from app.models import Role
+    from api_app.app.models import Role
 
     query = db.query(Role)
     if keyword:
@@ -67,7 +67,7 @@ def get_roles(
 @router.post("", status_code=201)
 def create_role(body: RoleCreate, db=Depends(get_db)):
     """创建新角色"""
-    from app.models import Role, Permission, User
+    from api_app.app.models import Role, Permission, User
 
     if not body.name:
         raise HTTPException(status_code=400, detail="角色名称不能为空")
@@ -104,7 +104,7 @@ def create_role(body: RoleCreate, db=Depends(get_db)):
 @router.get("/permissions")
 def get_all_permissions(db=Depends(get_db)):
     """获取所有可用权限列表（按分组）"""
-    from app.models import Permission
+    from api_app.app.models import Permission
     return JSONResponse(content={"items": [p.to_dict() for p in db.query(Permission).all()]})
 
 
@@ -119,8 +119,8 @@ def seed_permissions_and_roles_endpoint(
     user_id: str = Depends(get_current_user_id),
 ):
     """初始化/重置权限和角色数据"""
-    from app.models import User
-    from app.utils.permissions import seed_permissions_and_roles, has_permission
+    from api_app.app.models import User
+    from api_app.app.utils.permissions import seed_permissions_and_roles, has_permission
 
     user = db.query(User).get(int(user_id))
     if not has_permission(user.role, 'role.create'):
@@ -136,7 +136,7 @@ def seed_permissions_and_roles_endpoint(
 @router.get("/{role_id}")
 def get_role(role_id: int, db=Depends(get_db)):
     """获取单个角色详情"""
-    from app.models import Role
+    from api_app.app.models import Role
     role = db.query(Role).get(role_id)
     if not role:
         raise HTTPException(status_code=404, detail="角色不存在")
@@ -150,7 +150,7 @@ def get_role(role_id: int, db=Depends(get_db)):
 @router.put("/{role_id}")
 def update_role(role_id: int, body: RoleUpdate, db=Depends(get_db)):
     """更新角色信息（名称、描述、权限）"""
-    from app.models import Role, Permission
+    from api_app.app.models import Role, Permission
 
     role = db.query(Role).get(role_id)
     if not role:
@@ -183,7 +183,7 @@ def update_role(role_id: int, body: RoleUpdate, db=Depends(get_db)):
 @router.delete("/{role_id}")
 def delete_role(role_id: int, db=Depends(get_db)):
     """删除角色（角色下有用户时禁止删除）"""
-    from app.models import Role, User
+    from api_app.app.models import Role, User
 
     role = db.query(Role).get(role_id)
     if not role:
@@ -205,7 +205,7 @@ def delete_role(role_id: int, db=Depends(get_db)):
 @router.get("/{role_id}/permissions")
 def get_role_permissions(role_id: int, db=Depends(get_db)):
     """获取指定角色的权限列表"""
-    from app.models import Role
+    from api_app.app.models import Role
 
     role = db.query(Role).get(role_id)
     if not role:
@@ -225,7 +225,7 @@ def get_role_permissions(role_id: int, db=Depends(get_db)):
 @router.put("/{role_id}/permissions")
 def update_role_permissions(role_id: int, body: RolePermissionsUpdate, db=Depends(get_db)):
     """更新指定角色的权限列表"""
-    from app.models import Role, Permission
+    from api_app.app.models import Role, Permission
 
     role = db.query(Role).get(role_id)
     if not role:

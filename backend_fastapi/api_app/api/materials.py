@@ -40,7 +40,7 @@ def get_materials(
     db: Session = Depends(get_db),
 ):
     """获取物料列表(与 Flask 路由 1:1)"""
-    from app.models import Material
+    from api_app.app.models import Material
 
     query = db.query(Material)
     if keyword:
@@ -80,7 +80,7 @@ def create_material(
     db: Session = Depends(get_db),
 ):
     """创建物料(行为 1:1)"""
-    from app.models import Material
+    from api_app.app.models import Material
 
     material = Material(
         name=body.name,
@@ -104,7 +104,7 @@ def update_material(
     db: Session = Depends(get_db),
 ):
     """更新物料(行为 1:1)"""
-    from app.models import Material
+    from api_app.app.models import Material
 
     material = db.query(Material).get(material_id)
     if not material:
@@ -126,7 +126,7 @@ def delete_material(
     db: Session = Depends(get_db),
 ):
     """删除物料(行为 1:1:先删 module_materials 关联记录,再删物料)"""
-    from app.models import Material, ModuleMaterial
+    from api_app.app.models import Material, ModuleMaterial
 
     material = db.query(Material).get(material_id)
     if not material:
@@ -147,7 +147,7 @@ def toggle_material(
     db: Session = Depends(get_db),
 ):
     """切换 active/inactive 状态"""
-    from app.models import Material
+    from api_app.app.models import Material
 
     material = db.query(Material).get(material_id)
     if not material:
@@ -168,7 +168,7 @@ def import_materials(
 
     兼容 Flask 版本的请求格式:{"materials": [...]} 或直接传 list
     """
-    from app.models import Material
+    from api_app.app.models import Material
 
     # 兼容两种入参:dict 或 list
     if isinstance(materials_data, dict) and "materials" in materials_data:

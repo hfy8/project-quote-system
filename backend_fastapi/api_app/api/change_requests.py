@@ -7,15 +7,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from app.models.change_request import ChangeRequest
-from app.models.quotation import Quotation
-from app.models.module import Module
-from app.models.material import ModuleMaterial
-from app.models.material import Material
-from app.models.user import User
-from app.models.version import VersionSnapshot
-from app.models.fee import OtherFee
-from app.models.operation_log import Action, Module as LogModule
+from api_app.app.models.change_request import ChangeRequest
+from api_app.app.models.quotation import Quotation
+from api_app.app.models.module import Module
+from api_app.app.models.material import ModuleMaterial
+from api_app.app.models.material import Material
+from api_app.app.models.user import User
+from api_app.app.models.version import VersionSnapshot
+from api_app.app.models.fee import OtherFee
+from api_app.app.models.operation_log import Action, Module as LogModule
 from api_app.main import get_db, get_current_user_id
 from api_app.utils.logger import log_operation
 

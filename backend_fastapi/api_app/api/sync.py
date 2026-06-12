@@ -2,7 +2,7 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from app.tasks import trigger_sync_now
+from api_app.app.tasks import trigger_sync_now
 
 logger = logging.getLogger("fastapi-sync")
 

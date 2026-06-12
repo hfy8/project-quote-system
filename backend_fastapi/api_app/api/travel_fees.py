@@ -4,8 +4,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models.packing import PackingType
-from app.models.travel import TravelCategory, TravelDayRate, TravelMode, TravelPersonTripFee
+from api_app.app.models.packing import PackingType
+from api_app.app.models.travel import TravelCategory, TravelDayRate, TravelMode, TravelPersonTripFee
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter()

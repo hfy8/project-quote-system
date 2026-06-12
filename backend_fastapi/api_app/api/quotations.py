@@ -32,19 +32,19 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, func as sa_func, text
 
-from app.models.quotation import Quotation
-from app.models.quotation import QuotationParticipant
-from app.models.user import User
-from app.models.module import Module, ModuleParticipant
-from app.models.material import ModuleMaterial, Material
-from app.models.fee import OtherFee
-from app.models.fee_rate import FeeRate
-from app.models.version import VersionSnapshot
-from app.models.labor_hour import LaborHour
-from app.models.participant_type_permission import ParticipantTypePermission
-from app.models.travel import TravelPersonTripFee
-from app.models.travel_entry import TravelPersonDays, TravelPersonTrip, PackingEntry
-from app.models.operation_log import Action, Module as LogModule, OperationLog
+from api_app.app.models.quotation import Quotation
+from api_app.app.models.quotation import QuotationParticipant
+from api_app.app.models.user import User
+from api_app.app.models.module import Module, ModuleParticipant
+from api_app.app.models.material import ModuleMaterial, Material
+from api_app.app.models.fee import OtherFee
+from api_app.app.models.fee_rate import FeeRate
+from api_app.app.models.version import VersionSnapshot
+from api_app.app.models.labor_hour import LaborHour
+from api_app.app.models.participant_type_permission import ParticipantTypePermission
+from api_app.app.models.travel import TravelPersonTripFee
+from api_app.app.models.travel_entry import TravelPersonDays, TravelPersonTrip, PackingEntry
+from api_app.app.models.operation_log import Action, Module as LogModule, OperationLog
 from api_app.main import get_db, get_current_user_id
 from datetime import datetime
 
@@ -174,7 +174,7 @@ def _check_permission(db, user_id, permission_code):
         raise HTTPException(status_code=401, detail="用户不存在")
     if user.role == 'admin':
         return True
-    from app.models import Role
+    from api_app.app.models import Role
     role = db.query(Role).filter(Role.code == user.role).first()
     if not role:
         raise HTTPException(status_code=403, detail="没有操作权限")
@@ -190,7 +190,7 @@ def _check_any_permission(db, user_id, *codes):
         raise HTTPException(status_code=401, detail="用户不存在")
     if user.role == 'admin':
         return True
-    from app.models import Role
+    from api_app.app.models import Role
     role = db.query(Role).filter(Role.code == user.role).first()
     if not role:
         raise HTTPException(status_code=403, detail="没有操作权限")
@@ -872,7 +872,7 @@ def compare_versions_by_quotation(
     v1_data['modules'] = [enrich_module(m) for m in v1_data.get('modules', [])]
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
 
-    from app.services.export_service import calculate_version_totals
+    from api_app.app.services.export_service import calculate_version_totals
     v1_totals = calculate_version_totals(v1_data)
     v2_totals = calculate_version_totals(v2_data)
 
@@ -936,8 +936,8 @@ def archive_quotation(
     # 归档时生成中英 PDF（通过 Flask legacy 的导出模块）
     try:
         print(f"[archive {quotation_id}] generate_version_pdfs start", flush=True)
-        from app import create_app as flask_create_app
-        from app.services.export_service import generate_version_pdfs
+        from api_app.app import create_app as flask_create_app
+        from api_app.app.services.export_service import generate_version_pdfs
         flask_app = flask_create_app()
         with flask_app.app_context():
             result = generate_version_pdfs(quotation.id, version.version_no)
@@ -957,8 +957,8 @@ def archive_quotation(
                     db, child, int(user_id), 'archive', '随线体报价单归档')
                 db.commit()  # 同样：子版本需先 commit
                 try:
-                    from app import create_app as flask_create_app
-                    from app.services.export_service import generate_version_pdfs
+                    from api_app.app import create_app as flask_create_app
+                    from api_app.app.services.export_service import generate_version_pdfs
                     flask_app = flask_create_app()
                     with flask_app.app_context():
                         generate_version_pdfs(child.id, child_version.version_no)

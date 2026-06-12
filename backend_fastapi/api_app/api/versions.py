@@ -5,8 +5,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from app.models import VersionSnapshot, Quotation
-from app.models.material import Material
+from api_app.app.models import VersionSnapshot, Quotation
+from api_app.app.models.material import Material
 from api_app.main import get_db, get_current_user_id
 
 router = APIRouter(prefix='/api')
@@ -214,7 +214,7 @@ def compare_versions(version_id: int, other_id: int, db=Depends(get_db)):
     v2_data['modules'] = [enrich_module(m) for m in v2_data.get('modules', [])]
 
     # 计算汇总（使用报价单系数，与PDF一致）
-    from app.services.export_service import calculate_version_totals
+    from api_app.app.services.export_service import calculate_version_totals
     v1_totals = calculate_version_totals(v1_data)
     v2_totals = calculate_version_totals(v2_data)
 
