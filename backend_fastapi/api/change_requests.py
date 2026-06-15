@@ -16,7 +16,7 @@ from core.models.user import User
 from core.models.version import VersionSnapshot
 from core.models.fee import OtherFee
 from core.models.operation_log import Action, Module as LogModule
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 from utils.logger import log_operation
 
 router = APIRouter()

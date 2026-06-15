@@ -45,7 +45,7 @@ from core.models.participant_type_permission import ParticipantTypePermission
 from core.models.travel import TravelPersonTripFee
 from core.models.travel_entry import TravelPersonDays, TravelPersonTrip, PackingEntry
 from core.models.operation_log import Action, Module as LogModule, OperationLog
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 from datetime import datetime
 
 

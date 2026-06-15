@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from core.models.packing import PackingType
 from core.models.travel import TravelCategory, TravelDayRate, TravelMode, TravelPersonTripFee
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 
 router = APIRouter()
 

@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_, text
 
 from core.schemas import ModuleCreate, ModuleUpdate, ModuleMaterialAdd, ModuleMaterialUpdate
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 
 
 def error_response(message: str, status_code: int):

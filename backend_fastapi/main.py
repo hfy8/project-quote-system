@@ -38,51 +38,14 @@ import core  # 触发 core/__init__.py 导入所有 models
 logger.info(f"✅ DB engine created: {Config.SQLALCHEMY_DATABASE_URI[:50]}...")
 
 
-# ============== DB Session 依赖 ==============
-from db import db_session_factory
-
-
-def get_db():
-    """FastAPI 依赖：返回当前线程的 SQLAlchemy session"""
-    session = db_session_factory()
-    try:
-        yield session
-    except Exception:
-        session.rollback()
-        raise
-
-
-# ============== JWT（FastAPI 自己的鉴权） ==============
-from jose import jwt, JWTError
-JWT_SECRET = Config.JWT_SECRET_KEY
-JWT_ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_HOURS = 24
-
-def create_access_token(identity: str) -> str:
-    expire = datetime.utcnow() + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
-    payload = {"sub": str(identity), "exp": expire, "iat": datetime.utcnow()}
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-
-def decode_access_token(token: str) -> Optional[str]:
-    try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM]).get("sub")
-    except JWTError:
-        return None
-
-
-bearer_scheme = HTTPBearer(auto_error=False)
-
-
-async def get_current_user_id(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-) -> str:
-    if not credentials or not credentials.credentials:
-        raise HTTPException(status_code=401, detail="缺少认证信息")
-    user_id = decode_access_token(credentials.credentials)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Token 无效或已过期")
-    return user_id
+# ============== DB Session 依赖（从 core.auth 导入，避免循环依赖） ==============
+from core.auth import (
+    get_db,
+    create_access_token,
+    decode_access_token,
+    get_current_user_id,
+    bearer_scheme,
+)
 
 
 # ============== App ==============

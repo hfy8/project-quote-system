@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from core.models.participant_type_permission import ParticipantTypePermission
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 
 router = APIRouter(prefix="/api/participant-type-permissions")
 

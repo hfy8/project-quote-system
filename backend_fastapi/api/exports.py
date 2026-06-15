@@ -19,7 +19,7 @@ from core.models.user import User
 from core.models.labor_hour import LaborHour
 from core.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
 from core.models.travel import TravelPersonTripFee
-from main import get_db
+from core.auth import get_db
 
 # Word 导出
 from docx import Document

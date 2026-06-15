@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from core.models.message import Message
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 from datetime import datetime
 
 router = APIRouter(prefix="/api/messages")

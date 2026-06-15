@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from core.models.fee_rate import FeeRate
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 
 router = APIRouter()
 

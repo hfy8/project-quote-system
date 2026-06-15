@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
 from core.schemas import MaterialCreate, MaterialUpdate
-from main import get_db, get_current_user_id
+from core.auth import get_db, get_current_user_id
 
 
 router = APIRouter()
