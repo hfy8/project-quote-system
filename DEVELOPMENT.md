@@ -1,8 +1,8 @@
 # 项目报价系统 — 开发与使用文档
 
-> 版本：V2.1（2026-06-10）  
+> 版本：V2.2（2026-06-12） · v17（彻底移除 Flask）  
 > 仓库：https://github.com/hfy8/project-quote-system  
-> 技术栈：Vue 3 + Flask + PostgreSQL
+> 技术栈：Vue 3 + **FastAPI** + PostgreSQL（SQLAlchemy 2.x，无 Flask）
 
 本文档面向三类读者：
 - **开发者**（加入项目、写新功能、调试问题）→ 看第一、二章
@@ -49,7 +49,7 @@ cd project-quote-system
 ### 1.3 后端启动
 
 ```bash
-cd backend
+cd backend_fastapi
 
 # 创建虚拟环境
 python3 -m venv venv
@@ -67,7 +67,7 @@ cp .env.example .env
 `.env` 必须项：
 
 ```bash
-DATABASE_URL=postgresql://quote_user:quote_pass@localhost:5432/quote_db
+DATABASE_URL=postgresql://quote_user:***@localhost:5432/quote_db
 SECRET_KEY=your-secret-key-change-me
 JWT_SECRET_KEY=jwt-secret-change-me
 
@@ -85,14 +85,14 @@ SQL_SERVER_PASSWORD=***
 python init_db.py
 ```
 
-启动后端（**不要加 `--debug`** —— 见第 9 章 Flask debug 陷阱）：
+启动后端（**不要加 `--reload`** —— 见第 9 章 ASGI reload 陷阱）：
 
 ```bash
-flask run --host=0.0.0.0 --port=5000
-# 或：python run.py
+python -m uvicorn main:fastapi_app --host=0.0.0.0 --port=5001
+# 或：python main.py
 ```
 
-后端跑在 **http://localhost:5000**
+后端跑在 **http://localhost:5001**
 
 ### 1.4 前端启动
 
@@ -114,7 +114,7 @@ npm run dev
 
 ```bash
 # 后端
-curl http://localhost:5000/api/auth/me
+curl http://localhost:5001/api/auth/me
 # 前端
 curl -I http://localhost:3000/
 ```
@@ -128,7 +128,7 @@ curl -I http://localhost:3000/
   bash scripts/check-services.sh
   ```
 - **前端 vite 装不上**：`npm install --include=dev`（不是 `--omit=dev`）
-- **后端修改必须重启 Flask**，前端 Vite 有 HMR 但要看网络代理是否拦截
+- **后端修改必须重启** uvicorn 进程（无 debug auto-reload），前端 Vite 有 HMR 但要看网络代理是否拦截
 
 ### 1.8 项目里的脚本
 
@@ -143,58 +143,64 @@ curl -I http://localhost:3000/
 
 ```
 project-quote-system/
-├── backend/                # Flask 后端
+├── backend_fastapi/        # FastAPI 后端（v17 彻底无 Flask）
 ├── frontend/               # Vue3 前端
 ├── docs/                   # 临时文档
 ├── scripts/                # 运维脚本
 ├── screenshots/            # 截图
-├── README.md               # 旧版快速介绍
-├── SPEC.md                 # 产品技术规格
-├── 使用说明书.md              # 老版本面向用户使用手册
+├── README.md               # 快速索引
+├── SPEC.md                 # 产品技术规格（归档）
+├── 使用说明书.md              # 旧版用户使用手册（归档）
 └── DEVELOPMENT.md          # 本文件（开发 + 使用文档，V2.1 之后唯一权威）
 ```
 
 ### 2.2 后端结构
 
 ```
-backend/
-├── app/
-│   ├── __init__.py            # Flask factory + register_blueprint
-│   ├── models/                # 21 个 SQLAlchemy 模型
-│   │   ├── __init__.py
+backend_fastapi/
+├── main.py                 # FastAPI 入口（uvicorn 加载 fastapi_app）
+├── db.py                   # 纯 SQLAlchemy 2.x 启动 + _DBProxy 代理
+├── requirements.txt        # 无 flask / flask-* / a2wsgi
+│
+├── api/                    # 19 个 FastAPI 路由
+│   ├── __init__.py
+│   ├── auth.py / users.py / roles.py
+│   ├── quotations.py / versions.py / exports.py
+│   ├── modules.py / materials.py / module_participants.py
+│   ├── fees.py / fee_rates.py / labor_hours.py
+│   ├── travel_entries.py / travel_fees.py
+│   ├── exchange_rates.py / messages.py / logs.py
+│   ├── participant_type_permissions.py
+│   └── change_requests.py / sync.py
+│
+├── core/                   # 核心业务包
+│   ├── __init__.py         # 触发 models 注册
+│   ├── config.py           # 数据库连接配置
+│   ├── schemas.py          # Pydantic 数据模型
+│   ├── models/             # 21 个 SQLAlchemy 2.x 模型
 │   │   ├── user.py / role.py / permission.py
-│   │   ├── quotation.py
-│   │   ├── material.py
-│   │   ├── module.py
-│   │   ├── fee.py / fee_rate.py
-│   │   ├── labor_hour.py
+│   │   ├── quotation.py / material.py / module.py
+│   │   ├── fee.py / fee_rate.py / labor_hour.py
 │   │   ├── travel.py / travel_entry.py / packing.py
-│   │   ├── version.py
-│   │   ├── change_request.py
-│   │   ├── message.py / operation_log.py
-│   │   ├── exchange_rate.py
-│   │   ├── organization.py / department.py / position.py / employee.py
+│   │   ├── version.py / change_request.py
+│   │   ├── message.py / operation_log.py / exchange_rate.py
+│   │   ├── organization.py / department.py
+│   │   ├── position.py / employee.py
 │   │   └── participant_type_permission.py
-│   ├── routes/                # 20 个 Blueprint
-│   │   ├── __init__.py
-│   │   ├── auth.py / users.py / roles.py
-│   │   ├── quotations.py / versions.py / exports.py
-│   │   ├── modules.py / materials.py / module_participants.py
-│   │   ├── fees.py / fee_rates.py / labor_hours.py
-│   │   ├── travel_entries.py / travel_fees.py
-│   │   ├── exchange_rates.py / messages.py / logs.py
-│   │   ├── participant_type_permissions.py
-│   │   ├── change_requests.py / sync.py
-│   ├── services/              # 业务服务层
-│   ├── utils/                 # 工具
-│   ├── tasks/                 # APScheduler 定时任务
-│   └── static/versions/       # 归档 PDF/Word 存储（不入 git）
-├── migrations/                # Alembic 迁移（部分）
-├── fonts/                     # 中文字体（PDF 用）
-├── init_db.py                 # 建表 + seed
-├── migrate_coeff.py           # 系数数据迁移脚本
-├── requirements.txt
-├── run.py                     # 启动入口
+│   ├── services/           # 业务服务层
+│   │   ├── export_service.py  # PDF/Word 生成（v17 已验证 19805 bytes 一致性）
+│   │   └── message_service.py
+│   └── tasks/              # APScheduler 定时任务（无 Flask app 参数）
+│       └── sync_task.py
+│
+├── utils/                  # 工具
+│   ├── permissions.py      # 权限检查 + seed（无 flask_jwt_extended）
+│   └── logger.py           # 操作日志（threading.local 替代 flask.request）
+│
+├── fonts/                  # 中文字体（PDF 用）
+├── static/versions/        # 归档 PDF/Word 存储（不入 git）
+├── init_db.py              # 建表 + seed
+├── migrate_coeff.py        # 系数数据迁移脚本
 └── Dockerfile
 ```
 
@@ -231,7 +237,7 @@ frontend/
 │   ├── assets/
 │   └── main.js
 ├── index.html
-├── vite.config.js             # Vite 配置（含代理 /api → :5000）
+├── vite.config.js             # Vite 配置（含代理 /api → :5001）
 ├── package.json
 └── pnpm-workspace.yaml
 ```
@@ -240,10 +246,11 @@ frontend/
 
 #### 后端
 - **Python 3.12** 类型注解必填：`def foo(x: int) -> dict[str, Any]:`
-- Blueprint 命名：`<domain>_bp = Blueprint('domain', __name__, url_prefix='/api/<domain>')`
-- 路由函数全部 `@jwt_required()`（除登录）
-- 错误响应统一 `jsonify({'error': '...', 'code': '...'}), <status>`
-- 业务异常抛 `werkzeug.exceptions`，由 Flask errorhandler 统一返回
+- FastAPI 路由：`router = APIRouter(prefix='/api/<domain>')`
+- 依赖注入用 `Depends(get_db)` / `Depends(get_current_user_id)`
+- 错误响应统一 `HTTPException(status_code=..., detail="...")`
+- 业务异常抛 `HTTPException`，由全局 exception_handler 统一返回
+- 业务事务：`db.session.add() → db.session.commit()`，失败 `db.session.rollback()`
 
 #### 前端
 - Vue 3 **Composition API + `<script setup>`**
@@ -263,7 +270,7 @@ git checkout -b feat/new-export-format
 
 # 3. 写代码 → 自测 → 跑 linter
 cd frontend && npm run lint
-cd backend && python -m py_compile app/
+cd backend_fastapi && python -m py_compile api/ core/ utils/
 
 # 4. 提交（commit 信息格式 feat:/fix:/docs:/refactor: 描述）
 git commit -m "feat: 增加 Excel 多 sheet 导出"
@@ -278,10 +285,10 @@ gh pr create --title "feat: Excel 多 sheet 导出" --body "..."
 ```bash
 #!/bin/bash
 # scripts/check-services.sh
-ps aux | grep -E "flask run|npm|vite" | grep -v grep
-if ! pgrep -f "flask run" > /dev/null; then
-  echo "⚠️  Flask 已挂，重启中..."
-  cd backend && nohup flask run --host=0.0.0.0 --port=5000 > /tmp/flask.log 2>&1 &
+ps aux | grep -E "uvicorn|npm|vite" | grep -v grep
+if ! pgrep -f "uvicorn" > /dev/null; then
+  echo "⚠️  Uvicorn 已挂，重启中..."
+  cd backend_fastapi && nohup python -m uvicorn main:fastapi_app --host=0.0.0.0 --port=5001 > /tmp/fastapi.log 2>&1 &
 fi
 if ! pgrep -f "vite" > /dev/null; then
   echo "⚠️  Vite 已挂，重启中..."
@@ -314,13 +321,13 @@ Obsidian 直接打开 `~/wiki/` 即可浏览，[[wikilinks]] 自动识别。
 
 ```bash
 # 后端
-cd backend
+cd backend_fastapi
 docker build -t quote-backend:latest .
 docker run -d --name quote-backend \
-  -p 5000:5000 \
+  -p 5001:5001 \
   -e DATABASE_URL=postgresql://... \
   -e SECRET_KEY=... \
-  -v /var/quote-static:/app/app/static/versions \
+  -v /var/quote-static:/app/static/versions \
   quote-backend:latest
 
 # 前端构建静态文件
@@ -342,7 +349,7 @@ server {
 
   # API 反代
   location /api/ {
-    proxy_pass http://127.0.0.1:5000;
+    proxy_pass http://127.0.0.1:5001;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -375,15 +382,15 @@ python init_db.py --reset-roles
 | 任务 | 周期 | 说明 |
 |------|------|------|
 | 消息清理 | 每天 03:00 | 清理已读 30 天/未读 60 天的消息 |
-| 数据同步 | 每天 00:00 | 从 SQL Server 同步员工/部门/职位 |
+| 数据同步 | 每天 22:00 | 从 SQL Server 同步员工/部门/职位 |
 
-在 `backend/app/tasks/` 下注册。
+在 `core/tasks/` 下注册，scheduler 在 `main.py` lifespan 启动。
 
 ### 3.5 日志位置
 
-- Flask：`/tmp/flask.log`（开发）或 stdout（生产）
+- Uvicorn / FastAPI：`/tmp/fastapi.log`（开发）或 stdout（生产）
 - Vite：`/tmp/vite.log`（开发）
-- 归档 PDF：`backend/static/versions/`（**git 忽略**）
+- 归档 PDF：`backend_fastapi/static/versions/`（**git 忽略**）
 
 ### 3.6 备份策略
 
@@ -1094,11 +1101,12 @@ if entry.unit_price or entry.visa_fee:
 ```
 源：`travel_entries.py` 2026-06 修复
 
-#### 🔴 Flask debug 模式吞异常
-**绝对不要**用 `flask run --debug`：
+#### 🔴 ASGI reload 模式吞异常
+**绝对不要**用 `uvicorn --reload`：
 - reloader 会**静默吞 NameError**
 - 前端看到「网络错误」但后端无任何日志
-- 始终用 `flask run`（不带 `--debug`）
+- 始终用 `python -m uvicorn main:fastapi_app`（不带 `--reload`）
+- v17 已经验证：手动重启后无静默异常
 
 #### 🔴 线体 PUT/DELETE 必须扩展查找范围
 挂在子报价单上的所有实体，在 `quotation.type==='line'` 时 PUT/DELETE 都要扩展：
@@ -1137,7 +1145,7 @@ if (resp.code === 401) {
 #### 🔴 修改代码后必须重启服务
 每次改完前后端代码后必跑：
 ```bash
-ps aux | grep -E "flask run|npm|vite" | grep -v grep
+ps aux | grep -E "uvicorn|npm|vite" | grep -v grep
 ```
 挂了就用 `scripts/check-services.sh` 重启。
 
@@ -1155,12 +1163,13 @@ PDF 生成代码 4 处都要保留 override 价，不被 live 价覆盖。
 
 | 问题 | 排查步骤 |
 |------|----------|
-| 前端 500 无日志 | 后端关 debug 重启；看 `/tmp/flask.log` |
+| 前端 500 无日志 | 后端关 reload 重启；看 `/tmp/fastapi.log` |
 | 编辑子报价单 404 | 找后端路由是否漏了 line 类型扩展查找 |
 | PDF 缺运输/差旅 | 检查 `calculate_version_totals` 的 fees_total 是否含三项 |
 | 物料分类错了 | 物料表 category 字段；现统一英文 |
 | 版本对比物料数量异常 | 检查 mat.id 是否正确传递 |
 | 线体汇总少了某子 | 看 `all-modules` 是否被调用，`coefficients` 用哪个 |
+| PDF/Word 字节数与旧版对不上 | v17 基准：v15/zh=19805, en=15372, docx=37409 bytes |
 
 ---
 
@@ -1177,7 +1186,7 @@ PDF 生成代码 4 处都要保留 override 价，不被 live 价覆盖。
 | 服务 | 端口 |
 |------|------|
 | 前端 Vite | 3000 |
-| 后端 Flask | 5000 |
+| 后端 FastAPI | 5001 |
 | PostgreSQL | 5432 |
 | SQL Server（同步源） | 1433 |
 
