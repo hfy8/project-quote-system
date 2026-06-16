@@ -73,7 +73,7 @@ def execute_tool_node(state: AgentState) -> AgentState:
 def should_continue(state: AgentState) -> str:
     """路由函数：决定下一步去哪"""
     # 超过 5 步强制结束
-    if state["step_count"] >= 5:
+    if state["step_count"] >= 10:
         return "end"
 
     # LLM 没调工具，说明直接给答案了

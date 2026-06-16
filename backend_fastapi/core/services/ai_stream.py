@@ -41,7 +41,7 @@ def run_agent_stream(user_query: str, history: List[Dict] = None) -> Iterator[Di
     messages.append({"role": "user", "content": user_query})
 
     steps = 0
-    max_steps = 5
+    max_steps = 10
     tools_used = []
     final_answer = ""
 

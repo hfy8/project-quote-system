@@ -1,77 +1,181 @@
-import os                          # 读环境变量
-import logging                      # 打印日志
+#!/usr/bin/env python3
+"""Rewrite llm_client with MiniMax→DeepSeek fallback"""
+import os
+import logging
 import json
-from typing import List, Dict, Iterator       # 类型注解，让代码更清晰
-import requests                     # 发 HTTP 请求（最流行）
+from typing import List, Dict, Iterator
+import requests
 from dotenv import load_dotenv
+
 load_dotenv()
 
-LLM_API_KEY = os.getenv("MINIMAX_API_KEY") or os.getenv("LLM_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.minimax.chat/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "MiniMax-M2.7")
+# === Primary: MiniMax ===
+MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY") or os.getenv("LLM_API_KEY")
+MINIMAX_BASE_URL = os.getenv("LLM_BASE_URL", "https://api.minimax.chat/v1")
+MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", os.getenv("LLM_MODEL", "MiniMax-M2.7"))
+
+# === Fallback: DeepSeek ===
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+# === Backward-compat exports ===
+LLM_API_KEY = MINIMAX_API_KEY
+LLM_BASE_URL = MINIMAX_BASE_URL
+LLM_MODEL = MINIMAX_MODEL
+
 logger = logging.getLogger(__name__)
 
 
+def _is_rate_limit(data: dict) -> bool:
+    """Check if the API error is a rate limit / quota exhaustion"""
+    err = data.get("error", {})
+    if isinstance(err, str):
+        err = {"message": err}
+    code = err.get("code", "")
+    http_code = err.get("http_code", 0)
+    msg = err.get("message", "")
+    return any([
+        http_code == 429,
+        "rate_limit" in str(code),
+        "用量上限" in msg,
+        "quota" in msg.lower(),
+        "rate limit" in msg.lower(),
+    ])
 
-def ask_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
-    """问 LLM 一个问题，返回它的回答
 
-    Args:
-        messages: OpenAI 协议消息列表
-                  格式：[{"role": "user", "content": "..."}]
-        temperature: 0=死板/确定，1=发散/有创造性
+def _call_provider(base_url: str, api_key: str, model: str,
+                   messages: list, temperature: float, timeout: int = 30,
+                   stream: bool = False, tools: list = None) -> requests.Response:
+    """Make a request to a provider's chat completions endpoint"""
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+    }
+    if stream:
+        payload["stream"] = True
+    if tools:
+        payload["tools"] = tools
 
-    Returns:
-        LLM 的回复文本
-    """
-    if not LLM_API_KEY:
-        raise RuntimeError("未设置 MINIMAX_API_KEY 环境变量")
+    # DeepSeek uses api.deepseek.com/chat/completions (no /v1)
+    if "api.deepseek.com" in base_url and not base_url.endswith("/v1"):
+        url = f"{base_url.rstrip('/')}/chat/completions"
+    else:
+        url = f"{base_url.rstrip('/')}/chat/completions"
 
-    resp = requests.post(
-        f"{LLM_BASE_URL}/chat/completions",
+    return requests.post(
+        url,
         headers={
-            "Authorization": f"Bearer {LLM_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
-        json={
-            "model": LLM_MODEL,
-            "messages": messages,
-            "temperature": temperature,
-        },
-        timeout=30,
+        json=payload,
+        stream=stream,
+        timeout=timeout,
+    )
+
+
+def ask_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> str:
+    """问 LLM + fallback: MiniMax → DeepSeek"""
+    # --- Primary: MiniMax ---
+    if MINIMAX_API_KEY:
+        try:
+            resp = requests.post(
+                f"{MINIMAX_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
+                json={"model": MINIMAX_MODEL, "messages": messages, "temperature": temperature},
+                timeout=30,
+            )
+            data = resp.json()
+            if "error" in data and _is_rate_limit(data):
+                logger.warning(f"⚠️ MiniMax 额度不足，切换到 DeepSeek")
+            elif "error" in data:
+                raise RuntimeError(f"MiniMax 报错: {data['error']}")
+            else:
+                return data["choices"][0]["message"]["content"]
+        except requests.RequestException as e:
+            logger.warning(f"⚠️ MiniMax 请求失败 ({e})，切换到 DeepSeek")
+    else:
+        logger.info("ℹ️ 未配置 MiniMax API key")
+
+    # --- Fallback: DeepSeek ---
+    if not DEEPSEEK_API_KEY:
+        raise RuntimeError("未设置 MINIMAX_API_KEY 或 DEEPSEEK_API_KEY")
+
+    logger.info(f"🔄 Fallback → DeepSeek ({DEEPSEEK_MODEL})")
+    resp = _call_provider(
+        base_url=DEEPSEEK_BASE_URL,
+        api_key=DEEPSEEK_API_KEY,
+        model=DEEPSEEK_MODEL,
+        messages=messages,
+        temperature=temperature,
     )
     data = resp.json()
-
     if "error" in data:
-        raise RuntimeError(f"LLM 报错: {data['error']}")
-
+        raise RuntimeError(f"DeepSeek 报错: {data['error']}")
     return data["choices"][0]["message"]["content"]
 
 
 def ask_llm_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
                    tools: List[Dict] = None) -> Iterator[Dict]:
-    """流式调用 LLM - 每个 token yield 一次
+    """流式调用 LLM + fallback: MiniMax → DeepSeek"""
+    # --- Primary: MiniMax ---
+    if MINIMAX_API_KEY:
+        try:
+            yield {"type": "provider", "provider": "minimax"}
+            payload = {
+                "model": MINIMAX_MODEL,
+                "messages": messages,
+                "temperature": temperature,
+                "stream": True,
+            }
+            if tools:
+                payload["tools"] = tools
 
-    Args:
-        messages: OpenAI 协议消息列表
-        temperature: 0=死板/确定
-        tools: 可选工具列表（OpenAI tools 协议格式）
+            resp = requests.post(
+                f"{MINIMAX_BASE_URL}/chat/completions",
+                headers={"Authorization": f"Bearer {MINIMAX_API_KEY}", "Content-Type": "application/json"},
+                json=payload,
+                stream=True,
+                timeout=60,
+            )
+            data_json = {}
+            try:
+                # Peek first byte to see if it's an error
+                data_json = resp.json()
+            except (json.JSONDecodeError, ValueError):
+                pass  # not JSON = streaming response, good
 
-    Yields:
-        {"type": "token", "content": "..."}        # 流式 token
-        {"type": "tool_call", "name": "...", "arguments": {...}}  # 工具调用
-        {"type": "done", "finish_reason": "stop"}   # 结束
-        {"type": "error", "message": "..."}         # 错误
-    """
-    if not LLM_API_KEY:
-        # Mock 模式：API key 未设置时返回假数据
-        for word in ["（Mock 模式：LLM_API_KEY 未设置）", " 这是一个测试回答，", "流式输出正常。"]:
+            if resp.status_code == 429 or (data_json and "error" in data_json and _is_rate_limit(data_json)):
+                logger.warning("⚠️ MiniMax 额度不足，切换到 DeepSeek")
+                raise FallbackTrigger("rate_limit")
+            if "error" in data_json:
+                yield {"type": "error", "message": f"MiniMax 报错: {data_json['error']}"}
+                return
+
+            # Normal streaming
+            yield from _stream_events(resp)
+            return
+        except FallbackTrigger:
+            pass  # fall through to DeepSeek
+        except requests.RequestException as e:
+            logger.warning(f"⚠️ MiniMax 请求失败 ({e})，切换到 DeepSeek")
+    else:
+        logger.info("ℹ️ 未配置 MiniMax API key")
+
+    # --- Fallback: DeepSeek ---
+    if not DEEPSEEK_API_KEY:
+        for word in ["（Mock 模式：已无可用 API key）"]:
             yield {"type": "token", "content": word}
         yield {"type": "done", "finish_reason": "stop"}
         return
 
+    yield {"type": "provider", "provider": "deepseek"}
+    logger.info(f"🔄 Fallback → DeepSeek ({DEEPSEEK_MODEL})")
+
     payload = {
-        "model": LLM_MODEL,
+        "model": DEEPSEEK_MODEL,
         "messages": messages,
         "temperature": temperature,
         "stream": True,
@@ -80,79 +184,89 @@ def ask_llm_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
         payload["tools"] = tools
 
     try:
-        resp = requests.post(
-            f"{LLM_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {LLM_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
+        resp = _call_provider(
+            base_url=DEEPSEEK_BASE_URL,
+            api_key=DEEPSEEK_API_KEY,
+            model=DEEPSEEK_MODEL,
+            messages=messages,
+            temperature=temperature,
             stream=True,
-            timeout=60,
+            tools=tools,
         )
-
-        # 累积工具调用的 fragments
-        tool_call_id = None
-        tool_call_name = None
-        tool_call_args = ""
-
-        for line in resp.iter_lines():
-            if not line:
-                continue
-            line_str = line.decode("utf-8")
-            if not line_str.startswith("data: "):
-                continue
-            data_str = line_str[6:]
-            if data_str.strip() == "[DONE]":
-                break
-            try:
-                chunk = json.loads(data_str)
-            except json.JSONDecodeError:
-                continue
-
-            if "error" in chunk:
-                yield {"type": "error", "message": chunk["error"]}
-                return
-
-            choice = chunk.get("choices", [{}])[0]
-            delta = choice.get("delta", {})
-            finish_reason = choice.get("finish_reason")
-
-            # 1. 普通 content token
-            if delta.get("content"):
-                yield {"type": "token", "content": delta["content"]}
-
-            # 2. 工具调用（流式累积）
-            if delta.get("tool_calls"):
-                tc = delta["tool_calls"][0]
-                if tc.get("id"):
-                    tool_call_id = tc["id"]
-                if tc.get("function", {}).get("name"):
-                    tool_call_name = tc["function"]["name"]
-                if tc.get("function", {}).get("arguments"):
-                    tool_call_args += tc["function"]["arguments"]
-
-            # 3. 流结束
-            if finish_reason:
-                if tool_call_name:
-                    try:
-                        args = json.loads(tool_call_args) if tool_call_args else {}
-                    except json.JSONDecodeError:
-                        args = {"_raw": tool_call_args}
-                    yield {
-                        "type": "tool_call",
-                        "id": tool_call_id,
-                        "name": tool_call_name,
-                        "arguments": args,
-                    }
-                yield {"type": "done", "finish_reason": finish_reason}
-                return
     except requests.RequestException as e:
         yield {"type": "error", "message": str(e)}
+        return
+
+    yield from _stream_events(resp)
+
+
+def _stream_events(resp: requests.Response) -> Iterator[Dict]:
+    """Parse SSE stream from a chat completions response"""
+    tool_call_id = None
+    tool_call_name = None
+    tool_call_args = ""
+
+    for line in resp.iter_lines():
+        if not line:
+            continue
+        line_str = line.decode("utf-8")
+        if not line_str.startswith("data: "):
+            continue
+        data_str = line_str[6:]
+        if data_str.strip() == "[DONE]":
+            yield {"type": "done", "finish_reason": "stop"}
+            return
+        try:
+            chunk = json.loads(data_str)
+        except json.JSONDecodeError:
+            continue
+
+        if "error" in chunk:
+            yield {"type": "error", "message": chunk["error"]}
+            return
+
+        choice = chunk.get("choices", [{}])[0]
+        delta = choice.get("delta", {})
+        finish_reason = choice.get("finish_reason")
+
+        # 1. Normal content token
+        if delta.get("content"):
+            yield {"type": "token", "content": delta["content"]}
+
+        # 2. Tool calls (streaming accumulation)
+        if delta.get("tool_calls"):
+            tc = delta["tool_calls"][0]
+            if tc.get("id"):
+                tool_call_id = tc["id"]
+            if tc.get("function", {}).get("name"):
+                tool_call_name = tc["function"]["name"]
+            if tc.get("function", {}).get("arguments"):
+                tool_call_args += tc["function"]["arguments"]
+
+        # 3. Stream end
+        if finish_reason:
+            if tool_call_name:
+                try:
+                    args = json.loads(tool_call_args) if tool_call_args else {}
+                except json.JSONDecodeError:
+                    args = {"_raw": tool_call_args}
+                yield {
+                    "type": "tool_call",
+                    "id": tool_call_id,
+                    "name": tool_call_name,
+                    "arguments": args,
+                }
+            yield {"type": "done", "finish_reason": finish_reason}
+            return
+
+
+class FallbackTrigger(Exception):
+    """Exception to trigger fallback from MiniMax to DeepSeek"""
+    pass
 
 
 if __name__ == "__main__":
-    # 测试：直接跑这个文件就能用
+    # Test
     answer = ask_llm([
         {"role": "system", "content": "你是报价员助手，回复必须包含 emoji"},
         {"role": "user", "content": "1+1=?"}
