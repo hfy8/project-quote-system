@@ -2524,9 +2524,51 @@ TOOLS += [
 ]
 
 
-def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
-    """根据工具名 + 参数，执行对应的工具函数"""
+def execute_tool(name: str, arguments: Dict[str, Any], user_id: int = None) -> str:
+    """根据工具名 + 参数，执行对应的工具函数。
+
+    阶段 6 增强：写操作工具会先做权限校验（user_id 不能为空），
+    然后记录操作日志到 OperationLog。
+    """
+    import json as _json
     func = TOOL_FUNCTIONS.get(name)
     if not func:
-        return f"未知工具: {name}"
-    return func(**arguments)
+        return _json.dumps({"error": f"未知工具: {name}"}, ensure_ascii=False)
+
+    # 权限校验（仅写操作）
+    from core.services.ai_guard import check_tool_permission, log_tool_action, get_required_permission
+
+    if get_required_permission(name):
+        if not user_id:
+            return _json.dumps({
+                "error": f"工具 {name} 需要登录用户，但未传入 user_id"
+            }, ensure_ascii=False)
+        allowed, msg = check_tool_permission(user_id, name)
+        if not allowed:
+            # 记录失败日志
+            log_tool_action(user_id, name, arguments, success=False, result_preview=msg)
+            return _json.dumps({
+                "error": f"权限不足：{msg}",
+                "tool": name,
+            }, ensure_ascii=False)
+
+    # 执行工具
+    try:
+        result = func(**arguments)
+        # 解析结果判断是否成功
+        success = True
+        try:
+            parsed = _json.loads(result)
+            if isinstance(parsed, dict) and parsed.get("error"):
+                success = False
+        except Exception:
+            pass
+
+        # 只对写操作记日志
+        if get_required_permission(name):
+            log_tool_action(user_id, name, arguments, success=success, result_preview=result)
+        return result
+    except Exception as e:
+        if get_required_permission(name):
+            log_tool_action(user_id, name, arguments, success=False, result_preview=str(e))
+        return _json.dumps({"error": f"工具执行异常: {str(e)}"}, ensure_ascii=False)

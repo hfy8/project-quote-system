@@ -173,7 +173,7 @@ def ask_stream(
         start_time = time.time()
         last_answer = ""
         try:
-            for event in run_agent_stream(req.query, history=history):
+            for event in run_agent_stream(req.query, history=history, user_id=int(user_id)):
                 # 让前端拿到 conversation_id
                 if event.get("type") in ("start",):
                     event["conversation_id"] = conv_id

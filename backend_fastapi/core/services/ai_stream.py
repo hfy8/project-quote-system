@@ -15,7 +15,7 @@ from utils.llm_client import ask_llm_stream
 from core.services.ai_tools import TOOLS, execute_tool
 
 
-def run_agent_stream(user_query: str, history: List[Dict] = None) -> Iterator[Dict]:
+def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int = None) -> Iterator[Dict]:
     """流式跑 Agent - 每步 yield 事件
 
     Args:
@@ -80,7 +80,7 @@ def run_agent_stream(user_query: str, history: List[Dict] = None) -> Iterator[Di
                         # 2. 执行工具
                         yield {"type": "tool_executing", "name": tool_name}
                         try:
-                            result = execute_tool(tool_name, tool_args)
+                            result = execute_tool(tool_name, tool_args, user_id=user_id)
                         except Exception as e:
                             result = json.dumps({"error": str(e)}, ensure_ascii=False)
 
