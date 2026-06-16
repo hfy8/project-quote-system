@@ -142,16 +142,23 @@ async function sendMessage() {
       (event) => {
         const type = event.type
         if (type === 'start') {
-          // 保存 conversation_id
-          // （流式响应里没回 conv_id，临时用 sessionStorage 同步）
+          // 保存 conversation_id（后端从 SSE start/done 事件返回）
+          if (event.conversation_id) {
+            conversationId.value = event.conversation_id
+          }
         } else if (type === 'token') {
           currentAnswer.value += event.content
           fullAnswer += event.content
+          scrollToBottom()
         } else if (type === 'tool_call') {
           if (!toolsUsed.includes(event.name)) {
             toolsUsed.push(event.name)
           }
         } else if (type === 'done') {
+          // 保存 conversation_id
+          if (event.conversation_id) {
+            conversationId.value = event.conversation_id
+          }
           // 收尾
           messages.value.push({
             role: 'assistant',

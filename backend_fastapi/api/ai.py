@@ -171,15 +171,20 @@ def ask_stream(
         from core.services.ai_stream import run_agent_stream
         history = _get_history(conv_id)
         start_time = time.time()
+        last_answer = ""
         try:
             for event in run_agent_stream(req.query, history=history):
-                # 包装成 SSE 格式
+                # 让前端拿到 conversation_id
+                if event.get("type") in ("start",):
+                    event["conversation_id"] = conv_id
+                elif event.get("type") == "done":
+                    event["conversation_id"] = conv_id
+                    last_answer = event.get("answer", "")
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-            # 流结束后保存历史（从 done 事件提取）
-            # 这里简化处理：调一次非流式拿答案存历史
-            # 或者直接从事件流捕获 - 简化：保存对话 ID 即可
-            _save_history(conv_id, req.query, f"[流式回答 {time.time() - start_time:.1f}s]")
+            # 流结束后保存真实回答到历史
+            if last_answer:
+                _save_history(conv_id, req.query, last_answer)
 
         except Exception as e:
             logger.exception("AI stream failed")
