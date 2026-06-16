@@ -303,6 +303,709 @@ def get_quotation_compare(quotation_id_1: int, quotation_id_2: int) -> str:
         session.close()
 
 
+# ============== 块 1：AI 审计 ==============
+@tool("audit_quotation")
+def audit_quotation(quotation_id: int) -> str:
+    """审计单个报价单的所有异常（物料价格、工时、毛利率、字段完整性）
+
+    Args:
+        quotation_id: 报价单 ID
+
+    Returns:
+        JSON 字符串：{"quotation_id": 15, "issues": [{"type": "...", "severity": "high/medium/low", "description": "..."}], "summary": "..."}
+    """
+    from core.models.quotation import Quotation
+    from core.models.labor_hour import LaborHour
+    from core.models.module import Module
+    from core.models.material import ModuleMaterial, Material
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        issues = []
+
+        q = session.query(Quotation).filter_by(id=quotation_id).first()
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        # 1. 字段完整性
+        if q.profit_rate is None or q.profit_rate == 0:
+            issues.append({
+                "type": "missing_profit_rate",
+                "severity": "high",
+                "description": "毛利率未填写或为 0",
+            })
+        if q.profit_rate is not None and q.profit_rate < 0:
+            issues.append({
+                "type": "negative_profit",
+                "severity": "high",
+                "description": f"毛利率为负数: {q.profit_rate * 100:.1f}%",
+            })
+        if q.profit_rate is not None and q.profit_rate > 0.5:
+            issues.append({
+                "type": "high_profit_warning",
+                "severity": "medium",
+                "description": f"毛利率过高: {q.profit_rate * 100:.1f}%，可能算错",
+            })
+
+        # 2. 工时合理性（统计异常）
+        labor_stats = session.query(
+            func.avg(LaborHour.hours).label('avg_hours'),
+            func.stddev(LaborHour.hours).label('std_hours'),
+            func.count(LaborHour.id).label('count'),
+        ).first()
+
+        labor_data = session.query(
+            func.sum(LaborHour.hours),
+            func.sum(LaborHour.total),
+        ).filter(LaborHour.quotation_id == quotation_id).first()
+
+        if labor_data[0]:
+            total_hours = float(labor_data[0])
+            if labor_stats.avg_hours and labor_stats.std_hours:
+                avg = float(labor_stats.avg_hours)
+                std = float(labor_stats.std_hours)
+                if std > 0 and abs(total_hours - avg) > 3 * std:
+                    issues.append({
+                        "type": "abnormal_labor_hours",
+                        "severity": "high",
+                        "description": f"工时 {total_hours:.0f}h 异常（平均 {avg:.0f}h ± {std:.0f}h）",
+                    })
+            if total_hours == 0 and q.status == "approved":
+                issues.append({
+                    "type": "missing_labor_data",
+                    "severity": "medium",
+                    "description": "已批准报价单没有工时数据",
+                })
+
+        # 3. 模块数 / 物料数检查
+        module_count = session.query(func.count(Module.id)).filter(
+            Module.quotation_id == quotation_id
+        ).scalar() or 0
+        if module_count == 0:
+            issues.append({
+                "type": "no_modules",
+                "severity": "high",
+                "description": "报价单没有任何模块",
+            })
+
+        material_count = session.query(func.count(ModuleMaterial.id)).join(
+            Module, Module.id == ModuleMaterial.module_id
+        ).filter(Module.quotation_id == quotation_id).scalar() or 0
+        if module_count > 0 and material_count == 0:
+            issues.append({
+                "type": "no_materials",
+                "severity": "high",
+                "description": f"{module_count} 个模块都没有物料",
+            })
+
+        # 4. 物料价格异常
+        material_prices = session.query(
+            Material.unit_price, Material.name, Material.id
+        ).join(
+            ModuleMaterial, ModuleMaterial.material_id == Material.id
+        ).join(
+            Module, Module.id == ModuleMaterial.module_id
+        ).filter(
+            Module.quotation_id == quotation_id,
+            Material.unit_price > 0,
+        ).all()
+
+        # 用 IQR 方法检测价格异常
+        if len(material_prices) >= 4:
+            prices = sorted([float(m.unit_price) for m in material_prices])
+            n = len(prices)
+            q1 = prices[n // 4]
+            q3 = prices[3 * n // 4]
+            iqr = q3 - q1
+            upper = q3 + 1.5 * iqr
+            lower = max(0, q1 - 1.5 * iqr)
+            for m in material_prices:
+                price = float(m.unit_price)
+                if price > upper:
+                    issues.append({
+                        "type": "material_price_outlier_high",
+                        "severity": "medium",
+                        "description": f"物料 '{m.name}' 单价 ¥{price:.0f} 异常高（同模块其他物料最高 ¥{q3:.0f}）",
+                    })
+                elif price < lower and price > 0:
+                    issues.append({
+                        "type": "material_price_outlier_low",
+                        "severity": "low",
+                        "description": f"物料 '{m.name}' 单价 ¥{price:.0f} 异常低（同模块其他物料最低 ¥{q1:.0f}）",
+                    })
+
+        # 总结
+        severity_count = {"high": 0, "medium": 0, "low": 0}
+        for i in issues:
+            severity_count[i["severity"]] = severity_count.get(i["severity"], 0) + 1
+
+        if not issues:
+            summary = "✅ 无异常"
+        else:
+            summary = f"发现 {len(issues)} 个问题（高: {severity_count['high']}, 中: {severity_count['medium']}, 低: {severity_count['low']}）"
+
+        return json.dumps({
+            "quotation_id": quotation_id,
+            "quotation_name": q.name,
+            "issues": issues,
+            "summary": summary,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("audit_materials_price")
+def audit_materials_price(category: str = "") -> str:
+    """审计物料库中所有异常价格的物料（按类别筛选）
+
+    Args:
+        category: 可选类别（'大件'/'普通件'/'其他件'），空字符串审计全部
+
+    Returns:
+        JSON 字符串：{"outliers": [...], "summary": "..."}
+    """
+    from core.models.material import Material
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        q = session.query(Material).filter(
+            Material.status == "active",
+            Material.unit_price.isnot(None),
+            Material.unit_price > 0,
+        )
+        if category:
+            q = q.filter(Material.category == category)
+        materials = q.all()
+
+        if len(materials) < 4:
+            return json.dumps({"outliers": [], "summary": "样本不足，无法审计"})
+
+        # 按 category 分组做 IQR
+        groups = {}
+        for m in materials:
+            cat = m.category or "未知"
+            groups.setdefault(cat, []).append(m)
+
+        outliers = []
+        for cat, items in groups.items():
+            if len(items) < 4:
+                continue
+            prices = sorted([float(m.unit_price) for m in items])
+            n = len(prices)
+            q1 = prices[n // 4]
+            q3 = prices[3 * n // 4]
+            iqr = q3 - q1
+            upper = q3 + 1.5 * iqr
+            lower = max(0, q1 - 1.5 * iqr)
+            for m in items:
+                price = float(m.unit_price)
+                if price > upper:
+                    outliers.append({
+                        "material_id": m.id,
+                        "name": m.name,
+                        "category": cat,
+                        "unit_price": price,
+                        "reason": f"价格高于本类上限 ¥{upper:.0f}",
+                        "severity": "medium",
+                    })
+                elif price < lower and price > 0:
+                    outliers.append({
+                        "material_id": m.id,
+                        "name": m.name,
+                        "category": cat,
+                        "unit_price": price,
+                        "reason": f"价格低于本类下限 ¥{lower:.0f}",
+                        "severity": "low",
+                    })
+
+        return json.dumps({
+            "outliers": outliers,
+            "summary": f"扫描 {len(materials)} 条物料，发现 {len(outliers)} 个价格异常",
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("audit_labor_hours")
+def audit_labor_hours(quotation_id: int = None) -> str:
+    """审计工时数据（单条或全部）
+
+    Args:
+        quotation_id: 指定报价单 ID（查该单）；空字符串则审计所有报价单
+
+    Returns:
+        JSON 字符串：{"issues": [...], "summary": "..."}
+    """
+    from core.models.labor_hour import LaborHour
+    from core.models.quotation import Quotation
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        # 1. 算全局均值和标准差
+        stats = session.query(
+            func.avg(LaborHour.hours).label('avg'),
+            func.stddev(LaborHour.hours).label('std'),
+            func.avg(LaborHour.unit_price).label('avg_rate'),
+            func.count(LaborHour.id).label('count'),
+        ).first()
+
+        if not stats.avg or stats.count < 3:
+            return json.dumps({"issues": [], "summary": "工时数据不足，无法审计"})
+
+        avg = float(stats.avg)
+        std = float(stats.std or 0)
+        avg_rate = float(stats.avg_rate)
+
+        issues = []
+
+        if quotation_id:
+            # 审计单条
+            data = session.query(
+                func.sum(LaborHour.hours),
+                func.avg(LaborHour.unit_price),
+            ).filter(LaborHour.quotation_id == quotation_id).first()
+
+            if data[0] is None:
+                return json.dumps({
+                    "issues": [{"type": "no_labor_data", "severity": "high", "description": f"报价单 #{quotation_id} 没有工时数据"}],
+                    "summary": f"报价单 #{quotation_id} 无工时",
+                })
+
+            total_hours = float(data[0])
+            rate = float(data[1] or 0)
+
+            if std > 0 and abs(total_hours - avg) > 3 * std:
+                issues.append({
+                    "type": "abnormal_hours",
+                    "severity": "high",
+                    "description": f"工时 {total_hours:.0f}h 异常（全局均值 {avg:.0f}h ± {std:.0f}h）",
+                })
+            if rate > 0 and abs(rate - avg_rate) / avg_rate > 0.5:
+                issues.append({
+                    "type": "abnormal_rate",
+                    "severity": "medium",
+                    "description": f"时薪 ¥{rate:.0f} 与均值 ¥{avg_rate:.0f} 偏差 {abs(rate - avg_rate) / avg_rate * 100:.0f}%",
+                })
+        else:
+            # 审计所有 - 找异常工时
+            all_labor = session.query(
+                LaborHour.quotation_id,
+                Quotation.name,
+                func.sum(LaborHour.hours).label('total_hours'),
+            ).join(Quotation, Quotation.id == LaborHour.quotation_id).group_by(
+                LaborHour.quotation_id, Quotation.name
+            ).all()
+
+            for row in all_labor:
+                hours = float(row.total_hours)
+                if std > 0 and abs(hours - avg) > 3 * std:
+                    issues.append({
+                        "type": "abnormal_hours",
+                        "quotation_id": row.quotation_id,
+                        "quotation_name": row.name,
+                        "severity": "high",
+                        "description": f"工时 {hours:.0f}h 异常（均值 {avg:.0f}h ± {std:.0f}h）",
+                    })
+
+        return json.dumps({
+            "issues": issues,
+            "global_avg_hours": round(avg, 1),
+            "global_avg_rate": round(avg_rate, 1),
+            "summary": f"扫描 {stats.count} 条工时记录，发现 {len(issues)} 个异常" if not quotation_id else f"报价单 #{quotation_id} 审计：{len(issues)} 个问题",
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+# ============== 块 2：AI 业务分析 ==============
+@tool("analyze_profitability")
+def analyze_profitability(limit: int = 5) -> str:
+    """分析报价单的毛利率分布、Top/Bottom 排名、统计概览
+
+    Args:
+        limit: 返回 Top/Bottom 几个，默认 5
+
+    Returns:
+        JSON 字符串：{"overview": {...}, "top": [...], "bottom": [...], "insights": [...]}
+    """
+    from core.models.quotation import Quotation
+    from db import db_session_factory
+    from sqlalchemy import func, desc, asc
+
+    session = db_session_factory()
+    try:
+        # 1. 全局概览
+        overall = session.query(
+            func.count(Quotation.id).label('count'),
+            func.avg(Quotation.profit_rate).label('avg_profit'),
+            func.max(Quotation.profit_rate).label('max_profit'),
+            func.min(Quotation.profit_rate).label('min_profit'),
+        ).filter(Quotation.profit_rate.isnot(None)).first()
+
+        # 2. 按状态分组
+        by_status = session.query(
+            Quotation.status,
+            func.count(Quotation.id).label('count'),
+            func.avg(Quotation.profit_rate).label('avg_profit'),
+        ).filter(Quotation.profit_rate.isnot(None)).group_by(Quotation.status).all()
+
+        # 3. Top N 最高毛利
+        top_rows = session.query(
+            Quotation.id, Quotation.name, Quotation.profit_rate, Quotation.status
+        ).filter(Quotation.profit_rate.isnot(None)).order_by(
+            desc(Quotation.profit_rate)
+        ).limit(limit).all()
+
+        # 4. Bottom N 最低毛利
+        bottom_rows = session.query(
+            Quotation.id, Quotation.name, Quotation.profit_rate, Quotation.status
+        ).filter(Quotation.profit_rate.isnot(None)).order_by(
+            asc(Quotation.profit_rate)
+        ).limit(limit).all()
+
+        # 5. 自动洞察
+        insights = []
+        if overall.avg_profit is not None:
+            avg_pct = float(overall.avg_profit) * 100
+            insights.append(f"整体平均毛利率 {avg_pct:.1f}%，共 {overall.count} 单有效数据")
+            if overall.max_profit and overall.min_profit:
+                spread = (overall.max_profit - overall.min_profit) * 100
+                if spread > 30:
+                    insights.append(f"毛利差异大（{spread:.0f} 个百分点），需关注低毛利报价单")
+
+        # 6. 按状态明细
+        status_breakdown = []
+        for s in by_status:
+            status_breakdown.append({
+                "status": s.status or "未知",
+                "count": s.count,
+                "avg_profit_rate": round(float(s.avg_profit or 0) * 100, 1),
+            })
+
+        return json.dumps({
+            "overview": {
+                "total_quotations": overall.count or 0,
+                "avg_profit_rate": round(float(overall.avg_profit or 0) * 100, 1),
+                "max_profit_rate": round(float(overall.max_profit or 0) * 100, 1),
+                "min_profit_rate": round(float(overall.min_profit or 0) * 100, 1),
+            },
+            "status_breakdown": status_breakdown,
+            "top": [{
+                "id": r.id, "name": r.name,
+                "profit_rate": round(float(r.profit_rate) * 100, 1),
+                "status": r.status,
+            } for r in top_rows],
+            "bottom": [{
+                "id": r.id, "name": r.name,
+                "profit_rate": round(float(r.profit_rate) * 100, 1),
+                "status": r.status,
+            } for r in bottom_rows],
+            "insights": insights,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("analyze_trends")
+def analyze_trends(months: int = 6) -> str:
+    """分析最近 N 个月报价单的趋势（数量、毛利率、工时）
+
+    Args:
+        months: 最近几个月，默认 6
+
+    Returns:
+        JSON 字符串：{"trends": [{"period": "2026-01", "count": 5, "avg_profit": 0.15, "total_hours": 800}, ...], "insights": [...]}
+    """
+    from core.models.quotation import Quotation
+    from core.models.labor_hour import LaborHour
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        # 查所有报价单，按 created_at 分组
+        rows = session.query(
+            Quotation.id,
+            Quotation.name,
+            Quotation.profit_rate,
+            Quotation.status,
+        ).order_by(Quotation.id.asc()).all()
+
+        # 用 quotation.id 大致代表时间顺序（id 越大越新）
+        # 取最近 N*3 条数据（每月可能多单）
+        recent = rows[-months * 5:] if len(rows) > months * 5 else rows
+
+        # 按区间分桶
+        bucket_size = max(1, len(recent) // months)
+        trends = []
+        for i in range(0, len(recent), bucket_size):
+            chunk = recent[i:i + bucket_size]
+            if not chunk:
+                continue
+            period_label = f"区间 {len(trends) + 1}"
+            profits = [float(q.profit_rate) for q in chunk if q.profit_rate is not None]
+
+            # 该区间的总工时
+            qids = [q.id for q in chunk]
+            total_hours = session.query(
+                func.coalesce(func.sum(LaborHour.hours), 0)
+            ).filter(LaborHour.quotation_id.in_(qids)).scalar() or 0
+
+            trends.append({
+                "period": period_label,
+                "quotation_count": len(chunk),
+                "avg_profit_rate": round(sum(profits) / len(profits) * 100, 1) if profits else 0,
+                "total_hours": float(total_hours),
+            })
+
+        # 自动洞察
+        insights = []
+        if len(trends) >= 2:
+            latest = trends[-1]["avg_profit_rate"]
+            earliest = trends[0]["avg_profit_rate"]
+            if latest > earliest * 1.1:
+                insights.append(f"毛利率上升 {latest - earliest:.1f} 个百分点")
+            elif latest < earliest * 0.9:
+                insights.append(f"毛利率下降 {earliest - latest:.1f} 个百分点，需关注")
+            else:
+                insights.append("毛利率保持稳定")
+
+        return json.dumps({
+            "trends": trends,
+            "insights": insights,
+            "summary": f"分析了 {len(recent)} 条报价单，划分 {len(trends)} 个区间",
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+# ============== 块 3：AI 报价调整模拟 ==============
+@tool("simulate_quotation_change")
+def simulate_quotation_change(quotation_id: int, discount_rate: float = 0.0, target_profit_rate: float = None) -> str:
+    """模拟报价单调整（降价/目标毛利率）后需要怎么改才能达成目标
+
+    Args:
+        quotation_id: 报价单 ID
+        discount_rate: 客户要求的降价幅度（如 0.05 = 5%）
+        target_profit_rate: 目标毛利率（如 0.15 = 15%），不传则按当前保持
+
+    Returns:
+        JSON 字符串：{"current": {...}, "scenario": {...}, "adjustments": [...]}
+    """
+    from core.models.quotation import Quotation
+    from core.models.labor_hour import LaborHour
+    from core.models.module import Module
+    from core.models.material import ModuleMaterial, Material
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).filter_by(id=quotation_id).first()
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        # 1. 算当前成本
+        material_data = session.query(
+            func.coalesce(func.sum(ModuleMaterial.quantity * Material.unit_price), 0).label('material_cost'),
+            func.coalesce(func.sum(LaborHour.total), 0).label('labor_cost'),
+        ).select_from(Module).outerjoin(
+            ModuleMaterial, ModuleMaterial.module_id == Module.id
+        ).outerjoin(
+            Material, Material.id == ModuleMaterial.material_id
+        ).outerjoin(
+            LaborHour, LaborHour.quotation_id == Module.quotation_id
+        ).filter(
+            Module.quotation_id == quotation_id
+        ).first()
+
+        material_cost = float(material_data.material_cost or 0)
+        labor_cost = float(material_data.labor_cost or 0)
+        subtotal = material_cost + labor_cost
+        current_profit = float(q.profit_rate or 0)
+        current_total = subtotal * (1 + current_profit) * 1.13  # 13% 税
+
+        # 2. 应用客户降价
+        new_subtotal = subtotal * (1 - discount_rate)
+
+        # 3. 算保持原毛利需要的压缩
+        if target_profit_rate is None:
+            target_profit_rate = current_profit
+
+        # 目标总价 = new_subtotal * (1 + target_profit_rate)
+        # 现在实际总价（未降价）= subtotal * (1 + current_profit) * 1.13
+        # 差额 = new_total - actual_total
+        target_total = new_subtotal * (1 + target_profit_rate) * 1.13
+        actual_total_no_discount = current_total
+        diff = target_total - actual_total_no_discount
+
+        # 4. 找可压缩的成本（列出最大的物料，按金额降序）
+        big_materials = session.query(
+            Material.id, Material.name, Material.unit_price,
+            ModuleMaterial.quantity,
+            (ModuleMaterial.quantity * Material.unit_price).label('total'),
+        ).join(
+            Module, Module.id == ModuleMaterial.module_id
+        ).join(
+            Material, Material.id == ModuleMaterial.material_id
+        ).filter(
+            Module.quotation_id == quotation_id,
+        ).order_by(
+            (ModuleMaterial.quantity * Material.unit_price).desc()
+        ).limit(5).all()
+
+        adjustments = []
+        if diff < 0:
+            # 缺钱 - 需要砍成本
+            need_save = -diff
+            adjustments.append({
+                "type": "reduce_cost",
+                "amount_needed": round(need_save, 2),
+                "suggestion": f"需要压缩 ¥{need_save:.0f} 成本来保持 {target_profit_rate * 100:.1f}% 毛利率",
+            })
+            for m in big_materials[:3]:
+                adjustments.append({
+                    "type": "consider_renegotiate",
+                    "material_id": m.id,
+                    "name": m.name,
+                    "current_cost": round(float(m.total), 2),
+                    "hint": f"占总成本 {float(m.total) / subtotal * 100 if subtotal else 0:.0f}%，可议价",
+                })
+        else:
+            adjustments.append({
+                "type": "achievable",
+                "amount_saved": round(diff, 2),
+                "suggestion": f"降价 {discount_rate * 100:.0f}% 后仍有 ¥{diff:.0f} 利润空间",
+            })
+
+        return json.dumps({
+            "quotation_id": quotation_id,
+            "current": {
+                "material_cost": round(material_cost, 2),
+                "labor_cost": round(labor_cost, 2),
+                "subtotal": round(subtotal, 2),
+                "profit_rate": round(current_profit * 100, 1),
+                "total_with_tax": round(current_total, 2),
+            },
+            "scenario": {
+                "discount_rate": round(discount_rate * 100, 1),
+                "target_profit_rate": round(target_profit_rate * 100, 1),
+                "new_subtotal": round(new_subtotal, 2),
+                "new_total_with_tax": round(target_total, 2),
+            },
+            "adjustments": adjustments,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+# ============== 块 4：RAG 知识库 ==============
+@tool("search_knowledge")
+def search_knowledge(query: str, doc_type: str = "", limit: int = 5) -> str:
+    """在知识库中搜索相关业务知识（业务规范/FAQ/历史经验）
+
+    Args:
+        query: 搜索关键词
+        doc_type: 可选文档类型（spec/faq/experience/rule），空字符串搜全部
+        limit: 最多返回几条，默认 5
+
+    Returns:
+        JSON 字符串：{"results": [{"id": ..., "title": "...", "content": "...", "score": ...}], "summary": "..."}
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        if not query:
+            return json.dumps({"results": [], "summary": "搜索关键词不能为空"})
+
+        # 关键词拆分（空格/逗号）
+        keywords = [k for k in query.replace(',', ' ').split() if k]
+
+        # 简单关键词匹配打分
+        docs = session.query(KnowledgeDoc).all()
+        if doc_type:
+            docs = [d for d in docs if d.doc_type == doc_type]
+
+        scored = []
+        for d in docs:
+            score = 0
+            text = (d.title or '') + ' ' + (d.content or '') + ' ' + (d.keywords or '')
+            for kw in keywords:
+                if kw in d.title:
+                    score += 10
+                if kw in d.content:
+                    score += 3
+                if kw in (d.keywords or ''):
+                    score += 5
+            if score > 0:
+                scored.append((score, d))
+
+        scored.sort(key=lambda x: -x[0])
+        scored = scored[:limit]
+
+        results = [{
+            "id": d.id,
+            "title": d.title,
+            "content": d.content[:500],  # 截断
+            "doc_type": d.doc_type,
+            "score": s,
+        } for s, d in scored]
+
+        return json.dumps({
+            "results": results,
+            "summary": f"找到 {len(results)} 条相关知识（搜 '{query}'）",
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("add_knowledge")
+def add_knowledge(title: str, content: str, doc_type: str = "faq", keywords: str = "", created_by: str = "ai_user") -> str:
+    """添加一条知识到知识库
+
+    Args:
+        title: 标题
+        content: 内容
+        doc_type: 类型（spec=规范/faq=常见问题/experience=经验/rule=规则）
+        keywords: 关键词（逗号分隔）
+        created_by: 创建者
+
+    Returns:
+        JSON 字符串：{"id": ..., "title": "...", "status": "ok"}
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        doc = KnowledgeDoc(
+            title=title,
+            content=content,
+            doc_type=doc_type,
+            keywords=keywords,
+            created_by=created_by,
+        )
+        session.add(doc)
+        session.commit()
+        return json.dumps({
+            "id": doc.id,
+            "title": doc.title,
+            "status": "ok",
+        }, ensure_ascii=False)
+    except Exception as e:
+        session.rollback()
+        return json.dumps({"error": str(e), "status": "failed"})
+    finally:
+        session.close()
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 TOOLS = [
     {
@@ -459,6 +1162,182 @@ TOOLS = [
                     }
                 },
                 "required": ["quotation_id_1", "quotation_id_2"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "audit_quotation",
+            "description": "审计单个报价单的所有潜在问题（物料价格异常、工时异常、毛利率为负、字段缺失等）。当用户说审一下/查一下报价单/有没有问题/有错误吗时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "要审计的报价单 ID"
+                    }
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "audit_materials_price",
+            "description": "审计物料库中所有异常价格的物料（用 IQR 方法按分类检测）。当用户说审一下物料/物料价格有没有问题/物料价格异常时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {
+                        "type": "string",
+                        "description": "可选物料类别（大件/普通件/其他件），空字符串审计全部"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "audit_labor_hours",
+            "description": "审计工时数据（单条报价单或全部报价单的工时是否合理）。用 ±3σ 统计学方法检测异常工时。当用户说审一下工时/工时有没有问题/工时异常时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "可选报价单 ID（查该单工时），空则审计所有报价单"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_profitability",
+            "description": "分析所有报价单的毛利率分布，给出 Top/Bottom 排名 + 业务洞察（最高/最低/平均/状态分布）。当用户问毛利率分析/哪单最赚/哪单亏了/毛利概览时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回 Top/Bottom 几个，默认 5",
+                        "default": 5
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_trends",
+            "description": "分析最近 N 个月报价单的趋势（数量、毛利率、工时）。当用户问趋势/最近几个月情况/业绩走势时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "months": {
+                        "type": "integer",
+                        "description": "最近几个月，默认 6",
+                        "default": 6
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "simulate_quotation_change",
+            "description": "模拟报价单调整后的场景（客户降价 X% + 保持目标毛利率），算需要压缩多少成本 + 哪些大额物料可议价。当用户问降价后怎么改/能不能降/降价 X% 还能赚钱吗/给我个调整方案时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "报价单 ID"
+                    },
+                    "discount_rate": {
+                        "type": "number",
+                        "description": "客户要求的降价幅度，0.05 表示 5%",
+                        "default": 0.0
+                    },
+                    "target_profit_rate": {
+                        "type": "number",
+                        "description": "目标毛利率，0.15 表示 15%。不传则按当前毛利率保持"
+                    }
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge",
+            "description": "在知识库中搜索相关业务知识（业务规范/FAQ/历史经验/规则）。当用户问业务规范/怎么办/怎么操作/有什么经验/常见问题/规范是什么时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "搜索关键词"
+                    },
+                    "doc_type": {
+                        "type": "string",
+                        "description": "可选文档类型（spec=规范/faq=常见问题/experience=经验/rule=规则）",
+                        "enum": ["", "spec", "faq", "experience", "rule"]
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "最多返回几条，默认 5",
+                        "default": 5
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_knowledge",
+            "description": "添加一条新知识到知识库（业务规范/FAQ/经验/规则）。当用户说记一下/记一笔/加个规范/补充知识时调此工具。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "知识标题"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "知识内容"
+                    },
+                    "doc_type": {
+                        "type": "string",
+                        "description": "文档类型",
+                        "enum": ["spec", "faq", "experience", "rule"],
+                        "default": "faq"
+                    },
+                    "keywords": {
+                        "type": "string",
+                        "description": "检索关键词（逗号分隔）"
+                    },
+                    "created_by": {
+                        "type": "string",
+                        "description": "创建者",
+                        "default": "ai_user"
+                    }
+                },
+                "required": ["title", "content"]
             }
         }
     }

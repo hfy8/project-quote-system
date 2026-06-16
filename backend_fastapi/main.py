@@ -35,7 +35,11 @@ from db import db, engine
 from core.config import Config
 import core  # 触发 core/__init__.py 导入所有 models
 
+# 创建所有表（只建不存在的）—— 33 个 model 表 + ai_knowledge_base
+from db import ModuleBase
+ModuleBase.metadata.create_all(engine(), checkfirst=True)
 logger.info(f"✅ DB engine created: {Config.SQLALCHEMY_DATABASE_URI[:50]}...")
+logger.info(f"✅ 已注册 {len(ModuleBase.metadata.tables)} 个表")
 
 
 # ============== DB Session 依赖（从 core.auth 导入，避免循环依赖） ==============
