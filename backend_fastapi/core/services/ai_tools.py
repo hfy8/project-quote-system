@@ -1923,6 +1923,371 @@ TOOLS += [
 ]
 
 
+
+
+# ============== 阶段 5-B 工具 ==============
+
+@tool("search_materials_v2")
+def search_materials_v2(
+    keyword: str = "",
+    category: str = "",
+    min_price: float = 0,
+    max_price: float = 0,
+    limit: int = 10
+) -> str:
+    """物料库增强搜索。支持关键词、分类、价格区间组合过滤。
+    已知分类：other=其他件, 标准件=standard, 大件=large, 其他件=其他件。
+    当用户问"找一下 xxx 物料"、"xx 元以内的物料"时调用。
+    """
+    from core.models.material import Material
+    from db import db_session_factory
+    from sqlalchemy import or_
+
+    session = db_session_factory()
+    try:
+        query = session.query(Material).filter(Material.status == "active")
+        if keyword:
+            query = query.filter(
+                or_(
+                    Material.name.like(f'%{keyword}%'),
+                    Material.spec.like(f'%{keyword}%'),
+                    Material.brand.like(f'%{keyword}%'),
+                )
+            )
+        if category:
+            query = query.filter(Material.category == category)
+        if min_price > 0:
+            query = query.filter(Material.unit_price >= min_price)
+        if max_price > 0:
+            query = query.filter(Material.unit_price <= max_price)
+
+        materials = query.order_by(Material.id.desc()).limit(limit).all()
+        result = [{
+            "id": m.id,
+            "name": m.name,
+            "spec": m.spec,
+            "brand": m.brand,
+            "unit": m.unit,
+            "unit_price": float(m.unit_price) if m.unit_price else 0,
+            "category": m.category,
+        } for m in materials]
+        if not result:
+            return json.dumps({"message": "没有找到匹配的物料", "total": 0})
+        return json.dumps({"total": len(result), "materials": result}, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("list_material_categories")
+def list_material_categories() -> str:
+    """列出系统中所有物料分类及其物料数量。
+    当用户问"有哪些分类"、"物料分类"、"分类列表"时调用。
+    """
+    from core.models.material import Material
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        rows = session.query(
+            Material.category,
+            func.count(Material.id).label("count")
+        ).filter(Material.status == "active").group_by(Material.category).all()
+
+        result = [{
+            "category": r.category or "(未分类)",
+            "count": r.count,
+        } for r in rows]
+        return json.dumps({"categories": result}, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("get_quotation_travel_cost")
+def get_quotation_travel_cost(quotation_id: int) -> str:
+    """获取报价单的差旅费用明细和总额：人/次、人/天、各分类。
+    当用户问"差旅费怎么算"、"差旅明细"、"人天费用"时调用。
+    """
+    from core.models.quotation import Quotation
+    from core.models.travel_entry import TravelPersonTrip, TravelPersonDays
+    from core.models.travel import TravelCategory
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).get(quotation_id)
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        trips = session.query(TravelPersonTrip).filter(TravelPersonTrip.quotation_id == q.id).all()
+        days = session.query(TravelPersonDays).filter(TravelPersonDays.quotation_id == q.id).all()
+
+        # 总额
+        trip_total = sum(
+            (float(t.unit_price or 0) * (t.person_count or 0)) + float(t.visa_fee or 0)
+            for t in trips
+        )
+        days_total = sum(float(d.unit_price or 0) * float(d.person_days or 0) for d in days)
+        grand = trip_total + days_total
+
+        return json.dumps({
+            "quotation_id": q.id,
+            "name": q.name,
+            "trip_count": len(trips),
+            "day_count": len(days),
+            "trip_total": round(trip_total, 2),
+            "days_total": round(days_total, 2),
+            "grand_total": round(grand, 2),
+            "trips": [{
+                "id": t.id,
+                "category_id": t.travel_category_id,
+                "person_count": t.person_count,
+                "unit_price": float(t.unit_price) if t.unit_price else 0,
+                "visa_fee": float(t.visa_fee) if t.visa_fee else 0,
+            } for t in trips],
+            "days": [{
+                "id": d.id,
+                "person_days": float(d.person_days) if d.person_days else 0,
+                "unit_price": float(d.unit_price) if d.unit_price else 0,
+                "category_id": d.travel_category_id,
+            } for d in days],
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("get_quotation_fees")
+def get_quotation_fees(quotation_id: int) -> str:
+    """获取报价单的所有其他费用明细：运输费、安装费、服务费等。
+    当用户问"其他费用"、"服务费"、"运输费"时调用。
+    """
+    from core.models.quotation import Quotation
+    from core.models.fee import OtherFee
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).get(quotation_id)
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        fees = session.query(OtherFee).filter(OtherFee.quotation_id == q.id).all()
+        total = sum(float(f.amount or 0) for f in fees)
+
+        # Group by fee_type
+        by_type = {}
+        for f in fees:
+            t = f.fee_type or "其他"
+            by_type.setdefault(t, 0)
+            by_type[t] += float(f.amount or 0)
+
+        return json.dumps({
+            "quotation_id": q.id,
+            "name": q.name,
+            "count": len(fees),
+            "total": round(total, 2),
+            "by_type": {k: round(v, 2) for k, v in by_type.items()},
+            "fees": [{
+                "id": f.id,
+                "fee_type": f.fee_type,
+                "location": f.location,
+                "amount": float(f.amount) if f.amount else 0,
+                "description": f.description,
+            } for f in fees],
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("list_org_structure")
+def list_org_structure() -> str:
+    """列出组织架构：部门树 + 各部门人数。
+    当用户问"组织架构"、"部门列表"、"公司有哪些部门"时调用。
+    """
+    from core.models.department import Department
+    from core.models.employee import Employee
+    from db import db_session_factory
+    from sqlalchemy import func
+
+    session = db_session_factory()
+    try:
+        depts = session.query(Department).filter(Department.is_active == True).all()
+        # 部门人数
+        counts = dict(
+            session.query(Employee.dept_id, func.count(Employee.id))
+            .filter(Employee.is_active == True)
+            .group_by(Employee.dept_id)
+            .all()
+        )
+        result = []
+        for d in depts:
+            result.append({
+                "id": d.id,
+                "name": d.name,
+                "parent_id": d.parent_id,
+                "level": d.level,
+                "employee_count": counts.get(d.id, 0),
+            })
+        # 找根部门（parent_id 为空）
+        roots = [d for d in result if not d["parent_id"]]
+        return json.dumps({
+            "total_depts": len(result),
+            "root_count": len(roots),
+            "departments": result[:50],  # Limit to 50
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("who_can_approve")
+def who_can_approve(action: str = "approve") -> str:
+    """查询谁能执行某个审批操作：返回有该权限的角色 + 用户数。
+    action: approve=审批, view=查看, edit=编辑, delete=删除
+    当用户问"谁能审批"、"谁能操作"、"权限查询"时调用。
+    """
+    from core.models.permission import Permission, Role
+    from core.models.user import User
+    from db import db_session_factory
+
+    # 权限码映射：action -> 可能的权限 code
+    perm_patterns = {
+        "approve": ["quotation.approve", "quotation.edit", "*.approve"],
+        "view": ["quotation.view", "*.view"],
+        "edit": ["quotation.edit", "*.edit"],
+        "delete": ["quotation.delete", "*.delete"],
+    }
+
+    patterns = perm_patterns.get(action, [action])
+    session = db_session_factory()
+    try:
+        perms = session.query(Permission).filter(
+            Permission.code.in_(patterns)
+        ).all()
+
+        if not perms:
+            # 模糊匹配
+            perms = session.query(Permission).filter(
+                Permission.code.like(f'%{action}%')
+            ).limit(10).all()
+
+        result = []
+        for p in perms:
+            roles = p.roles.all() if hasattr(p.roles, 'all') else []
+            user_count = 0
+            for r in roles:
+                # 简化：只统计有 role.code == r.code 的用户
+                uc = session.query(User).filter(
+                    User.role == r.code,
+                    User.is_active == True,
+                ).count()
+                user_count += uc
+
+            result.append({
+                "permission": p.code,
+                "name": p.name,
+                "roles": [r.name for r in roles],
+                "user_count": user_count,
+            })
+
+        if not result:
+            return json.dumps({"message": f"没找到 '{action}' 相关权限", "action": action})
+        return json.dumps({
+            "action": action,
+            "matches": result,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+# ============== 工具定义（OpenAI 协议格式） ==============
+
+
+TOOLS += [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_materials_v2",
+            "description": "物料库增强搜索。支持关键词、分类、价格区间组合过滤。已知分类：other=其他件, standard=标准件, large=大件。当用户问'找一下物料'、'xx元以内的物料'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {"type": "string", "description": "搜索关键词（匹配名称/规格/品牌）", "default": ""},
+                    "category": {"type": "string", "description": "分类过滤：other/standard/large 等", "default": ""},
+                    "min_price": {"type": "number", "description": "最低单价，0=不限", "default": 0},
+                    "max_price": {"type": "number", "description": "最高单价，0=不限", "default": 0},
+                    "limit": {"type": "integer", "description": "最多返回条数", "default": 10}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_material_categories",
+            "description": "列出所有物料分类及其数量。问'有哪些分类'、'物料分类'时调用。",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_quotation_travel_cost",
+            "description": "获取报价单的差旅费用明细：人/次、人/天、分类、总额。问'差旅费怎么算'、'差旅明细'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {"type": "integer", "description": "报价单 ID"}
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_quotation_fees",
+            "description": "获取报价单其他费用：运输费/安装费/服务费，按类型分组。问'其他费用'、'服务费'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {"type": "integer", "description": "报价单 ID"}
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_org_structure",
+            "description": "列出组织架构：部门树 + 部门人数。问'组织架构'、'部门列表'时调用。",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "who_can_approve",
+            "description": "查询谁能执行审批操作：返回有该权限的角色 + 用户数。问'谁能审批'、'权限查询'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["approve", "view", "edit", "delete"],
+                        "description": "操作类型：approve=审批, view=查看, edit=编辑, delete=删除",
+                        "default": "approve"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+]
+
+
+
 def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
     """根据工具名 + 参数，执行对应的工具函数"""
     func = TOOL_FUNCTIONS.get(name)
