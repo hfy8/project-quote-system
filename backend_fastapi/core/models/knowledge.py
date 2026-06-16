@@ -2,6 +2,7 @@
 """
 from datetime import datetime
 from db import db
+from pgvector.sqlalchemy import Vector
 
 
 class KnowledgeDoc(db.Model):
@@ -19,6 +20,11 @@ class KnowledgeDoc(db.Model):
     created_by = db.Column(db.String(50))
     created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
 
+    # RAG v2: embedding 相关字段（pgvector）
+    embedding = db.Column(Vector(1024))  # pgvector 原生向量类型
+    embedding_model = db.Column(db.String(50))  # 'mini/m3e' / 'mock'
+    embedding_updated_at = db.Column(db.DateTime)  # 最近一次 embedding 计算时间
+
     def to_dict(self):
         return {
             'id': self.id,
@@ -29,4 +35,6 @@ class KnowledgeDoc(db.Model):
             'source': self.source,
             'created_by': self.created_by,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'has_embedding': bool(self.embedding is not None),
+            'embedding_model': self.embedding_model,
         }

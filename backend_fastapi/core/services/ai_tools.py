@@ -1006,6 +1006,219 @@ def add_knowledge(title: str, content: str, doc_type: str = "faq", keywords: str
         session.close()
 
 
+# ============== 块 4b：RAG v2 向量混合检索 ==============
+@tool("search_knowledge_hybrid")
+def search_knowledge_hybrid(query: str, doc_type: str = "", limit: int = 5,
+                            vector_weight: float = 0.4, keyword_weight: float = 0.6) -> str:
+    """混合检索知识库（关键词 + 向量相似度）
+
+    Args:
+        query: 查询文本（支持中英文）
+        doc_type: 可选类型筛选（spec/faq/experience/rule）
+        limit: 返回数量
+        vector_weight: 向量相似度权重（0-1）
+        keyword_weight: 关键词权重（0-1）
+
+    Returns:
+        JSON 字符串：{"results": [{"id": ..., "title": "...", "content": "...", "hybrid_score": ..., "vector_score": ..., "keyword_score": ...}], "embedder": "..."}
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+    from utils.embeddings import embed, cosine_similarity, get_embedder_info
+    from datetime import datetime
+
+    if not query or not query.strip():
+        return json.dumps({"results": [], "summary": "查询不能为空"})
+
+    session = db_session_factory()
+    try:
+        # 1. 取所有候选文档
+        q = session.query(KnowledgeDoc)
+        if doc_type:
+            q = q.filter(KnowledgeDoc.doc_type == doc_type)
+        docs = q.all()
+
+        if not docs:
+            return json.dumps({"results": [], "summary": "知识库为空"})
+
+        # 2. 算 query embedding（一次性）
+        query_vec = embed(query)
+        embedder_info = get_embedder_info()
+
+        # 3. 给每个文档打分（pgvector 存储的 numpy 向量用 Python 算余弦）
+        scored = []
+        for d in docs:
+            # 3.1 关键词打分
+            kw_score = _keyword_score(query, d)
+
+            # 3.2 向量打分 - pgvector 存为 numpy.ndarray
+            vec_score = 0.0
+            if query_vec and d.embedding is not None:
+                try:
+                    doc_vec = list(d.embedding) if hasattr(d.embedding, '__iter__') else None
+                    if doc_vec and len(doc_vec) == len(query_vec):
+                        vec_score = max(0.0, float(cosine_similarity(query_vec, doc_vec)))
+                except Exception:
+                    vec_score = 0.0
+
+            # 3.3 hybrid
+            hybrid = float(keyword_weight * kw_score + vector_weight * vec_score)
+
+            scored.append({
+                "id": d.id,
+                "title": d.title,
+                "content": d.content,
+                "doc_type": d.doc_type,
+                "hybrid_score": round(hybrid, 3),
+                "vector_score": round(float(vec_score), 3),
+                "keyword_score": round(float(kw_score), 3),
+            })
+
+        # 4. 按 hybrid 排序，取 top
+        scored.sort(key=lambda x: -x["hybrid_score"])
+        scored = scored[:limit]
+
+        # 5. 过滤掉 score 太低的（避免噪声）
+        scored = [s for s in scored if s["hybrid_score"] > 0.05]
+
+        return json.dumps({
+            "results": scored,
+            "summary": f"找到 {len(scored)} 条相关知识（搜 '{query}', embedder={embedder_info['type']}）",
+            "embedder": embedder_info,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+def _keyword_score(query: str, doc) -> float:
+    """算关键词相似度 0-1"""
+    query_lower = query.lower()
+    text = ((doc.title or "") + " " + (doc.content or "") + " " + (doc.keywords or "")).lower()
+
+    # 拆分关键词
+    keywords = [k for k in query_lower.replace(',', ' ').split() if k]
+
+    if not keywords:
+        return 0.0
+
+    score = 0.0
+    for kw in keywords:
+        if kw in (doc.title or "").lower():
+            score += 0.5  # 标题命中权重高
+        if kw in (doc.content or "").lower():
+            score += 0.2
+        if kw in (doc.keywords or "").lower():
+            score += 0.3
+
+    # 归一化
+    return min(1.0, score)
+
+
+@tool("upsert_knowledge_embedding")
+def upsert_knowledge_embedding(doc_id: int = None) -> str:
+    """为知识库文档计算/更新 embedding
+
+    Args:
+        doc_id: 指定文档 ID（不传则处理所有缺失或更新过的文档）
+
+    Returns:
+        JSON 字符串：{"processed": N, "embedder": "...", "dim": ...}
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+    from utils.embeddings import embed, get_embedder_info
+    from datetime import datetime
+
+    embedder_info = get_embedder_info()
+
+    if embedder_info["type"] == "hash_mock":
+        # 警告用户
+        pass
+
+    session = db_session_factory()
+    try:
+        if doc_id:
+            docs = session.query(KnowledgeDoc).filter(KnowledgeDoc.id == doc_id).all()
+        else:
+            docs = session.query(KnowledgeDoc).all()
+
+        if not docs:
+            return json.dumps({"processed": 0, "message": "没找到文档"})
+
+        processed = 0
+        errors = []
+        for d in docs:
+            try:
+                # 用 title + content 拼成 embedding 输入
+                text = f"{d.title or ''}\n{d.content or ''}"
+                vec = embed(text)
+                if vec is None:
+                    errors.append(f"doc {d.id}: embedding 失败")
+                    continue
+                d.embedding = vec  # pgvector Vector 类型直接存列表，自动转换
+                d.embedding_model = embedder_info["type"]
+                d.embedding_updated_at = datetime.utcnow()
+                processed += 1
+            except Exception as e:
+                errors.append(f"doc {d.id}: {e}")
+
+        session.commit()
+
+        return json.dumps({
+            "processed": processed,
+            "total": len(docs),
+            "errors": errors[:5] if errors else [],
+            "embedder": embedder_info,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("get_knowledge_stats")
+def get_knowledge_stats() -> str:
+    """获取知识库统计信息（总数/各类型/有无 embedding/embedder 信息）
+
+    Returns:
+        JSON 字符串：{"total": N, "by_type": {...}, "with_embedding": N, "embedder": {...}}
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+    from sqlalchemy import func
+    from utils.embeddings import get_embedder_info
+
+    session = db_session_factory()
+    try:
+        # 1. 总数 + 按类型
+        total = session.query(func.count(KnowledgeDoc.id)).scalar() or 0
+        by_type = dict(
+            session.query(KnowledgeDoc.doc_type, func.count(KnowledgeDoc.id))
+            .group_by(KnowledgeDoc.doc_type)
+            .all()
+        )
+        # 2. 有 embedding 的
+        with_emb = session.query(func.count(KnowledgeDoc.id)).filter(
+            KnowledgeDoc.embedding.isnot(None)
+        ).scalar() or 0
+        # 3. 各 embedder 模型
+        by_model = dict(
+            session.query(KnowledgeDoc.embedding_model, func.count(KnowledgeDoc.id))
+            .filter(KnowledgeDoc.embedding_model.isnot(None))
+            .group_by(KnowledgeDoc.embedding_model)
+            .all()
+        )
+
+        return json.dumps({
+            "total": total,
+            "by_type": by_type,
+            "with_embedding": with_emb,
+            "without_embedding": total - with_emb,
+            "by_model": by_model,
+            "embedder": get_embedder_info(),
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 TOOLS = [
     {
