@@ -254,6 +254,9 @@ fastapi_app.include_router(participant_type_permissions_router, tags=["参与者
 fastapi_app.include_router(users_router, tags=["用户管理"])
 fastapi_app.include_router(versions_router, tags=["版本快照"])
 fastapi_app.include_router(exports_router, tags=["导出"])
+# AI Agent 路由（prefix 已在 router 里 = /api/ai）
+from api.ai import router as ai_router
+fastapi_app.include_router(ai_router)
 
 
 # ============== Flask legacy 挂载已移除 ==============
