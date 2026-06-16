@@ -1219,6 +1219,269 @@ def get_knowledge_stats() -> str:
         session.close()
 
 
+# ============== 阶段 5 新增工具 ==============
+
+@tool("list_quotations_v2")
+def list_quotations_v2(
+    status: str = "",
+    type: str = "",
+    keyword: str = "",
+    limit: int = 10
+) -> str:
+    """按多维度组合查询报价单列表。可指定状态(draft/approved)、类型(line/single)、关键词（名称/方案号）。不传参就查最新 10 条。
+    """
+    from core.models.quotation import Quotation
+    from core.models.user import User
+    from db import db_session_factory
+    from sqlalchemy import or_
+
+    session = db_session_factory()
+    try:
+        query = session.query(Quotation)
+        if status:
+            query = query.filter(Quotation.status == status)
+        if type:
+            query = query.filter(Quotation.type == type)
+        if keyword:
+            query = query.filter(
+                or_(
+                    Quotation.name.like(f'%{keyword}%'),
+                    Quotation.scheme_no.like(f'%{keyword}%')
+                )
+            )
+        # Default: exclude version children, newest first
+        query = query.filter(Quotation.parent_id.is_(None))
+        quotations = query.order_by(Quotation.created_at.desc()).limit(limit).all()
+
+        result = []
+        for q in quotations:
+            # Fetch creator name
+            creator = session.query(User).get(q.creator_id) if q.creator_id else None
+            result.append({
+                "id": q.id,
+                "name": q.name,
+                "scheme_no": q.scheme_no,
+                "type": q.type,
+                "status": q.status,
+                "profit_rate": float(q.profit_rate) if q.profit_rate else None,
+                "currency": q.currency or "CNY",
+                "creator": creator.real_name if creator else "unknown",
+                "created_at": str(q.created_at)[:19] if q.created_at else "",
+            })
+        if not result:
+            return json.dumps({"message": "没有找到匹配的报价单", "total": 0})
+        return json.dumps({"total": len(result), "quotations": result}, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("get_quotation_full")
+def get_quotation_full(quotation_id: int) -> str:
+    """获取报价单的完整信息：基本信息 + 模块列表 + 每个模块的物料清单 + 其他费用 + 工时 + 包装 + 差旅。
+    当用户问'报价单详情'、'报价单完整信息'、'报价单全部内容'时调此工具。
+    """
+    from core.models.quotation import Quotation
+    from core.models.module import Module
+    from core.models.material import ModuleMaterial, Material
+    from core.models.fee import OtherFee
+    from core.models.labor_hour import LaborHour
+    from core.models.travel_entry import TravelPersonTrip, TravelPersonDays, PackingEntry
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).get(quotation_id)
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        # 1. Basic info
+        result = {
+            "id": q.id,
+            "name": q.name,
+            "scheme_no": q.scheme_no,
+            "type": q.type,
+            "status": q.status,
+            "currency": q.currency or "CNY",
+            "tax_rate": q.tax_rate,
+            "profit_rate": float(q.profit_rate) if q.profit_rate else None,
+            "created_at": str(q.created_at)[:19] if q.created_at else "",
+            "updated_at": str(q.updated_at)[:19] if q.updated_at else "",
+        }
+
+        # 2. Modules + Materials
+        modules = session.query(Module).filter(Module.quotation_id == q.id).all()
+        result["modules"] = []
+        for m in modules:
+            mod_data = {"id": m.id, "name": m.name, "code": m.code, "description": m.description}
+            # Materials in this module
+            mms = session.query(ModuleMaterial, Material).join(
+                Material, ModuleMaterial.material_id == Material.id, isouter=True
+            ).filter(ModuleMaterial.module_id == m.id).all()
+            mod_data["materials"] = [{
+                "material_id": mm.Material.id if mm.Material else None,
+                "name": mm.Material.name if mm.Material else "(未知)",
+                "spec": mm.Material.spec if mm.Material else "",
+                "quantity": mm.ModuleMaterial.quantity,
+                "unit_price": float(mm.ModuleMaterial.unit_price_override or mm.Material.unit_price) if (mm.ModuleMaterial.unit_price_override or (mm.Material and mm.Material.unit_price)) else None,
+            } for mm in mms]
+            result["modules"].append(mod_data)
+
+        # 3. Other fees
+        fees = session.query(OtherFee).filter(OtherFee.quotation_id == q.id).all()
+        result["other_fees"] = [{
+            "id": f.id, "fee_type": f.fee_type, "amount": float(f.amount) if f.amount else 0,
+            "description": f.description
+        } for f in fees]
+
+        # 4. Labor hours
+        hours = session.query(LaborHour).filter(LaborHour.quotation_id == q.id).all()
+        result["labor_hours"] = [{
+            "id": h.id, "name": h.name, "hours": h.hours, "unit_price": float(h.unit_price) if h.unit_price else 0, "total": float(h.total) if h.total else 0
+        } for h in hours]
+
+        # 5. Packing
+        packings = session.query(PackingEntry).filter(PackingEntry.quotation_id == q.id).all()
+        result["packing"] = [{
+            "id": p.id, "quantity": p.quantity, "unit_price": float(p.unit_price) if p.unit_price else 0
+        } for p in packings]
+
+        # 6. Travel
+        trips = session.query(TravelPersonTrip).filter(TravelPersonTrip.quotation_id == q.id).all()
+        result["travel_trips"] = [{
+            "id": t.id, "person_count": t.person_count,
+            "unit_price": float(t.unit_price) if t.unit_price else 0,
+            "visa_fee": float(t.visa_fee) if t.visa_fee else 0,
+        } for t in trips]
+        days = session.query(TravelPersonDays).filter(TravelPersonDays.quotation_id == q.id).all()
+        result["travel_days"] = [{
+            "id": d.id, "person_days": float(d.person_days) if d.person_days else 0,
+            "unit_price": float(d.unit_price) if d.unit_price else 0
+        } for d in days]
+
+        return json.dumps(result, ensure_ascii=False, default=str)
+    finally:
+        session.close()
+
+
+@tool("update_quotation_status")
+def update_quotation_status(quotation_id: int, new_status: str) -> str:
+    """更新报价单状态。支持的状态转换：draft ↔ approved。
+    当用户说'提交审批'、'批准'、'退回'、'改状态'时调此工具。
+    """
+    from core.models.quotation import Quotation
+    from core.models.user import User
+    from core.models.operation_log import OperationLog
+    from db import db_session_factory
+
+    valid_statuses = ["draft", "approved"]
+    valid_transitions = {"draft": ["approved"], "approved": ["draft"]}
+
+    if new_status not in valid_statuses:
+        return json.dumps({"error": f"无效状态，可用值: {', '.join(valid_statuses)}"})
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).get(quotation_id)
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
+
+        if q.status == new_status:
+            return json.dumps({"message": f"报价单已是 {new_status} 状态，无需修改"})
+
+        if q.status not in valid_transitions or new_status not in valid_transitions.get(q.status, []):
+            return json.dumps({"error": f"不能从 {q.status} 转换到 {new_status}"})
+
+        old_status = q.status
+        q.status = new_status
+        session.commit()
+
+        return json.dumps({
+            "success": True,
+            "message": f"报价单 #{quotation_id} 状态已从 {old_status} 变更为 {new_status}",
+            "id": quotation_id,
+            "new_status": new_status,
+        }, ensure_ascii=False)
+    except Exception as e:
+        session.rollback()
+        return json.dumps({"error": f"更新状态失败: {str(e)}"})
+    finally:
+        session.close()
+
+
+@tool("find_user")
+def find_user(keyword: str) -> str:
+    """搜索用户。支持用户名、姓名、邮箱模糊匹配。返回用户 id、姓名、角色、部门。
+    当用户问'谁负责'、'找一下 xxx'、'xxx 是谁'时调此工具。
+    """
+    from core.models.user import User
+    from db import db_session_factory
+    from sqlalchemy import or_
+
+    session = db_session_factory()
+    try:
+        users = session.query(User).filter(
+            or_(
+                User.username.like(f'%{keyword}%'),
+                User.real_name.like(f'%{keyword}%'),
+            ),
+            User.is_active == True,
+        ).limit(10).all()
+
+        result = [{
+            "id": u.id,
+            "username": u.username,
+            "real_name": u.real_name,
+            "role": u.role,
+        } for u in users]
+        if not result:
+            return json.dumps({"message": f"没有找到匹配 '{keyword}' 的用户", "total": 0})
+        return json.dumps({"total": len(result), "users": result}, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("list_pending_tasks")
+def list_pending_tasks() -> str:
+    """查看当前待办事项汇总：待处理的报价单审批、待处理的变更申请、待阅读的消息。
+    当用户问'我有什么待办'、'我的工作台'、'今天要做什么'时调此工具。
+    """
+    from core.models.quotation import Quotation
+    from core.models.change_request import ChangeRequest
+    from core.models.user import User
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        # 1. 待审批的报价单（状态 approved 的等待进一步处理）
+        pending_quo = session.query(Quotation).filter(Quotation.status == "draft").count()
+
+        # 2. 待处理的变更申请
+        pending_cr = session.query(ChangeRequest).filter(
+            ChangeRequest.status == "pending"
+        ).count()
+
+        # 3. 已处理的变更申请
+        approved_cr = session.query(ChangeRequest).filter(
+            ChangeRequest.status == "approved"
+        ).count()
+
+        # 4. 报价单总数
+        total_quo = session.query(Quotation).filter(Quotation.parent_id.is_(None)).count()
+
+        return json.dumps({
+            "pending_quotations": pending_quo,
+            "total_quotations": total_quo,
+            "pending_change_requests": pending_cr,
+            "approved_change_requests": approved_cr,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+# ============== 工具注册（OpenAI 协议格式） ==============
+
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 TOOLS = [
     {
@@ -1555,6 +1818,110 @@ TOOLS = [
         }
     }
 ]
+
+TOOLS += [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_quotations_v2",
+            "description": "按多维度组合查询报价单列表。可指定状态(draft/approved)、类型(line/single)、关键词。不传参返回最新 10 条。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "status": {
+                        "type": "string",
+                        "description": "报价单状态过滤：draft=草稿, approved=已批准。不传表示不限",
+                        "default": ""
+                    },
+                    "type": {
+                        "type": "string",
+                        "description": "报价单类型：line=线体, single=单机。不传表示不限",
+                        "default": ""
+                    },
+                    "keyword": {
+                        "type": "string",
+                        "description": "搜索关键词，匹配报价单名称或方案号",
+                        "default": ""
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "最多返回条数，默认 10",
+                        "default": 10
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_quotation_full",
+            "description": "获取报价单完整信息：基本信息 + 模块 + 每个模块的物料 + 其他费用 + 工时 + 包装 + 差旅。一次调用替代多次 get_quotation_summary + list_modules 等。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "报价单 ID（数字）"
+                    }
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_quotation_status",
+            "description": "更新报价单状态。支持转换：draft→approved（提交审批）、approved→draft（退回）。需要对应的操作权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "报价单 ID（数字）"
+                    },
+                    "new_status": {
+                        "type": "string",
+                        "enum": ["draft", "approved"],
+                        "description": "目标状态：draft=草稿, approved=已批准"
+                    }
+                },
+                "required": ["quotation_id", "new_status"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_user",
+            "description": "搜索用户。支持用户名、姓名模糊匹配。返回用户 id、真实姓名、角色。当用户问'谁'、'找个人'、'xx是谁'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keyword": {
+                        "type": "string",
+                        "description": "用户名或真实姓名关键词"
+                    }
+                },
+                "required": ["keyword"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_pending_tasks",
+            "description": "查看业务待办汇总：待审批报价单数、待处理变更申请数、总报价单数。当用户问'待办'、'今天要做什么'、'工作台'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    },
+]
+
 
 def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
     """根据工具名 + 参数，执行对应的工具函数"""
