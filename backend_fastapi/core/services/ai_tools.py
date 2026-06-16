@@ -2288,6 +2288,242 @@ TOOLS += [
 
 
 
+
+
+# ============== 阶段 5-C 工具 ==============
+
+@tool("list_knowledge")
+def list_knowledge(doc_type: str = "", limit: int = 20) -> str:
+    """列出知识库中所有文档。按时间倒序，可按类型过滤。
+    doc_type 可选：spec/faq/experience/rule。
+    当用户问"知识库有哪些文档"、"列出知识"、"知识列表"时调用。
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        query = session.query(KnowledgeDoc)
+        if doc_type:
+            query = query.filter(KnowledgeDoc.doc_type == doc_type)
+        docs = query.order_by(KnowledgeDoc.created_at.desc()).limit(limit).all()
+        result = [{
+            "id": d.id,
+            "doc_type": d.doc_type,
+            "title": d.title,
+            "keywords": d.keywords,
+            "has_embedding": d.embedding is not None,
+            "created_at": str(d.created_at)[:19] if d.created_at else "",
+            "preview": (d.content or "")[:100],
+        } for d in docs]
+        return json.dumps({
+            "total": len(result),
+            "documents": result,
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("delete_knowledge")
+def delete_knowledge(doc_id: int) -> str:
+    """删除一条知识。需要对应的知识库管理权限（ai.knowledge.edit）。
+    当用户说"删除这条知识"、"删掉文档"时调用。
+    """
+    from core.models.knowledge import KnowledgeDoc
+    from db import db_session_factory
+
+    session = db_session_factory()
+    try:
+        doc = session.query(KnowledgeDoc).get(doc_id)
+        if not doc:
+            return json.dumps({"error": f"知识 #{doc_id} 不存在"})
+
+        title = doc.title
+        session.delete(doc)
+        session.commit()
+        return json.dumps({
+            "success": True,
+            "message": f"已删除知识 #{doc_id}: {title}",
+        }, ensure_ascii=False)
+    except Exception as e:
+        session.rollback()
+        return json.dumps({"error": f"删除失败: {str(e)}"})
+    finally:
+        session.close()
+
+
+@tool("export_quotation")
+def export_quotation(quotation_id: int, format: str = "excel") -> str:
+    """生成报价单导出文件并返回下载链接。format: word/excel/pdf。
+    当用户说"导出报价单"、"下载 Excel"、"生成 PDF"时调用。
+    """
+    valid_formats = ("word", "excel", "pdf")
+    fmt = format.lower()
+    if fmt not in valid_formats:
+        return json.dumps({
+            "error": f"不支持的格式: {format}。可用: {', '.join(valid_formats)}",
+        })
+
+    # 返回下载链接（前端可以直接用 /api/exports/quotations/{id}/export/{fmt}）
+    base_url = "http://localhost:5001/api/exports"
+    url = f"{base_url}/quotations/{quotation_id}/export/{fmt}"
+
+    return json.dumps({
+        "quotation_id": quotation_id,
+        "format": fmt,
+        "download_url": url,
+        "message": f"报价单 #{quotation_id} {fmt.upper()} 导出链接已生成。请点击下载或复制链接。",
+    }, ensure_ascii=False)
+
+
+@tool("list_my_conversations")
+def list_my_conversations(limit: int = 10) -> str:
+    """列出当前用户的 AI 对话历史（基于内存会话存储，重启后清空）。
+    当用户问"我之前问过什么"、"对话历史"、"聊天记录"时调用。
+    """
+    from api.ai import _CONVERSATIONS
+    import time as _t
+
+    result = []
+    items = list(_CONVERSATIONS.items())
+    # 按最新消息时间倒序
+    def last_ts(conv_id):
+        msgs = _CONVERSATIONS.get(conv_id, [])
+        # Use insertion order as proxy
+        return len(msgs)
+    items.sort(key=lambda kv: last_ts(kv[0]), reverse=True)
+
+    for cid, msgs in items[:limit]:
+        # 第一条 user 消息做标题
+        first_user = next((m["content"] for m in msgs if m["role"] == "user"), "")
+        title = first_user[:30] + ("..." if len(first_user) > 30 else "")
+        result.append({
+            "id": cid,
+            "title": title or f"对话 {cid[:8]}",
+            "message_count": len(msgs),
+        })
+    return json.dumps({
+        "total": len(result),
+        "conversations": result,
+        "note": "会话存储在内存中，重启服务后清空。",
+    }, ensure_ascii=False)
+
+
+# ============== 工具定义（OpenAI 协议格式） ==============
+
+
+TOOLS += [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_knowledge",
+            "description": "列出知识库所有文档。按时间倒序，可按类型过滤（spec/faq/experience/rule）。问'知识库有哪些'、'列出知识'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_type": {
+                        "type": "string",
+                        "enum": ["", "spec", "faq", "experience", "rule"],
+                        "description": "文档类型过滤，空=全部",
+                        "default": ""
+                    },
+                    "limit": {"type": "integer", "default": 20, "description": "最多返回条数"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_knowledge",
+            "description": "删除一条知识文档。需要 ai.knowledge.edit 权限。问'删除知识'、'删掉这条'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "integer", "description": "知识文档 ID"}
+                },
+                "required": ["doc_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_quotation",
+            "description": "生成报价单导出文件（word/excel/pdf）并返回下载链接。问'导出'、'下载 Excel'、'生成 PDF'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {"type": "integer", "description": "报价单 ID"},
+                    "format": {
+                        "type": "string",
+                        "enum": ["word", "excel", "pdf"],
+                        "description": "导出格式",
+                        "default": "excel"
+                    }
+                },
+                "required": ["quotation_id"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_knowledge_hybrid",
+            "description": "混合检索知识库（关键词 + 向量相似度）。当用户问业务规范/历史经验时调用。比 search_knowledge 更精确（带向量）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "查询文本"},
+                    "doc_type": {"type": "string", "enum": ["", "spec", "faq", "experience", "rule"], "default": "", "description": "类型过滤"},
+                    "limit": {"type": "integer", "default": 5, "description": "返回数量"},
+                    "vector_weight": {"type": "number", "default": 0.4},
+                    "keyword_weight": {"type": "number", "default": 0.6}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "upsert_knowledge_embedding",
+            "description": "为知识库文档计算/更新 embedding。内部维护用，业务场景很少直接调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {"type": "integer", "description": "指定文档 ID，不传则处理所有"}
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_knowledge_stats",
+            "description": "获取知识库统计：总数/各类型/有无 embedding/embedder 信息。问'知识库情况'时调用。",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_my_conversations",
+            "description": "列出最近的 AI 对话历史。问'我之前问过什么'、'对话历史'、'聊天记录'时调用。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "default": 10, "description": "最多返回条数"}
+                },
+                "required": []
+            }
+        }
+    },
+]
+
+
 def execute_tool(name: str, arguments: Dict[str, Any]) -> str:
     """根据工具名 + 参数，执行对应的工具函数"""
     func = TOOL_FUNCTIONS.get(name)
