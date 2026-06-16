@@ -52,6 +52,14 @@
       </router-link>
     </div>
 
+    <div class="nav-section" v-if="canView('ai.query')">
+      <div class="nav-section-title">智能助手</div>
+      <router-link to="/ai-chat" class="nav-item" :class="{ active: isActive('/ai-chat') }">
+        <span class="nav-icon">🤖</span>
+        <span class="nav-text">AI 助手</span>
+      </router-link>
+    </div>
+
     <div class="nav-section" v-if="canView('system.view') || canView('participant_type_permission.view')">
       <div class="nav-section-title">设置</div>
       <router-link to="/system" class="nav-item" :class="{ active: isActive('/system') }" v-if="canView('system.view')">

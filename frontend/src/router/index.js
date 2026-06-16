@@ -18,6 +18,7 @@ import ParticipantTypePermissions from '../views/ParticipantTypePermissions.vue'
 import TravelFeeConfig from '../views/TravelFeeConfig.vue'
 import Layout from '../components/Layout.vue'
 import VersionCompare from '../views/VersionCompare.vue'
+import AIChat from '../views/AIChat.vue'
 
 // 路由权限映射 - 与后端权限码一致
 const routePermissionMap = {
@@ -39,6 +40,7 @@ const routePermissionMap = {
   'TravelFeeConfig': 'fee_type.view',
   'ChangeRequests': 'quotation.view',
   'VersionCompare': 'version.view',
+  'AIChat': 'ai.query',
 }
 
 // 权限检查函数 - 支持通配符匹配
@@ -163,6 +165,11 @@ const routes = [
         path: 'travel-fee-config',
         name: 'TravelFeeConfig',
         component: TravelFeeConfig
+      },
+      {
+        path: 'ai-chat',
+        name: 'AIChat',
+        component: AIChat
       },
 
     ]

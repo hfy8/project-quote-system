@@ -81,6 +81,8 @@ ALL_PERMISSIONS = [
     # 运输差旅配置
     {'code': 'travel_fee_config.view', 'name': '查看运输差旅配置', 'group': '运输差旅'},
     {'code': 'travel_fee_config.edit', 'name': '编辑运输差旅配置', 'group': '运输差旅'},
+    # AI 助手
+    {'code': 'ai.query', 'name': '使用 AI 助手', 'group': 'AI 助手'},
 ]
 
 # 默认角色配置
