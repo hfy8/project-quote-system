@@ -1137,9 +1137,11 @@ function handleSelectScheme(item) {
   }
   // 2) 自动选业务负责人（如果方案库提供了，且本系统里有该工号对应的用户）
   if (item.businessManager) {
+    // RS8139 是方案库的「业务经理工号」，本系统的 User.username/RS 号是同一个值
+    // User 表没有 employee_no 字段（employee_id 是 FK，但 RS 号就是 username）
     const matchedUser = businessUsers.value.find(u =>
-      String(u.employee_no) === item.businessManager ||
-      String(u.username) === item.businessManager
+      String(u.username) === item.businessManager ||
+      String(u.employee_no) === item.businessManager
     )
     if (matchedUser && !quotation.value.business_owner_id) {
       quotation.value.business_owner_id = matchedUser.id
@@ -2023,7 +2025,8 @@ async function loadUsers() {
 // 加载业务角色用户
 async function loadBusinessUsers() {
   try {
-    const res = await api.get('/users?role=business')
+    // 一次拉所有业务用户（默认 page_size=20 太少），匹配方案库工号时需要全量
+    const res = await api.get('/users', { params: { role: 'business', page_size: 200 } })
     businessUsers.value = res.items || res || []
   } catch (error) {
     console.error('加载业务用户失败', error)
