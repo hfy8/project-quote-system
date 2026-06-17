@@ -24,6 +24,45 @@ LLM_API_KEY = MINIMAX_API_KEY
 LLM_BASE_URL = MINIMAX_BASE_URL
 LLM_MODEL = MINIMAX_MODEL
 
+
+# === 过滤推理模型的 <think> 块 ===
+# Qwen3 / DeepSeek-R1 等模型把"思考"放在 content 字段里（不是 OpenAI 标准的 reasoning_content）
+# 流式响应时，token 跨多个 chunk 到达，要正确处理跨 chunk 的 <think> 边界
+import re
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+_in_think_block = False  # 模块级状态，跨 chunk 保留
+
+def _split_think_tokens(content: str):
+    """把 content 切成若干片段，跳过 <think>...</think> 部分。
+
+    返回「不在 think 块里」的内容片段列表（可能为空）。
+    """
+    global _in_think_block
+    out = []
+    rest = content
+    while rest:
+        if _in_think_block:
+            # 已经在 think 块里：找下一个 </think>
+            idx = rest.find(_THINK_CLOSE)
+            if idx == -1:
+                # 整个 rest 都在 think 里，丢掉
+                return out
+            rest = rest[idx + len(_THINK_CLOSE):]
+            _in_think_block = False
+        else:
+            # 不在 think 块里：找下一个 <think>
+            idx = rest.find(_THINK_OPEN)
+            if idx == -1:
+                # 整段都是正常内容
+                out.append(rest)
+                return out
+            # think 之前的部分是正常内容
+            out.append(rest[:idx])
+            rest = rest[idx + len(_THINK_OPEN):]
+            _in_think_block = True
+    return out
+
 logger = logging.getLogger(__name__)
 
 
@@ -229,9 +268,13 @@ def _stream_events(resp: requests.Response) -> Iterator[Dict]:
         delta = choice.get("delta", {})
         finish_reason = choice.get("finish_reason")
 
-        # 1. Normal content token
-        if delta.get("content"):
-            yield {"type": "token", "content": delta["content"]}
+        # 1. Normal content token — 过滤 Qwen/DeepSeek 推理模型的 <think>...</think> 块
+        content = delta.get("content")
+        if content:
+            # 检测是否开始/结束 <think> 块
+            for piece in _split_think_tokens(content):
+                if piece:
+                    yield {"type": "token", "content": piece}
 
         # 2. Tool calls (streaming accumulation)
         if delta.get("tool_calls"):
