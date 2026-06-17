@@ -26,8 +26,31 @@
               <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">子报价单（单机）</span>
             </el-form-item>
             <el-form-item label="方案编号" prop="scheme_no">
-              <el-input v-model="quotation.scheme_no" placeholder="请输入方案编号" :disabled="isEdit || !!parentId" />
+              <el-autocomplete
+                v-model="quotation.scheme_no"
+                :fetch-suggestions="searchSchemeNo"
+                placeholder="请输入方案编号，输入字符后会从方案库推荐"
+                :disabled="isEdit || !!parentId"
+                clearable
+                :trigger-on-focus="false"
+                @select="handleSelectScheme"
+                @input="onSchemeInput"
+                @blur="validateSchemeLocally"
+                style="width: 100%"
+                value-key="schemeNo"
+              >
+                <template #default="{ item }">
+                  <div class="scheme-suggestion" :class="{ 'is-used': item.is_used_locally }">
+                    <span class="scheme-no">{{ item.schemeNo }}</span>
+                    <span class="scheme-name">{{ item.schemeName || '(无名称)' }}</span>
+                    <el-tag v-if="item.is_used_locally" type="danger" size="small">已被本系统使用</el-tag>
+                    <el-tag v-else-if="item.schemeStatus === 'IN_PROGRESS'" type="warning" size="small">进行中</el-tag>
+                    <el-tag v-else-if="item.schemeStatus === 'COMPLETED'" type="success" size="small">已完成</el-tag>
+                  </div>
+                </template>
+              </el-autocomplete>
               <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">自动生成，不可编辑</span>
+              <span v-else-if="schemeHint" :class="['scheme-hint', schemeHintType]">{{ schemeHint }}</span>
             </el-form-item>
             <el-form-item label="状态">
               <el-select v-model="quotation.status" placeholder="请选择状态" :disabled="isEdit">
@@ -1028,6 +1051,82 @@ console.log('isEdit:', isEdit.value, 'quotationId:', quotationId.value, 'parentI
 const activeTab = ref('basic')
 const quotation = ref({ coefficients: { large: 1.0, standard: 1.0, other: 1.0 } })
 const isArchived = computed(() => quotation.value.status === 'approved')
+
+// 方案号联动查询 - 状态
+const schemeSuggestions = ref([])
+const schemeHint = ref('')
+const schemeHintType = ref('info')  // info/success/warning/danger
+let schemeSearchTimer = null
+let lastSearchedPrefix = ''
+
+// 方案号输入防抖查询
+function onSchemeInput(value) {
+  schemeHint.value = ''
+  if (schemeSearchTimer) clearTimeout(schemeSearchTimer)
+  if (!value || value.length < 1) {
+    schemeSuggestions.value = []
+    return
+  }
+  schemeSearchTimer = setTimeout(() => {
+    searchSchemeNo(value, (results) => {
+      schemeSuggestions.value = results || []
+    })
+  }, 500)
+}
+
+// 调后端代理接口查方案号
+async function searchSchemeNo(queryString, callback) {
+  if (!queryString) {
+    callback([])
+    return
+  }
+  // 至少 2 个字符才查（避免一打字就请求）
+  if (queryString.length < 2) {
+    callback([])
+    return
+  }
+  lastSearchedPrefix = queryString
+  try {
+    const data = await api.get('/quotations/scheme-search', { params: { prefix: queryString } })
+    if (lastSearchedPrefix !== queryString) return  // 用户又改了
+    callback(data.items || [])
+  } catch (error) {
+    console.warn('方案号查询失败:', error)
+    callback([])
+  }
+}
+
+// 选中下拉项
+function handleSelectScheme(item) {
+  schemeHint.value = ''
+  if (item.is_used_locally) {
+    schemeHint.value = `⚠ 方案号 "${item.schemeNo}" 已被本系统使用，保存会被拒绝`
+    schemeHintType.value = 'danger'
+  } else {
+    schemeHint.value = `已选中：${item.schemeNo} - ${item.schemeName || '(无名称)'}`
+    schemeHintType.value = 'success'
+  }
+}
+
+// 失焦时本地预校验（节省一次后端往返；后端 400 仍兜底）
+async function validateSchemeLocally() {
+  const sn = quotation.value.scheme_no
+  if (!sn || parentId.value) {
+    schemeHint.value = ''
+    return
+  }
+  // 用本地下拉结果判断（如果下拉为空 → 外部库没这个号；下拉有且 is_used_locally → 被占用）
+  const hit = schemeSuggestions.value.find(s => s.schemeNo === sn)
+  if (hit && hit.is_used_locally) {
+    schemeHint.value = `⚠ 方案号 "${sn}" 已被本系统使用，保存会被拒绝`
+    schemeHintType.value = 'danger'
+  } else if (hit) {
+    schemeHint.value = `✓ 方案号可用（来自方案库：${hit.schemeName || '无名称'}）`
+    schemeHintType.value = 'success'
+  } else {
+    schemeHint.value = ''
+  }
+}
 const hasKeyFields = computed(() => {
   return modules.value.some(mod =>
     mod.materials && mod.materials.some(m => m.param1 || m.param2 || m.param3)
@@ -1935,7 +2034,9 @@ async function saveBasic() {
     }
   } catch (error) {
     console.error('Save error:', error)
-    ElMessage.error('保存失败: ' + (error.message || '未知错误'))
+    // 优先用后端返回的 detail 字段（FastAPI HTTPException）
+    const msg = error?.response?.data?.detail || error.message || '未知错误'
+    ElMessage.error('保存失败: ' + msg)
   }
 }
 
@@ -2530,6 +2631,41 @@ onMounted(async () => {
 .quotation-edit {
   padding: var(--spacing-lg);
 }
+
+/* 方案号下拉建议 */
+.scheme-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.scheme-suggestion .scheme-no {
+  font-weight: 600;
+  color: #409eff;
+  min-width: 80px;
+}
+.scheme-suggestion .scheme-name {
+  color: #606266;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scheme-suggestion.is-used {
+  background: #fef0f0;
+}
+.scheme-suggestion.is-used .scheme-no {
+  color: #f56c6c;
+}
+.scheme-hint {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 12px;
+}
+.scheme-hint.info { color: #909399; }
+.scheme-hint.success { color: #67c23a; }
+.scheme-hint.warning { color: #e6a23c; }
+.scheme-hint.danger { color: #f56c6c; font-weight: 600; }
 
 /* 页面标题栏 */
 .page-header {
