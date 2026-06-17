@@ -407,8 +407,7 @@ onBeforeUnmount(() => {
 .ai-chat-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 60px);  /* 减去主内容区的 padding */
-  margin: -24px;  /* 抵消父级 padding，铺满 */
+  height: 100%;
   background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
 }
 
