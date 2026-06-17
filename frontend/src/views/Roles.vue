@@ -254,6 +254,9 @@ const permissionGroups = ref([
     { code: 'travel_fee_config.view', name: '查看运输差旅配置' },
     { code: 'travel_fee_config.edit', name: '编辑运输差旅配置' },
   ]},
+  { name: 'AI 助手', permissions: [
+    { code: 'ai.query', name: '使用 AI 助手' },
+  ]},
 ])
 
 const formatPermission = (perm) => {

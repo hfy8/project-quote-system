@@ -303,6 +303,7 @@ const menuItems = computed(() => {
     { path: '/roles', label: '角色管理', icon: '👥', permission: 'role.view' },
     { path: '/participant-type-permissions', label: '参与人权限', icon: '🔐', permission: 'role.view' },
     { path: '/travel-fee-config', label: '运输差旅配置', icon: '🚚', permission: 'fee_type.view' },
+    { path: '/ai-chat', label: 'AI 助手', icon: '🤖', permission: 'ai.query' },
     { path: '/logs', label: '操作日志', icon: '📝', permission: 'log.view' }
   ]
   return items.filter(item => !item.permission || hasPermission(item.permission))
