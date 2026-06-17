@@ -30,11 +30,15 @@ def search_materials(keyword: str,limit: int = 5) -> str:
         print(f"{materials}")
         return json.dumps([{
               "id": m.id,
-              "spec": m.spec,            # ← 改这里
               "name": m.name,
+              "spec": m.spec,
+              "brand": m.brand,
               "category": m.category,
               "unit": m.unit,
               "unit_price": float(m.unit_price) if m.unit_price else 0,
+              "param1": m.param1,
+              "param2": m.param2,
+              "param3": m.param3,
         } for m in materials], ensure_ascii=False)
     finally:
         session.close()
@@ -94,8 +98,12 @@ def recommend_materials_for_module(module_id: int, limit: int = 10) -> str:
             Material.id,
             Material.name,
             Material.spec,
+            Material.brand,
             Material.unit,
             Material.unit_price,
+            Material.param1,
+            Material.param2,
+            Material.param3,
             func.avg(ModuleMaterial.quantity).label('avg_qty'),
             func.count(ModuleMaterial.id).label('usage_count'),
         ).join(
@@ -104,7 +112,8 @@ def recommend_materials_for_module(module_id: int, limit: int = 10) -> str:
             ModuleMaterial.module_id == module_id,
             Material.status == 'active',
         ).group_by(
-            Material.id, Material.name, Material.spec, Material.unit, Material.unit_price
+            Material.id, Material.name, Material.spec, Material.brand, Material.unit, Material.unit_price,
+            Material.param1, Material.param2, Material.param3
         ).order_by(
             func.count(ModuleMaterial.id).desc()
         ).limit(limit).all()
@@ -113,8 +122,12 @@ def recommend_materials_for_module(module_id: int, limit: int = 10) -> str:
             "material_id": r.id,
             "name": r.name,
             "spec": r.spec,
+            "brand": r.brand,
             "unit": r.unit,
             "unit_price": float(r.unit_price) if r.unit_price else 0,
+            "param1": r.param1,
+            "param2": r.param2,
+            "param3": r.param3,
             "avg_quantity": round(float(r.avg_qty), 2),
             "usage_count": r.usage_count,
         } for r in rows], ensure_ascii=False)
@@ -2192,6 +2205,9 @@ def search_materials_v2(
             "unit": m.unit,
             "unit_price": float(m.unit_price) if m.unit_price else 0,
             "category": m.category,
+            "param1": m.param1,
+            "param2": m.param2,
+            "param3": m.param3,
         } for m in materials]
         if not result:
             return json.dumps({"message": "没有找到匹配的物料", "total": 0})
