@@ -716,97 +716,93 @@ def analyze_hardware_ratio(quotation_id: int) -> str:
     """分析报价单中"硬件"（物料）成本占总报价的占比。
 
     计算逻辑：
-    - 分子 = 所有物料小计（quantity × unit_price，不含工时/差旅/包装/其他费用）
-    - 分母 = 最终报价（含物料系数+工时+差旅+包装+其他费用+利润+税）
-    - 同时按物料 category 拆解：standard / large / other 各占多少
+    - 分子 = 物料×系数后的小计（即 material_total_with_rates，含 large/standard/other 各自的报价系数）
+    - 分母 = 最终报价 grand_total（含物料×系数+工时+差旅+包装+其他费用+利润+税）
+    - 同时按物料 category 拆解：standard / large / other 各自乘系数后的占比
 
     当用户问"硬件占比"、"物料占比"、"成本结构"时调此工具。
     """
     from core.models.quotation import Quotation
-    from core.models.module import Module
-    from core.models.material import ModuleMaterial, Material
     from core.models.version import VersionSnapshot
     from core.services.export_service import get_version_snapshot_data, calculate_version_totals
     from db import db_session_factory
     from sqlalchemy import func as sa_func
-
     session = db_session_factory()
     try:
         q = session.query(Quotation).get(quotation_id)
         if not q:
             return json.dumps({"error": f"报价单 #{quotation_id} 不存在"}, ensure_ascii=False)
 
-        # 1. 物料小计（分子 — 所有物料都算硬件）
-        material_total = 0.0
-        material_by_category = {"large": 0.0, "standard": 0.0, "other": 0.0}
-        material_count_by_category = {"large": 0, "standard": 0, "other": 0}
-        modules = session.query(Module).filter(Module.quotation_id == q.id).all()
-        for m in modules:
-            mms = session.query(ModuleMaterial, Material).join(
-                Material, ModuleMaterial.material_id == Material.id, isouter=True
-            ).filter(ModuleMaterial.module_id == m.id).all()
-            for mm in mms:
-                if not mm.Material:
-                    continue
-                qty = float(mm.ModuleMaterial.quantity or 0)
-                price = float(mm.ModuleMaterial.unit_price_override or mm.Material.unit_price or 0)
-                subtotal = qty * price
-                material_total += subtotal
-                # 标准化 category
-                cat = (mm.Material.category or "other").lower()
-                if cat not in ("large", "standard"):
-                    cat = "other"
-                material_by_category[cat] += subtotal
-                material_count_by_category[cat] += 1
-
-        # 2. 最终报价（分母 — 复用现有算法，确保和导出 PDF 一致）
+        # 1. 加载最新版本快照（含系数 + 完整模块/费用/工时/差旅）
         latest_version_no = session.query(sa_func.max(VersionSnapshot.version_no)).filter_by(
             quotation_id=q.id
         ).scalar()
-        if latest_version_no:
-            snapshot_data = get_version_snapshot_data(q.id, latest_version_no)
-        else:
-            # 还没归档过版本（理论不会发生，因为每个报价单创建时就会归档）
-            snapshot_data = {}
+        if not latest_version_no:
+            return json.dumps({"error": f"报价单 #{quotation_id} 还没有版本快照"}, ensure_ascii=False)
+        snapshot_data = get_version_snapshot_data(q.id, latest_version_no)
+
+        # 2. 用现有算法算汇总（grand_total / material_with_rates / 各项费用 / 利润 / 税）
         totals = calculate_version_totals(snapshot_data)
-        grand_total = float(totals.get("grand_total", 0))
         material_with_rates = float(totals.get("material_total_with_rates", 0))
+        grand_total = float(totals.get("grand_total", 0))
+        material_raw = float(totals.get("material_total", 0))
         fees_total = float(totals.get("fees_total", 0))
         labor_total = float(totals.get("labor_total", 0))
         profit_amount = float(totals.get("profit_amount", 0))
         tax_amount = float(totals.get("tax_amount", 0))
+        fee_rates = totals.get("fee_rates", {}) or {}
+        category_totals = {"large": 0.0, "standard": 0.0, "other": 0.0}
 
-        # 3. 占比（基于最终报价）
-        if grand_total > 0:
-            ratio = material_total / grand_total
-        else:
-            ratio = 0
+        # 3. 按 category 算占比（用系数后的小计）
+        for module in snapshot_data.get("modules", []):
+            for mm in module.get("materials", []):
+                is_other = mm.get("is_other", False)
+                if is_other:
+                    up = float(mm.get("unit_price_override", 0) or 0)
+                    if up == 0:
+                        up = float(mm.get("unit_price", 0) or 0)
+                else:
+                    up = float(mm.get("unit_price", 0) or 0)
+                qty = float(mm.get("quantity", 0) or 0)
+                amount = up * qty
+                cat = mm.get("category", "standard")
+                if cat not in ("large", "standard"):
+                    cat = "other"
+                category_totals[cat] = category_totals.get(cat, 0) + amount
 
-        # 4. 物料内部占比（基于物料小计）
-        category_ratio = {}
-        for cat in ("large", "standard", "other"):
-            if material_total > 0:
-                category_ratio[cat] = material_by_category[cat] / material_total
-            else:
-                category_ratio[cat] = 0
+        # 4. 占比（物料×系数后 / 最终报价）
+        ratio = material_with_rates / grand_total if grand_total > 0 else 0
+        # 4.1 物料内部各 category 占比（基于物料×系数后）
+        category_ratio_in_material = {
+            cat: (category_totals[cat] * fee_rates.get(cat, 1.0) / material_with_rates)
+            if material_with_rates > 0 else 0
+            for cat in ("large", "standard", "other")
+        }
+        # 4.2 每个 category 在最终报价里的占比
+        category_ratio_in_total = {
+            cat: (category_totals[cat] * fee_rates.get(cat, 1.0) / grand_total)
+            if grand_total > 0 else 0
+            for cat in ("large", "standard", "other")
+        }
 
         return json.dumps({
             "quotation_id": q.id,
             "quotation_name": q.name,
             "scheme_no": q.scheme_no,
             "currency": q.currency or "CNY",
-            "分子说明": "所有物料小计（quantity × unit_price）",
-            "分母说明": "最终报价（含物料系数+工时+差旅+包装+其他费用+利润+税）",
-            "hardware_total": round(material_total, 2),
+            "分子说明": "物料×报价系数后的小计（material_total_with_rates）",
+            "分母说明": "最终报价 grand_total（含物料×系数+工时+差旅+包装+其他费用+利润+税）",
+            "coefficients": fee_rates,
+            "material_raw_total": round(material_raw, 2),
+            "material_with_rates": round(material_with_rates, 2),
             "grand_total": round(grand_total, 2),
             "hardware_ratio": round(ratio, 4),
             "hardware_ratio_pct": f"{ratio * 100:.1f}%",
             # 拆解
-            "material_by_category": {k: round(v, 2) for k, v in material_by_category.items()},
-            "material_count_by_category": material_count_by_category,
-            "category_ratio_in_material": {k: round(v, 4) for k, v in category_ratio.items()},
+            "material_by_category_raw": {k: round(v, 2) for k, v in category_totals.items()},
+            "category_ratio_in_material": {k: round(v, 4) for k, v in category_ratio_in_material.items()},
+            "category_ratio_in_total": {k: round(v, 4) for k, v in category_ratio_in_total.items()},
             # 成本项参考
-            "material_with_rates": round(material_with_rates, 2),
             "fees_total": round(fees_total, 2),
             "labor_total": round(labor_total, 2),
             "profit_amount": round(profit_amount, 2),
