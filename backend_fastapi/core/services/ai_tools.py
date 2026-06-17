@@ -38,7 +38,7 @@ def search_materials(keyword: str,limit: int = 5) -> str:
         } for m in materials], ensure_ascii=False)
     finally:
         session.close()
-@tool("get_quotation_summary")   
+@tool("get_quotation_summary")
 def get_quotation_summary(quotation_id: int) -> str:
     """查报价单的摘要信息
 
@@ -46,7 +46,10 @@ def get_quotation_summary(quotation_id: int) -> str:
         quotation_id: 报价单 ID
 
     Returns:
-        JSON 字符串：报价单的名称、状态、总价、毛利率
+        JSON 字符串：报价单的名称、状态、对外利润率、币种
+
+    注意：profit_rate 字段是「对外利润率」（= 利润 / 成本），不是「毛利率」。
+    用户问"毛利率"时调 analyze_profitability_detail，不要用本工具的 profit_rate 字段。
     """
     from core.models.quotation import Quotation
     from db import db_session_factory
@@ -329,24 +332,24 @@ def audit_quotation(quotation_id: int) -> str:
         if not q:
             return json.dumps({"error": f"报价单 #{quotation_id} 不存在"})
 
-        # 1. 字段完整性
+        # 1. 字段完整性（注意：profit_rate 字段是「对外利润率」不是「毛利率」）
         if q.profit_rate is None or q.profit_rate == 0:
             issues.append({
                 "type": "missing_profit_rate",
                 "severity": "high",
-                "description": "毛利率未填写或为 0",
+                "description": "对外利润率未填写或为 0",
             })
         if q.profit_rate is not None and q.profit_rate < 0:
             issues.append({
                 "type": "negative_profit",
                 "severity": "high",
-                "description": f"毛利率为负数: {q.profit_rate * 100:.1f}%",
+                "description": f"对外利润率为负数: {q.profit_rate * 100:.1f}%",
             })
         if q.profit_rate is not None and q.profit_rate > 0.5:
             issues.append({
                 "type": "high_profit_warning",
                 "severity": "medium",
-                "description": f"毛利率过高: {q.profit_rate * 100:.1f}%，可能算错",
+                "description": f"对外利润率过高: {q.profit_rate * 100:.1f}%，可能算错（一般 < 30%）",
             })
 
         # 2. 工时合理性（统计异常）
@@ -625,7 +628,10 @@ def audit_labor_hours(quotation_id: int = None) -> str:
 # ============== 块 2：AI 业务分析 ==============
 @tool("analyze_profitability")
 def analyze_profitability(limit: int = 5) -> str:
-    """分析报价单的毛利率分布、Top/Bottom 排名、统计概览
+    """分析报价单的对外利润率分布、Top/Bottom 排名、统计概览
+
+    注意：返的是「对外利润率」（profit_rate 字段）不是「毛利率」。
+    如要看毛利率（含税前/后），用 analyze_profitability_detail 工具（单张）或算 gross_margin = profit_rate / (1 + profit_rate)。
 
     Args:
         limit: 返回 Top/Bottom 几个，默认 5
@@ -672,11 +678,11 @@ def analyze_profitability(limit: int = 5) -> str:
         insights = []
         if overall.avg_profit is not None:
             avg_pct = float(overall.avg_profit) * 100
-            insights.append(f"整体平均毛利率 {avg_pct:.1f}%，共 {overall.count} 单有效数据")
+            insights.append(f"整体平均对外利润率 {avg_pct:.1f}%，共 {overall.count} 单有效数据")
             if overall.max_profit and overall.min_profit:
                 spread = (overall.max_profit - overall.min_profit) * 100
                 if spread > 30:
-                    insights.append(f"毛利差异大（{spread:.0f} 个百分点），需关注低毛利报价单")
+                    insights.append(f"对外利润率差异大（{spread:.0f} 个百分点），需关注低利润率报价单")
 
         # 6. 按状态明细
         status_breakdown = []
@@ -809,6 +815,95 @@ def analyze_hardware_ratio(quotation_id: int) -> str:
             "tax_amount": round(tax_amount, 2),
             "profit_rate": float(q.profit_rate or 0),
             "tax_rate": float(q.tax_rate or 0.13),
+        }, ensure_ascii=False)
+    finally:
+        session.close()
+
+
+@tool("get_quotation_gross_margin")
+def get_quotation_gross_margin(quotation_id: int) -> str:
+    """【用户问「毛利率/实际毛利率/销售毛利率」时调这个工具】
+
+    报价单的「实际毛利率」= 销售视角的利润率 = 利润 / 销售价。
+
+    ⚠️ 重要概念区分（不要搞混）：
+    - **对外利润率**（profit_rate 字段）：成本上加的利润率。例 15% 表示「成本 100 元，加 15 元利润」
+    - **毛利率**（用户业务上说的）：销售价中的利润占比。例 13% 表示「销售 100 元，13 元是利润」
+    - 这两个数字**不一样**！毛利率 < 对外利润率
+
+    返回三种数字：
+    - 对外利润率（如 15%）— 来自 DB 字段
+    - 销售毛利率（不含税）= 利润 / 不含税销售价（如 13.04%）
+    - 含税毛利率 = 利润 / 含税总价（如 11.54%）
+
+    用户问"毛利率"时优先用「销售毛利率（不含税）」。
+    用户问"含税毛利率"时用「含税毛利率」。
+
+    Args:
+        quotation_id: 报价单 ID
+
+    Returns:
+        JSON 字符串：成本、利润、销售价、税额、对/含税毛利率
+    """
+    from core.models.quotation import Quotation
+    from core.models.version import VersionSnapshot
+    from core.services.export_service import get_version_snapshot_data, calculate_version_totals
+    from db import db_session_factory
+    from sqlalchemy import func as sa_func
+
+    session = db_session_factory()
+    try:
+        q = session.query(Quotation).get(quotation_id)
+        if not q:
+            return json.dumps({"error": f"报价单 #{quotation_id} 不存在"}, ensure_ascii=False)
+
+        # 必须有版本快照才能算汇总
+        latest_version_no = session.query(sa_func.max(VersionSnapshot.version_no)).filter_by(
+            quotation_id=q.id
+        ).scalar()
+        if not latest_version_no:
+            return json.dumps({"error": f"报价单 #{quotation_id} 还没有版本快照，无法计算毛利率"}, ensure_ascii=False)
+
+        snapshot_data = get_version_snapshot_data(q.id, latest_version_no)
+        totals = calculate_version_totals(snapshot_data)
+
+        # 取出所有相关金额
+        cost = float(totals.get("subtotal", 0))                # 成本（物料×系数 + 费用 + 工时）
+        profit = float(totals.get("profit_amount", 0))         # 利润
+        sales_excl_tax = float(totals.get("subtotal_with_profit", 0))  # 销售价（不含税）
+        tax = float(totals.get("tax_amount", 0))                # 税额
+        grand = float(totals.get("grand_total", 0))            # 含税总价
+        profit_rate = float(totals.get("profit_rate", 0) or 0) # 对外利润率
+        tax_rate = float(totals.get("tax_rate", 0) or 0.13)    # 税率
+
+        # 算两种毛利率
+        gross_margin_excl_tax = profit / sales_excl_tax if sales_excl_tax > 0 else 0
+        gross_margin_incl_tax = profit / grand if grand > 0 else 0
+
+        return json.dumps({
+            "quotation_id": q.id,
+            "quotation_name": q.name,
+            "scheme_no": q.scheme_no,
+            "currency": q.currency or "CNY",
+            "version_no": latest_version_no,
+
+            # 概念解释（避免 LLM 搞混）
+            "对外利润率": profit_rate,                  # DB 字段，cost × profit_rate = profit
+            "对外利润率_pct": f"{profit_rate * 100:.2f}%",
+
+            "销售毛利率": gross_margin_excl_tax,        # 用户问"毛利率"时优先用这个
+            "销售毛利率_pct": f"{gross_margin_excl_tax * 100:.2f}%",
+
+            "含税毛利率": gross_margin_incl_tax,         # 用户问"含税毛利率"时用这个
+            "含税毛利率_pct": f"{gross_margin_incl_tax * 100:.2f}%",
+
+            # 金额明细（让 LLM 能验证）
+            "成本": round(cost, 2),
+            "利润": round(profit, 2),
+            "销售价(不含税)": round(sales_excl_tax, 2),
+            "税额": round(tax, 2),
+            "含税总价": round(grand, 2),
+            "税率": tax_rate,
         }, ensure_ascii=False)
     finally:
         session.close()
@@ -1382,6 +1477,9 @@ def list_quotations_v2(
 def get_quotation_full(quotation_id: int) -> str:
     """获取报价单的完整信息：基本信息 + 模块列表 + 每个模块的物料清单 + 其他费用 + 工时 + 包装 + 差旅。
     当用户问'报价单详情'、'报价单完整信息'、'报价单全部内容'时调此工具。
+
+    返回的 profit_rate 是「对外利润率」（成本上加的利润率），不是「毛利率」。
+    如要毛利率，调 get_quotation_gross_margin 工具。
     """
     from core.models.quotation import Quotation
     from core.models.module import Module
@@ -2642,6 +2740,23 @@ TOOLS += [
                     "limit": {"type": "integer", "default": 10, "description": "最多返回条数"}
                 },
                 "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_quotation_gross_margin",
+            "description": "【用户问「毛利率/实际毛利率/销售毛利率」时调这个工具】报价单的实际毛利率=利润/销售价。区别于对外利润率(profit_rate=利润/成本)。返回三种数字：对外利润率、销售毛利率(不含税)、含税毛利率。金额明细包括成本、利润、销售价、税额、含税总价。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "quotation_id": {
+                        "type": "integer",
+                        "description": "报价单 ID（数字）"
+                    }
+                },
+                "required": ["quotation_id"]
             }
         }
     },
