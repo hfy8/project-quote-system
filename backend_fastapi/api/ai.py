@@ -55,7 +55,7 @@ def _save_history(conversation_id: str, user_msg: str, assistant_msg: str):
 # ============== 请求 / 响应 schema ==============
 class AskRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="用户问题")
-    max_steps: int = Field(5, ge=1, le=10, description="Agent 最大步数（防失控）")
+    max_steps: int = Field(10, ge=1, le=30, description="Agent 最大步数（防失控）")
     conversation_id: Optional[str] = Field(None, description="会话 ID（多轮对话用，不传则新建）")
 
 
@@ -173,7 +173,7 @@ def ask_stream(
         start_time = time.time()
         last_answer = ""
         try:
-            for event in run_agent_stream(req.query, history=history, user_id=int(user_id)):
+            for event in run_agent_stream(req.query, history=history, user_id=int(user_id), max_steps=req.max_steps):
                 # 让前端拿到 conversation_id
                 if event.get("type") in ("start",):
                     event["conversation_id"] = conv_id

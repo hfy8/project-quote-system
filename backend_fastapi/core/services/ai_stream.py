@@ -15,7 +15,7 @@ from utils.llm_client import ask_llm_stream
 from core.services.ai_tools import TOOLS, execute_tool
 
 
-def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int = None) -> Iterator[Dict]:
+def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int = None, max_steps: int = 20) -> Iterator[Dict]:
     """流式跑 Agent - 每步 yield 事件
 
     Args:
@@ -41,7 +41,7 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
     messages.append({"role": "user", "content": user_query})
 
     steps = 0
-    max_steps = 10
+    max_steps = max_steps  # 从参数传入，默认 20
     tools_used = []
     final_answer = ""
 
