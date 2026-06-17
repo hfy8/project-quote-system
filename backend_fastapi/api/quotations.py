@@ -408,6 +408,18 @@ def create_quotation(
     _check_permission(db, int(user_id), 'quotation.create')
     user = db.query(User).get(int(user_id))
 
+    # 校验：非子报价单（parent_id 为空）的 scheme_no 全局唯一
+    if body.scheme_no and body.parent_id is None:
+        existing = db.query(Quotation).filter(
+            Quotation.scheme_no == body.scheme_no,
+            Quotation.parent_id.is_(None),
+        ).first()
+        if existing:
+            raise HTTPException(
+                status_code=400,
+                detail=f'方案号 "{body.scheme_no}" 已被非子报价单 "{existing.name}" 使用，不能重复使用'
+            )
+
     quotation = Quotation(
         name=body.name,
         type=body.type,
@@ -432,6 +444,78 @@ def create_quotation(
     )
 
     return JSONResponse(content=quotation.to_dict(), status_code=201)
+
+# ---- 方案号查询（代理外部接口）----
+
+@router.get("/quotations/scheme-search")
+def search_scheme_no(
+    prefix: str = Query("", description="方案号前缀，例如 CS00"),
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """方案号联动查询 - 代理外部方案库接口。
+
+    前端在「新增报价单」页面的「方案号」输入框失焦时调用，传入用户已输入的前缀，
+    返回外部方案库中匹配的所有方案号 + 状态信息，用于：
+    1. 自动补全 / 推荐可用方案号
+    2. 避免用户输入已被占用的方案号
+
+    外部接口：POST http://222.92.47.101/prod-api/scheme/list
+    """
+    import requests as _req
+
+    _check_permission(db, int(user_id), 'quotation.create')
+
+    # 调外部接口
+    external_url = "http://222.92.47.101/prod-api/scheme/list"
+    payload = {
+        "generate": "or",
+        "conditionList": [
+            {"fieldName": "schemeNo", "fieldValue": prefix, "operation": "LIKE"},
+            {"fieldName": "schemeName", "fieldValue": prefix, "operation": "LIKE"},
+        ],
+        "order": {"field": "createTime", "order": "desc"},
+    }
+    try:
+        resp = _req.post(external_url, json=payload, timeout=8)
+        resp.raise_for_status()
+        body = resp.json()
+    except _req.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"方案库接口调用失败: {e}")
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"方案库响应不是 JSON: {e}")
+
+    if body.get("code") != 0:
+        raise HTTPException(status_code=502, detail=f"方案库返回错误: {body}")
+
+    # 提取关键字段 + 标注是否已被本地报价单使用
+    rows = body.get("data") or []
+    used_scheme_nos = set(
+        row[0] for row in db.query(Quotation.scheme_no)
+        .filter(Quotation.scheme_no.isnot(None), Quotation.parent_id.is_(None))
+        .all()
+    )
+    result = []
+    for item in rows:
+        sn = item.get("schemeNo")
+        if not sn:
+            continue
+        result.append({
+            "schemeNo": sn,
+            "schemeName": item.get("schemeName"),
+            "schemeSpec": item.get("schemeSpec"),
+            "schemeStatus": item.get("schemeStatus"),
+            "archiveStatus": item.get("archiveStatus"),
+            "customerName": item.get("customerName"),
+            "schemeLocation": item.get("schemeLocation"),
+            "createTime": item.get("createTime"),
+            "is_used_locally": sn in used_scheme_nos,
+        })
+    return JSONResponse(content={
+        "total": len(result),
+        "items": result,
+    }, status_code=200)
+
 
 # ---- 我的参与 ----
 
@@ -594,6 +678,20 @@ def update_quotation(
     quotation = _validate_quotation(db, quotation_id)
 
     data = body.model_dump(exclude_unset=True)
+    # 校验：非子报价单的 scheme_no 不能改成已存在的值
+    if 'scheme_no' in data and data['scheme_no'] and (data.get('parent_id', quotation.parent_id) is None):
+        new_sn = data['scheme_no']
+        if new_sn != quotation.scheme_no:  # 真的在改
+            existing = db.query(Quotation).filter(
+                Quotation.scheme_no == new_sn,
+                Quotation.parent_id.is_(None),
+                Quotation.id != quotation_id,  # 排除自己
+            ).first()
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f'方案号 "{new_sn}" 已被非子报价单 "{existing.name}" 使用，不能重复使用'
+                )
     if 'name' in data:
         quotation.name = data['name']
     if 'type' in data:
