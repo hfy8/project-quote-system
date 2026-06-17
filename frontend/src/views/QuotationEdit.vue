@@ -15,16 +15,7 @@
         <!-- 基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
           <el-form :model="quotation" :rules="formRules" label-width="120px">
-            <el-form-item label="报价单名称">
-              <el-input v-model="quotation.name" placeholder="请输入报价单名称" :disabled="isEdit" />
-            </el-form-item>
-            <el-form-item label="项目类型">
-              <el-select v-model="quotation.type" placeholder="请选择类型" :disabled="isEdit || !!parentId">
-                <el-option label="单机 (single)" value="single" />
-                <el-option label="线体 (line)" value="line" />
-              </el-select>
-              <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">子报价单（单机）</span>
-            </el-form-item>
+            <!-- 方案编号放最上方：选完方案号会自动填名称 + 业务负责人等 -->
             <el-form-item label="方案编号" prop="scheme_no">
               <el-autocomplete
                 v-model="quotation.scheme_no"
@@ -51,6 +42,16 @@
               </el-autocomplete>
               <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">自动生成，不可编辑</span>
               <span v-else-if="schemeHint" :class="['scheme-hint', schemeHintType]">{{ schemeHint }}</span>
+            </el-form-item>
+            <el-form-item label="报价单名称">
+              <el-input v-model="quotation.name" placeholder="可手动填写；选完方案号会自动填入" :disabled="isEdit" />
+            </el-form-item>
+            <el-form-item label="项目类型">
+              <el-select v-model="quotation.type" placeholder="请选择类型" :disabled="isEdit || !!parentId">
+                <el-option label="单机 (single)" value="single" />
+                <el-option label="线体 (line)" value="line" />
+              </el-select>
+              <span v-if="parentId" style="margin-left: 8px; color: #888; font-size: 12px;">子报价单（单机）</span>
             </el-form-item>
             <el-form-item label="状态">
               <el-select v-model="quotation.status" placeholder="请选择状态" :disabled="isEdit">
@@ -1059,12 +1060,22 @@ const schemeHintType = ref('info')  // info/success/warning/danger
 let schemeSearchController = null  // 用于取消正在飞行的请求
 let schemeSearchReqId = 0  // 请求序号，最新的胜出
 const SCHEME_MIN_LEN = 2
+// 记录从方案库自动填了哪些字段（手动改方案号时一并清空）
+const autoFilledFields = ref([])
 
 // 方案号输入：立刻发请求（取消上一次在飞的请求）
 // 不需要 debounce：axios + AbortController 保证只有最新请求的响应被采纳
 // 后端响应 200ms 内，立刻查比 debounce 500ms 体验更好
 function onSchemeInput(value) {
   schemeHint.value = ''
+  // 用户改方案号 → 清掉上次自动填的字段
+  if (autoFilledFields.value.length) {
+    for (const f of autoFilledFields.value) {
+      if (f === 'name') quotation.value.name = ''
+      if (f === 'business_owner_id') quotation.value.business_owner_id = null
+    }
+    autoFilledFields.value = []
+  }
   if (!value || value.length < SCHEME_MIN_LEN) {
     schemeSuggestions.value = []
     return
@@ -1111,16 +1122,36 @@ function querySchemeSuggestions(queryString, callback) {
   callback(schemeSuggestions.value)
 }
 
-// 选中下拉项
+// 选中下拉项：自动填名称 + 业务负责人（如果方案库提供了）
 function handleSelectScheme(item) {
   schemeHint.value = ''
   if (item.is_used_locally) {
     schemeHint.value = `⚠ 方案号 "${item.schemeNo}" 已被本系统使用，保存会被拒绝`
     schemeHintType.value = 'danger'
-  } else {
-    schemeHint.value = `已选中：${item.schemeNo} - ${item.schemeName || '(无名称)'}`
-    schemeHintType.value = 'success'
+    return  // 不自动填任何字段，避免覆盖用户已输入
   }
+  // 1) 自动填报价单名称（名称为空时填，避免覆盖用户已输入）
+  if (item.schemeName && !quotation.value.name) {
+    quotation.value.name = item.schemeName
+    autoFilledFields.value.push('name')
+  }
+  // 2) 自动选业务负责人（如果方案库提供了，且本系统里有该工号对应的用户）
+  if (item.businessManager) {
+    const matchedUser = businessUsers.value.find(u =>
+      String(u.employee_no) === item.businessManager ||
+      String(u.username) === item.businessManager
+    )
+    if (matchedUser && !quotation.value.business_owner_id) {
+      quotation.value.business_owner_id = matchedUser.id
+      autoFilledFields.value.push('business_owner_id')
+    }
+  }
+  // 3) 提示
+  const parts = [`已选中：${item.schemeNo} - ${item.schemeName || '(无名称)'}`]
+  if (quotation.value.name === item.schemeName) parts.push('名称已自动填入')
+  if (quotation.value.business_owner_id) parts.push('业务负责人已自动填入')
+  schemeHint.value = parts.join('；')
+  schemeHintType.value = 'success'
 }
 
 // 失焦时本地预校验（节省一次后端往返；后端 400 仍兜底）
