@@ -28,7 +28,7 @@
             <el-form-item label="方案编号" prop="scheme_no">
               <el-autocomplete
                 v-model="quotation.scheme_no"
-                :fetch-suggestions="searchSchemeNo"
+                :fetch-suggestions="querySchemeSuggestions"
                 placeholder="请输入方案编号，输入字符后会从方案库推荐"
                 :disabled="isEdit || !!parentId"
                 clearable
@@ -1056,44 +1056,59 @@ const isArchived = computed(() => quotation.value.status === 'approved')
 const schemeSuggestions = ref([])
 const schemeHint = ref('')
 const schemeHintType = ref('info')  // info/success/warning/danger
-let schemeSearchTimer = null
-let lastSearchedPrefix = ''
+let schemeSearchController = null  // 用于取消正在飞行的请求
+let schemeSearchReqId = 0  // 请求序号，最新的胜出
+const SCHEME_MIN_LEN = 2
 
-// 方案号输入防抖查询
+// 方案号输入：立刻发请求（取消上一次在飞的请求）
+// 不需要 debounce：axios + AbortController 保证只有最新请求的响应被采纳
+// 后端响应 200ms 内，立刻查比 debounce 500ms 体验更好
 function onSchemeInput(value) {
   schemeHint.value = ''
-  if (schemeSearchTimer) clearTimeout(schemeSearchTimer)
-  if (!value || value.length < 1) {
+  if (!value || value.length < SCHEME_MIN_LEN) {
     schemeSuggestions.value = []
     return
   }
-  schemeSearchTimer = setTimeout(() => {
-    searchSchemeNo(value, (results) => {
-      schemeSuggestions.value = results || []
-    })
-  }, 500)
+  fetchSchemeSuggestions(value)
 }
 
-// 调后端代理接口查方案号
-async function searchSchemeNo(queryString, callback) {
-  if (!queryString) {
-    callback([])
+// 真正发请求的函数：先取消上一次未完成的请求，再发新请求
+async function fetchSchemeSuggestions(prefix) {
+  if (!prefix || prefix.length < SCHEME_MIN_LEN) {
+    schemeSuggestions.value = []
     return
   }
-  // 至少 2 个字符才查（避免一打字就请求）
-  if (queryString.length < 2) {
-    callback([])
-    return
+  // 1) 取消上一次还在飞的请求（避免响应顺序错乱、节省后端和外部接口的查询）
+  if (schemeSearchController) {
+    schemeSearchController.abort()
   }
-  lastSearchedPrefix = queryString
+  // 2) 用新的 controller 发本次请求
+  const controller = new AbortController()
+  schemeSearchController = controller
+  // 3) 请求序号自增，本次调用结束前若序号变了，说明已被新请求取代
+  const myReqId = ++schemeSearchReqId
   try {
-    const data = await api.get('/quotations/scheme-search', { params: { prefix: queryString } })
-    if (lastSearchedPrefix !== queryString) return  // 用户又改了
-    callback(data.items || [])
+    const data = await api.get('/quotations/scheme-search', {
+      params: { prefix },
+      signal: controller.signal
+    })
+    // 已被新请求取代 → 丢弃结果
+    if (myReqId !== schemeSearchReqId) return
+    schemeSuggestions.value = data.items || []
   } catch (error) {
+    // 主动取消的请求不算错误（axios 抛 CanceledError，code=ERR_CANCELED）
+    const isCanceled = error?.name === 'CanceledError' || error?.code === 'ERR_CANCELED'
+    if (isCanceled) return
+    if (myReqId !== schemeSearchReqId) return
     console.warn('方案号查询失败:', error)
-    callback([])
+    schemeSuggestions.value = []
   }
+}
+
+// el-autocomplete 的 fetch-suggestions 入口：返回当前缓存
+// 真正的查询由 onSchemeInput 触发，结果写入 schemeSuggestions
+function querySchemeSuggestions(queryString, callback) {
+  callback(schemeSuggestions.value)
 }
 
 // 选中下拉项
