@@ -407,7 +407,7 @@ onBeforeUnmount(() => {
 .ai-chat-page {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: 100dvh;  /* 直接视口高度，不被父级 flex 撑开 */
   background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
 }
 
