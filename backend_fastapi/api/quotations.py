@@ -495,22 +495,26 @@ def search_scheme_no(
         .filter(Quotation.scheme_no.isnot(None), Quotation.parent_id.is_(None))
         .all()
     )
+    # 透传外部接口的字段（业务负责人/项目负责人等用于自动填表）
+    # + 标注 is_used_locally 供前端判断是否已被本系统使用
+    FORWARDED_FIELDS = [
+        "schemeId", "schemeNo", "schemeName", "schemeSpec", "craftType",
+        "customerName", "schemeLocation", "schemeHours",
+        "schemeStatus", "archiveStatus", "contractCode",
+        "operatorNo", "operatorName",
+        "businessManager", "businessManagerName", "businessManagerPhone",
+        "projectOrganization", "projectOrganizationName", "projectOrganizationPhone",
+        "projectManager", "projectManagerName", "projectManagerPhone",
+        "createTime", "updateTime",
+    ]
     result = []
     for item in rows:
         sn = item.get("schemeNo")
         if not sn:
             continue
-        result.append({
-            "schemeNo": sn,
-            "schemeName": item.get("schemeName"),
-            "schemeSpec": item.get("schemeSpec"),
-            "schemeStatus": item.get("schemeStatus"),
-            "archiveStatus": item.get("archiveStatus"),
-            "customerName": item.get("customerName"),
-            "schemeLocation": item.get("schemeLocation"),
-            "createTime": item.get("createTime"),
-            "is_used_locally": sn in used_scheme_nos,
-        })
+        out = {f: item.get(f) for f in FORWARDED_FIELDS}
+        out["is_used_locally"] = sn in used_scheme_nos
+        result.append(out)
     return JSONResponse(content={
         "total": len(result),
         "items": result,
