@@ -25,7 +25,7 @@ def call_llm_with_tools(messages: List[Dict], tools: List[Dict]) -> Dict:
     if "error" in data:
         raise RuntimeError(f"LLM 报错: {data['error']}")
     return data
-def run_agent(user_query: str, max_steps: int = 10) -> str:
+def run_agent(user_query: str, max_steps: int = 20) -> str:
     """Agent 主循环 - 用 OpenAI tools 协议"""
     messages = [
         {"role": "system", "content": "你是报价员助手，善用工具查真实数据。"},
