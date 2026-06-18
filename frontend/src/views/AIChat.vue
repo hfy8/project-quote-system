@@ -1,5 +1,11 @@
 <template>
   <div class="ai-chat-page">
+    <!-- 🔖 调试版本标签：v2 打字机 + 合并 \n+ -->
+    <div style="position: fixed; top: 4px; right: 4px; z-index: 9999;
+                background: #ff5722; color: white; padding: 2px 8px;
+                font-size: 11px; border-radius: 3px; font-weight: bold;">
+      v2 TYPEWRITER ✅
+    </div>
     <!-- 左侧会话历史侧边栏 -->
     <aside class="sessions-sidebar">
       <div class="sidebar-header">
@@ -236,9 +242,10 @@ const renderedCurrentAnswer = ref('')
 let _renderTimer = null
 function scheduleRender(text) {
   if (_renderTimer) clearTimeout(_renderTimer)
+  // 16ms = 1 帧（60fps），比之前 100ms 更跟手，保留防抖避免每 token 跑 regex
   _renderTimer = setTimeout(() => {
     renderedCurrentAnswer.value = renderMarkdownImmediate(text)
-  }, 100)
+  }, 16)
 }
 
 // 立即渲染（用于已完成的消息）
@@ -257,7 +264,15 @@ const messages = computed({
 })
 const inputText = ref('')
 const streaming = ref(false)
+// 流式期间的当前回答（由 SSE token 事件累加）
 const currentAnswer = ref('')
+// 注意：不再需要 pendingText 队列和打字机定时器
+// SSE chunk 本身就是"打字机"的天然节奏 —— 每个 chunk 一次 setState
+const pendingText = ref('')  // 保留 ref 防止 watch 报错，但不再使用
+// 打字机已移除：SSE chunk 节奏就是天然打字机
+// 保留函数名以防 watch 引用
+function startTypewriter() { /* noop */ }
+function stopTypewriter() { /* noop */ }
 const currentToolCalls = ref([]) // 流式期间的 tool_call 列表（实时累计）
 const currentWarning = ref('')  // 流式期间的 warning（防失控等）
 const conversationId = ref(null)
@@ -308,7 +323,11 @@ function renderMarkdownImmediate(text) {
   }
 
   // 移除所有 think 块
-  const cleaned = text.replace(thinkRe, '').trim()
+  let cleaned = text.replace(thinkRe, '')
+
+  // 关键修复：去除开头/结尾的空白字符（LLM 经常输出 "\n\n" 开头，导致首行空白）
+  // 保留代码块 ``` 中可能的格式，但 trim 整体首尾
+  cleaned = cleaned.replace(/^[\s\n]+/, '').replace(/[\s\n]+$/, '')
 
   // 先按代码块切（保留代码块内容）
   const codeBlockRe = /```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g
@@ -353,8 +372,8 @@ function renderInline(text) {
     // 数字列表
     .replace(/^(\d+)\. (.+)$/gm, '<li class="md-oli">$2</li>')
     .replace(/((?:<li class="md-oli">.*<\/li>\n?)+)/g, '<ol class="md-ol">$1</ol>')
-    // 换行
-    .replace(/\n/g, '<br>')
+    // 换行：连续多个 \n 合并为 1 个 <br>（避免 LLM 输出 "\n\n" 产生 2 个 <br> 出现大空行）
+    .replace(/\n+/g, '<br>')
 }
 
 // ===== 工具：时间 =====
@@ -420,7 +439,9 @@ async function sendMessage() {
   // 2) 流式调用
   streaming.value = true
   currentAnswer.value = ''
+  pendingText.value = ''
   currentToolCalls.value = []  // 重置 tool_calls 列表
+  startTypewriter()  // 启动打字机
   let fullAnswer = ''
   const toolsUsed = []
   abortController.value = new AbortController()
@@ -434,9 +455,12 @@ async function sendMessage() {
           if (event.conversation_id) conversationId.value = event.conversation_id
         }
         if (event.type === 'token') {
+          // 关键：每个 token 事件 = 一次 setState = Vue 自动重渲染
+          // markdown 全量重渲染（性能足够，每次只是简单的字符串处理）
           currentAnswer.value += event.content
           fullAnswer += event.content
-          scheduleScroll()  // 持续滚到底
+          renderedCurrentAnswer.value = renderMarkdownImmediate(currentAnswer.value)
+          scheduleScroll()
         } else if (event.type === 'tool_call') {
           if (!toolsUsed.includes(event.name)) toolsUsed.push(event.name)
           // 记录本次调用（参数 + 待补 result）
@@ -455,6 +479,8 @@ async function sendMessage() {
             }
           }
         } else if (event.type === 'done') {
+          // 停止打字机 + flush 剩余内容
+          stopTypewriter()
           // 流式期间的内容已经全部进 currentAnswer（fullAnswer），
           // 渲染气泡由下面 push 触发；push 后 nextTick 强制滚到底
           const finalContent = fullAnswer || event.answer || ''
@@ -476,6 +502,7 @@ async function sendMessage() {
             if (el) el.scrollTop = el.scrollHeight
           })
         } else if (event.type === 'error') {
+          stopTypewriter()
           ElMessage.error(`AI 错误: ${event.message}`)
           aiChatStore.addMessage({
             id: nextId++,
@@ -495,6 +522,7 @@ async function sendMessage() {
       { signal: abortController.value.signal },
     )
   } catch (e) {
+    stopTypewriter()
     if (e?.name === 'CanceledError' || abortController.value?.signal.aborted) {
       // 用户主动停止：把已收的内容保留为一条消息
       if (fullAnswer) {
