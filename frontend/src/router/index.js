@@ -19,6 +19,7 @@ import TravelFeeConfig from '../views/TravelFeeConfig.vue'
 import Layout from '../components/Layout.vue'
 import VersionCompare from '../views/VersionCompare.vue'
 import AIChat from '../views/AIChat.vue'
+import Trends from '../views/Trends.vue'
 
 // 路由权限映射 - 与后端权限码一致
 const routePermissionMap = {
@@ -41,6 +42,7 @@ const routePermissionMap = {
   'ChangeRequests': 'quotation.view',
   'VersionCompare': 'version.view',
   'AIChat': 'ai.query',
+  'Trends': 'quotation.view',  // 趋势页：能看报价单的人都能看趋势
 }
 
 // 权限检查函数 - 支持通配符匹配
@@ -170,6 +172,11 @@ const routes = [
         path: 'ai-chat',
         name: 'AIChat',
         component: AIChat
+      },
+      {
+        path: 'trends',
+        name: 'Trends',
+        component: Trends
       },
 
     ]

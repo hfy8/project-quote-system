@@ -521,6 +521,182 @@ def search_scheme_no(
     }, status_code=200)
 
 
+# ---- 趋势统计（按月聚合 + 散点）----
+
+@router.get("/quotations/trends")
+def get_quotation_trends(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+    months: int = Query(6, ge=1, le=24, description="最近 N 个月"),
+):
+    """报价单趋势统计：按月聚合数量、利润率、工时 + 利润率散点
+
+    返回结构（前端 ECharts 友好）：
+    {
+        "summary": {
+            "total_count": 26,
+            "total_approved": 11,
+            "avg_gross_margin": 0.157,     # 实际毛利率（profit_rate/(1+profit_rate)）
+            "avg_profit_rate": 0.186,      # 对外利润率（利润/成本，审计用）
+            "current_month_count": 3
+        },
+        "monthly": [
+            {"period": "2026-01", "count": 5, "approved": 3, "draft": 1,
+             "avg_gross_margin": 0.157, "avg_profit_rate": 0.18,
+             "total_hours": 120.0},
+            ...
+        ],
+        "by_status": [
+            {"status": "approved", "count": 11},
+            ...
+        ],
+        "by_type": [
+            {"type": "single", "count": 13},
+            ...
+        ],
+        "scatter": [
+            {"id": 1, "name": "...", "profit_rate": 0.15, "gross_margin": 0.130,
+             "total_hours": 80, "month": "2026-01"},
+            ...
+        ],
+        "insights": ["毛利率上升 5 个百分点", ...]
+    }
+
+    字段约定（与 ai_tools.py 保持一致）：
+    - profit_rate = 利润/成本（对外利润率，行业惯用）
+    - gross_margin = profit_rate/(1+profit_rate)（实际毛利率 = 利润/售价，用户视角）
+    用户问"利润率"时，业务视角是 gross_margin 不是 profit_rate。
+    """
+    from datetime import datetime
+    from dateutil.relativedelta import relativedelta
+    from sqlalchemy import func, case
+
+    # 起算时间：当前月往前 N 个月
+    now = datetime.now()
+    start = (now - relativedelta(months=months - 1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # 1) 月度聚合
+    # 关键：profit_rate = 利润/成本（对外利润率），gross_margin = profit_rate/(1+profit_rate)（实际毛利率）
+    # 用户业务视角是 gross_margin，所以先在 SQL 里算好
+    monthly_rows = db.query(
+        func.to_char(Quotation.created_at, 'YYYY-MM').label('period'),
+        func.count(Quotation.id).label('count'),
+        func.sum(case((Quotation.status == 'approved', 1), else_=0)).label('approved'),
+        func.sum(case((Quotation.status == 'draft', 1), else_=0)).label('draft'),
+        func.avg(Quotation.profit_rate).label('avg_profit'),
+        func.avg(Quotation.profit_rate / (1 + Quotation.profit_rate)).label('avg_gross'),
+    ).filter(
+        Quotation.created_at >= start
+    ).group_by('period').order_by('period').all()
+
+    monthly = []
+    for r in monthly_rows:
+        monthly.append({
+            "period": r.period,
+            "count": int(r.count or 0),
+            "approved": int(r.approved or 0),
+            "draft": int(r.draft or 0),
+            "avg_profit_rate": round(float(r.avg_profit or 0), 4),
+            "avg_gross_margin": round(float(r.avg_gross or 0), 4),
+            "total_hours": 0.0,  # labor_hours 表当前为空，后续可补
+        })
+
+    # 2) 状态分布
+    status_rows = db.query(
+        Quotation.status, func.count(Quotation.id)
+    ).filter(Quotation.created_at >= start).group_by(Quotation.status).all()
+    by_status = [{"status": s, "count": int(c)} for s, c in status_rows]
+
+    # 3) 类型分布
+    type_rows = db.query(
+        Quotation.type, func.count(Quotation.id)
+    ).filter(Quotation.created_at >= start).group_by(Quotation.type).all()
+    by_type = [{"type": t, "count": int(c)} for t, c in type_rows]
+
+    # 4) 利润率散点（每个报价单一个点）
+    scatter_rows = db.query(
+        Quotation.id, Quotation.name, Quotation.profit_rate,
+        Quotation.status, Quotation.created_at
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.profit_rate.isnot(None),
+    ).all()
+    scatter = [
+        {
+            "id": r.id,
+            "name": r.name,
+            "profit_rate": round(float(r.profit_rate), 4),
+            "gross_margin": round(float(r.profit_rate) / (1 + float(r.profit_rate)), 4),
+            "status": r.status,
+            "month": r.created_at.strftime('%Y-%m'),
+        }
+        for r in scatter_rows
+    ]
+
+    # 5) 顶部统计
+    total_count = sum(m['count'] for m in monthly)
+    total_approved = sum(m['approved'] for m in monthly)
+    current_month = now.strftime('%Y-%m')
+    current_month_count = next((m['count'] for m in monthly if m['period'] == current_month), 0)
+
+    # 平均利润率（对外）+ 平均毛利率（实际）
+    # 两种算法：①纯字段平均（已对外），②先算毛利率再平均（更精确）
+    # 这里采用"算毛利率再平均"，与 ai_tools.py 的 get_quotation_gross_margin 保持一致
+    raw_profits = db.query(Quotation.profit_rate).filter(
+        Quotation.created_at >= start,
+        Quotation.profit_rate.isnot(None),
+        Quotation.profit_rate > 0,  # 避免除 0
+    ).all()
+    profit_list = [float(r[0]) for r in raw_profits]
+    avg_profit_overall = sum(profit_list) / len(profit_list) if profit_list else 0
+    avg_gross_overall = sum(p / (1 + p) for p in profit_list) / len(profit_list) if profit_list else 0
+
+    # 6) 洞察（同比/环比）—— 业务视角用毛利率 gross_margin
+    insights = []
+    if len(monthly) >= 2:
+        latest = monthly[-1]['avg_gross_margin']
+        earliest = monthly[0]['avg_gross_margin']
+        diff_pp = round((latest - earliest) * 100, 1)
+        if diff_pp > 1:
+            insights.append(f"📈 最近月比首月毛利率提升 {diff_pp} 个百分点")
+        elif diff_pp < -1:
+            insights.append(f"📉 最近月比首月毛利率下降 {abs(diff_pp)} 个百分点，需关注")
+        else:
+            insights.append(f"➡️ 毛利率保持稳定（波动 {abs(diff_pp)} 个百分点）")
+
+        latest_count = monthly[-1]['count']
+        earliest_count = monthly[0]['count']
+        if latest_count > earliest_count:
+            insights.append(f"📊 报价单数量增长 {latest_count - earliest_count} 单")
+        elif latest_count < earliest_count:
+            insights.append(f"📉 报价单数量减少 {earliest_count - latest_count} 单")
+
+    # 毛利率健康度（用已通过的实际毛利率）
+    approved_gross = [s['gross_margin'] for s in scatter if s['status'] == 'approved']
+    if approved_gross:
+        avg_approved_gross = sum(approved_gross) / len(approved_gross)
+        if avg_approved_gross < 0.10:
+            insights.append(f"⚠️ 已通过报价单平均毛利率仅 {avg_approved_gross*100:.1f}%，建议检查成本结构")
+        elif avg_approved_gross > 0.20:
+            insights.append(f"✨ 已通过报价单平均毛利率 {avg_approved_gross*100:.1f}%，高于行业水平")
+
+    return {
+        "summary": {
+            "total_count": total_count,
+            "total_approved": total_approved,
+            "avg_gross_margin": round(float(avg_gross_overall), 4),  # 实际毛利率（业务视角）
+            "avg_profit_rate": round(float(avg_profit_overall), 4),  # 对外利润率（审计视角）
+            "current_month_count": current_month_count,
+        },
+        "monthly": monthly,
+        "by_status": by_status,
+        "by_type": by_type,
+        "scatter": scatter,
+        "insights": insights,
+        "params": {"months": months, "start_period": start.strftime('%Y-%m')},
+    }
+
+
 # ---- 我的参与 ----
 
 @router.get("/quotations/my-assignments")
