@@ -8,6 +8,20 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
+
+# ===== 数据库 Schema 懒加载 + 缓存 =====
+_SCHEMA_CACHE = None
+def _load_db_schema() -> str:
+    """加载数据库 schema 文本（带缓存）"""
+    global _SCHEMA_CACHE
+    if _SCHEMA_CACHE is None:
+        try:
+            from core.services.db_schema_reference import get_schema_text
+            _SCHEMA_CACHE = get_schema_text()
+        except Exception as e:
+            _SCHEMA_CACHE = f"[schema 加载失败: {e}]"
+    return _SCHEMA_CACHE
+
 import json
 import re
 from typing import List, Dict, Iterator
@@ -81,6 +95,28 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
 **重要规则**：
 1. 调工具后，如果工具结果已经足够回答用户问题 → **直接输出最终答案**
 2. 工具结果不够明确时，可以再调一次补充信息
+3. 复杂查询优先用 execute_sql（直接 SQL），批量查明细用对应业务工具
+
+---
+
+# 数据库 Schema 参考（33 个表）
+
+执行 SQL 或理解业务实体时参照此结构。表名是 PostgreSQL snake_case 复数。
+
+""" + _load_db_schema() + """
+
+---
+
+# PostgreSQL 语法要点
+- 字符串用单引号：WHERE status = 'draft'
+- 字符串拼接：first_name || ' ' || last_name
+- 日期范围：WHERE created_at >= '2026-01-01' AND created_at < '2026-02-01'
+- 月份分组：date_trunc('month', created_at) AS month
+- ILIKE 大小写不敏感：WHERE name ILIKE '%铝合金%'
+- CAST：CAST(unit_price AS NUMERIC)
+- 布尔：WHERE is_active = true
+- NULL：WHERE parent_id IS NULL
+- LIMIT/OFFSET 必加（materials 有几万条）
 """}
     ]
     if history:
