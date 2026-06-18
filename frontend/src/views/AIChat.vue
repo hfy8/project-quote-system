@@ -58,9 +58,36 @@
             </div>
             <div class="bubble-wrap">
               <div :class="['bubble', `bubble-${msg.role}`]">
-                <div class="bubble-content" v-html="renderMarkdown(msg.content)"></div>
+                <div class="bubble-content" v-html="renderMarkdownImmediate(msg.content)"></div>
               </div>
-              <div v-if="msg.tools && msg.tools.length" class="tools-row">
+              <!-- 工具调用折叠卡片（已完成消息）-->
+              <div v-if="msg.toolCalls && msg.toolCalls.length" class="tool-calls">
+                <details
+                  v-for="(tc, i) in msg.toolCalls"
+                  :key="i"
+                  class="tool-call-card"
+                >
+                  <summary>
+                    <span class="tool-icon">🔧</span>
+                    <span class="tool-name">{{ tc.name }}</span>
+                    <span class="tool-status" :class="tc.result ? 'ok' : 'pending'">
+                      {{ tc.result ? '✓' : '…' }}
+                    </span>
+                  </summary>
+                  <div class="tool-detail">
+                    <div v-if="tc.arguments && Object.keys(tc.arguments).length" class="tool-section">
+                      <div class="tool-label">参数：</div>
+                      <pre class="tool-pre">{{ formatJSON(tc.arguments) }}</pre>
+                    </div>
+                    <div v-if="tc.result" class="tool-section">
+                      <div class="tool-label">结果：</div>
+                      <pre class="tool-pre">{{ tc.result }}</pre>
+                    </div>
+                  </div>
+                </details>
+              </div>
+              <!-- 简单 tag（向后兼容，没有详细 tool_call 信息的场景）-->
+              <div v-else-if="msg.tools && msg.tools.length" class="tools-row">
                 <el-tag
                   v-for="t in msg.tools"
                   :key="t"
@@ -77,7 +104,7 @@
           </div>
         </template>
 
-        <!-- 流式回答中 -->
+        <!-- 流式回答中（用防抖渲染避免闪烁）-->
         <div v-if="streaming" class="message message-assistant">
           <div class="avatar">
             <el-avatar
@@ -90,12 +117,39 @@
           <div class="bubble-wrap">
             <div class="bubble bubble-assistant">
               <div class="bubble-content">
-                <span v-if="currentAnswer">{{ renderMarkdown(currentAnswer) }}</span>
-                <span v-else class="thinking">
+                <span v-if="currentAnswer" v-html="renderedCurrentAnswer"></span>
+                <span v-else-if="currentToolCalls.length === 0" class="thinking">
                   正在思考<span class="dots">.</span>
                 </span>
                 <span v-if="streaming" class="cursor">▍</span>
               </div>
+            </div>
+            <!-- 流式期间的 tool_calls（实时显示）-->
+            <div v-if="currentToolCalls.length" class="tool-calls">
+              <details
+                v-for="(tc, i) in currentToolCalls"
+                :key="i"
+                class="tool-call-card"
+                open
+              >
+                <summary>
+                  <span class="tool-icon">🔧</span>
+                  <span class="tool-name">{{ tc.name }}</span>
+                  <span class="tool-status" :class="tc.result ? 'ok' : 'pending'">
+                    {{ tc.result ? '✓' : '…' }}
+                  </span>
+                </summary>
+                <div class="tool-detail">
+                  <div v-if="tc.arguments && Object.keys(tc.arguments).length" class="tool-section">
+                    <div class="tool-label">参数：</div>
+                    <pre class="tool-pre">{{ formatJSON(tc.arguments) }}</pre>
+                  </div>
+                  <div v-if="tc.result" class="tool-section">
+                    <div class="tool-label">结果：</div>
+                    <pre class="tool-pre">{{ tc.result }}</pre>
+                  </div>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -132,16 +186,35 @@
 </template>
 
 <script setup>
-import { ref, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue'
 import { Plus, CircleClose, ArrowUpBold } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { aiAPI } from '../api/ai'
 
+// ===== 防抖渲染：避免流式过程中每个 token 都跑 regex =====
+// 流式期间 100ms 才 render 一次，用户感知不到延迟，但 Vue 触发次数减少 10x
+const renderedCurrentAnswer = ref('')
+let _renderTimer = null
+function scheduleRender(text) {
+  if (_renderTimer) clearTimeout(_renderTimer)
+  _renderTimer = setTimeout(() => {
+    renderedCurrentAnswer.value = renderMarkdownImmediate(text)
+  }, 100)
+}
+
+// 立即渲染（用于已完成的消息）
+function renderSync(text) {
+  return renderMarkdownImmediate(text)
+}
+
 // ===== 状态 =====
+// 单条消息结构：
+//   { id, role, content, ts, tools: ['name1'], toolCalls: [{name, args, result}] }
 const messages = ref([])         // 已完成的消息
 const inputText = ref('')
 const streaming = ref(false)
 const currentAnswer = ref('')
+const currentToolCalls = ref([]) // 流式期间的 tool_call 列表（实时累计）
 const conversationId = ref(null)
 const messagesRef = ref(null)
 const toolCount = ref(15)
@@ -159,6 +232,16 @@ const suggestions = [
 ]
 
 // ===== 工具：轻量 Markdown 渲染 =====
+// 防抖版本：流式过程中 100ms 才 render 一次，避免每个 token 都跑 regex 导致闪烁
+let _renderCache = new WeakMap()  // WeakMap 避免内存泄漏
+let _renderDebounceTimer = null
+
+function renderMarkdownDebounced(text, callback) {
+  if (_renderDebounceTimer) clearTimeout(_renderDebounceTimer)
+  _renderDebounceTimer = setTimeout(() => {
+    callback(renderMarkdownImmediate(text))
+  }, 100)
+}
 function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -166,11 +249,22 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;')
 }
 
-function renderMarkdown(text) {
+function renderMarkdownImmediate(text) {
   if (!text) return ''
-  // 过滤 Qwen 推理模型泄露的 <think>...</think> 块
-  const cleaned = String(text).replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
-  if (!cleaned) return ''
+
+  // think 块处理：转为 <details> 折叠标签（用户可展开看 AI 推理过程）
+  // 匹配 多个 think 块（有些模型会多轮思考）
+  const thinkRe = /<think(?:ing)?>([\s\S]*?)<\/think>/gi
+  let thinkRendered = ''
+  let match
+  while ((match = thinkRe.exec(text)) !== null) {
+    const thinkContent = escapeHtml(match[1].trim())
+    thinkRendered += `<details class="think-block"><summary>💭 AI 思考过程（点击展开）</summary><pre class="think-pre">${thinkContent}</pre></details>`
+  }
+
+  // 移除所有 think 块
+  const cleaned = text.replace(thinkRe, '').trim()
+
   // 先按代码块切（保留代码块内容）
   const codeBlockRe = /```([a-zA-Z0-9_+-]*)\n?([\s\S]*?)```/g
   const parts = []
@@ -183,7 +277,8 @@ function renderMarkdown(text) {
   }
   parts.push({ type: 'text', value: text.slice(lastIdx) })
 
-  return parts
+  // think 块渲染：拼接头部（顶部已提取，下面仅拼接）
+  return thinkRendered + parts
     .map((p) => {
       if (p.type === 'code') {
         return `<pre class="md-code"><code class="lang-${escapeHtml(p.lang)}">${escapeHtml(p.value)}</code></pre>`
@@ -222,6 +317,15 @@ function formatTime(ts) {
   const d = new Date(ts)
   const pad = (n) => String(n).padStart(2, '0')
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+// ===== 工具：格式化 JSON =====
+function formatJSON(obj) {
+  try {
+    return JSON.stringify(obj, null, 2)
+  } catch {
+    return String(obj)
+  }
 }
 
 // ===== 滚动：保证最新内容一定可见 =====
@@ -272,6 +376,7 @@ async function sendMessage() {
   // 2) 流式调用
   streaming.value = true
   currentAnswer.value = ''
+  currentToolCalls.value = []  // 重置 tool_calls 列表
   let fullAnswer = ''
   const toolsUsed = []
   abortController.value = new AbortController()
@@ -290,6 +395,21 @@ async function sendMessage() {
           scheduleScroll()  // 持续滚到底
         } else if (event.type === 'tool_call') {
           if (!toolsUsed.includes(event.name)) toolsUsed.push(event.name)
+          // 记录本次调用（参数 + 待补 result）
+          currentToolCalls.value.push({
+            name: event.name,
+            arguments: event.arguments || {},
+            result: null,  // 等 tool_result 事件来补
+          })
+          scheduleScroll(true)
+        } else if (event.type === 'tool_result') {
+          // 补全上一个同名 tool_call 的 result
+          for (let i = currentToolCalls.value.length - 1; i >= 0; i--) {
+            if (currentToolCalls.value[i].name === event.name && !currentToolCalls.value[i].result) {
+              currentToolCalls.value[i].result = event.result
+              break
+            }
+          }
         } else if (event.type === 'done') {
           // 流式期间的内容已经全部进 currentAnswer（fullAnswer），
           // 渲染气泡由下面 push 触发；push 后 nextTick 强制滚到底
@@ -299,9 +419,11 @@ async function sendMessage() {
             role: 'assistant',
             content: finalContent,
             tools: toolsUsed,
+            toolCalls: [...currentToolCalls.value],  // 快照
             ts: Date.now(),
           })
           currentAnswer.value = ''
+          currentToolCalls.value = []  // 清空
           // 等 DOM 更新完再滚（push 和 currentAnswer 清空都触发 Vue 渲染）
           nextTick(() => {
             const el = messagesRef.value
@@ -346,6 +468,7 @@ async function sendMessage() {
   } finally {
     streaming.value = false
     currentAnswer.value = ''
+    currentToolCalls.value = []
     abortController.value = null
     scheduleScroll(true)
   }
@@ -366,6 +489,7 @@ function newConversation() {
   messages.value = []
   conversationId.value = null
   currentAnswer.value = ''
+  currentToolCalls.value = []
   ElMessage.success('已开始新对话')
 }
 
@@ -383,8 +507,19 @@ function onKeydown(e) {
   }
 }
 
-// 兜底：流式回答变化时滚动（如果用户已在底部）
-watch(currentAnswer, () => scheduleScroll())
+// 流式回答变化时触发防抖渲染 + 自动滚动
+watch(currentAnswer, (newVal) => {
+  scheduleRender(newVal)  // 防抖：100ms 才 render 一次
+  scheduleScroll()        // 持续滚到底
+})
+
+// 流结束时立即 render 一次（避免最后几十个字符被 debounce 卡掉）
+watch(streaming, (isStreaming, wasStreaming) => {
+  if (wasStreaming && !isStreaming) {
+    if (_renderTimer) clearTimeout(_renderTimer)
+    renderedCurrentAnswer.value = renderMarkdownImmediate(currentAnswer.value)
+  }
+})
 
 onMounted(async () => {
   await nextTick()
@@ -653,6 +788,124 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   margin-top: 6px;
   padding: 0 4px;
+}
+
+/* ===== 工具调用折叠卡片 ===== */
+.tool-calls {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-call-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.tool-call-card:hover {
+  border-color: #cbd5e1;
+}
+.tool-call-card[open] {
+  background: #fff;
+}
+
+.tool-call-card > summary {
+  padding: 6px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+  list-style: none;  /* 去掉默认三角 */
+}
+.tool-call-card > summary::-webkit-details-marker { display: none; }
+.tool-call-card > summary::before {
+  content: '▶';
+  font-size: 10px;
+  color: #94a3b8;
+  transition: transform 0.15s;
+}
+.tool-call-card[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.tool-icon { font-size: 14px; }
+.tool-name {
+  font-family: 'SF Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+}
+.tool-status {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+}
+.tool-status.ok { color: #10b981; }
+.tool-status.pending { color: #f59e0b; }
+
+.tool-detail {
+  padding: 8px 12px 10px;
+  border-top: 1px solid #f1f5f9;
+  background: #fafbfc;
+}
+.tool-section { margin-top: 6px; }
+.tool-section:first-child { margin-top: 0; }
+.tool-label {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-bottom: 2px;
+  font-weight: 500;
+}
+.tool-pre {
+  font-family: 'SF Mono', Consolas, Monaco, monospace;
+  font-size: 12px;
+  color: #334155;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ===== Think 块（AI 推理过程）===== */
+.think-block {
+  margin-bottom: 12px;
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  font-size: 12px;
+  overflow: hidden;
+}
+.think-block > summary {
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #92400e;
+  font-weight: 500;
+  user-select: none;
+  list-style: none;
+}
+.think-block > summary::-webkit-details-marker { display: none; }
+.think-block > summary::before {
+  content: '💭 ';
+  margin-right: 2px;
+}
+.think-pre {
+  margin: 0;
+  padding: 8px 12px 10px;
+  background: rgba(255, 255, 255, 0.5);
+  color: #78350f;
+  font-family: 'SF Mono', Consolas, Monaco, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .ts {
