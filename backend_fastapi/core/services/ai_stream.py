@@ -34,7 +34,14 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
 
     # 构造消息（合并历史）
     messages = [
-        {"role": "system", "content": "你是项目报价系统的 AI 助手。善用工具查真实数据，回答必须用中文，简洁清晰。"}
+        {"role": "system", "content": """你是项目报价系统的 AI 助手。善用工具查真实数据，回答必须用中文，简洁清晰。
+
+**重要规则**：
+1. 调工具后，如果工具结果已经足够回答用户问题 → **必须直接输出最终答案**，不要再调工具
+2. 不要重复调同一个工具（除非参数不同）
+3. 工具结果不够明确时，可以再调一次补充信息
+4. 最多调用 2-3 个工具就必须出答案
+"""}
     ]
     if history:
         messages.extend(history)
@@ -44,6 +51,9 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
     max_steps = max_steps  # 从参数传入，默认 20
     tools_used = []
     final_answer = ""
+    # 防失控：记录最近 N 步的 (tool_name, tool_args) 用于检测重复
+    recent_calls = []  # [(tool_name, json_args), ...]  最近 3 步
+    last_warning_step = 0  # 上次警告 step，避免每步都警告
 
     try:
         while steps < max_steps:
@@ -77,6 +87,30 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
                 elif etype == "done":
                     # 这一轮 LLM 完成
                     if tool_name:
+                        # 防失控：检测重复调用
+                        args_json = json.dumps(tool_args, sort_keys=True, ensure_ascii=False)
+                        call_sig = (tool_name, args_json)
+                        recent_calls.append(call_sig)
+                        # 只保留最近 3 步
+                        if len(recent_calls) > 3:
+                            recent_calls = recent_calls[-3:]
+
+                        # 检测：连续 3 步调同一个工具（参数相同）→ 强制退出
+                        if len(recent_calls) >= 3 and len(set(recent_calls[-3:])) == 1:
+                            # 同样的 (tool_name, args) 已经连续调了 3 次
+                            logger_msg = f"检测到重复调用 {tool_name}({args_json}) 3 次，强制退出"
+                            yield {
+                                "type": "warning",
+                                "message": logger_msg,
+                            }
+                            yield {
+                                "type": "done",
+                                "answer": final_answer or f"AI 重复调用工具 {tool_name} 超过 3 次，已自动停止。请换个问法或提供更多上下文。",
+                                "steps": steps,
+                                "tools_used": tools_used,
+                            }
+                            return
+
                         # 2. 执行工具
                         yield {"type": "tool_executing", "name": tool_name}
                         try:
@@ -97,7 +131,7 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
                             "content": "",
                             "tool_calls": [{"id": event.get("id", f"call_{steps}"),
                                             "type": "function",
-                                            "function": {"name": tool_name, "arguments": json.dumps(tool_args, ensure_ascii=False)}}]
+                                            "function": {"name": tool_name, "arguments": args_json}}]
                         })
                         messages.append({
                             "role": "tool",
