@@ -1,22 +1,49 @@
 <template>
   <div class="ai-chat-page">
+    <!-- 左侧会话历史侧边栏 -->
+    <aside class="sessions-sidebar">
+      <div class="sidebar-header">
+        <el-button type="primary" size="small" @click="newConversation" :icon="Plus" style="width: 100%;">
+          新对话
+        </el-button>
+      </div>
+      <div class="sessions-list">
+        <div
+          v-for="s in aiChatStore.sessionList"
+          :key="s.id"
+          :class="['session-item', s.id === aiChatStore.currentSessionId ? 'active' : '']"
+          @click="switchToSession(s.id)"
+        >
+          <el-icon class="session-icon"><ChatLineRound /></el-icon>
+          <span class="session-title">{{ s.title || '新对话' }}</span>
+          <el-icon
+            class="session-delete"
+            @click.stop="deleteSessionConfirm(s.id)"
+          >
+            <Delete />
+          </el-icon>
+        </div>
+        <div v-if="aiChatStore.sessionList.length === 0" class="empty-hint">
+          还没有会话，点击"新对话"开始
+        </div>
+      </div>
+    </aside>
+
+    <!-- 主内容区 -->
+    <div class="chat-main">
     <!-- 顶部栏 -->
     <div class="top-bar">
       <div class="brand">
         <div class="logo">🤖</div>
         <div class="brand-text">
           <h1>AI 智能助手</h1>
-          <span class="brand-sub">{{ toolCount }} 个业务工具 · 流式响应</span>
+          <span class="brand-sub">{{ toolCount }} 个业务工具 · 流式响应 · 历史已保存</span>
         </div>
       </div>
       <div class="top-actions">
         <el-button v-if="streaming" type="warning" plain size="small" @click="stopGeneration">
           <el-icon><CircleClose /></el-icon>
           停止生成
-        </el-button>
-        <el-button size="small" @click="newConversation">
-          <el-icon><Plus /></el-icon>
-          新对话
         </el-button>
       </div>
     </div>
@@ -57,6 +84,11 @@
               </el-avatar>
             </div>
             <div class="bubble-wrap">
+              <!-- warning 横幅（如：防失控） -->
+              <div v-if="msg.warning" class="warning-banner">
+                <span class="warning-icon">⚠️</span>
+                <span class="warning-text">{{ msg.warning }}</span>
+              </div>
               <div :class="['bubble', `bubble-${msg.role}`]">
                 <div class="bubble-content" v-html="renderMarkdownImmediate(msg.content)"></div>
               </div>
@@ -115,6 +147,11 @@
             </el-avatar>
           </div>
           <div class="bubble-wrap">
+            <!-- 流式期间的 warning -->
+            <div v-if="currentWarning" class="warning-banner">
+              <span class="warning-icon">⚠️</span>
+              <span class="warning-text">{{ currentWarning }}</span>
+            </div>
             <div class="bubble bubble-assistant">
               <div class="bubble-content">
                 <span v-if="currentAnswer" v-html="renderedCurrentAnswer"></span>
@@ -182,14 +219,16 @@
         </div>
       </div>
     </div>
+    </div><!-- /chat-main -->
   </div>
 </template>
 
 <script setup>
 import { ref, nextTick, onMounted, onBeforeUnmount, watch, computed } from 'vue'
-import { Plus, CircleClose, ArrowUpBold } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Plus, CircleClose, ArrowUpBold, ChatLineRound, Delete } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiAPI } from '../api/ai'
+import { useAIChatStore } from '../stores/aiChat'
 
 // ===== 防抖渲染：避免流式过程中每个 token 都跑 regex =====
 // 流式期间 100ms 才 render 一次，用户感知不到延迟，但 Vue 触发次数减少 10x
@@ -209,12 +248,18 @@ function renderSync(text) {
 
 // ===== 状态 =====
 // 单条消息结构：
-//   { id, role, content, ts, tools: ['name1'], toolCalls: [{name, args, result}] }
-const messages = ref([])         // 已完成的消息
+//   { id, role, content, ts, tools: ['name1'], toolCalls: [{name, args, result}], warning: '...' }
+const aiChatStore = useAIChatStore()
+// messages 是当前会话的消息数组（响应式，绑定到 store）
+const messages = computed({
+  get: () => aiChatStore.currentSession?.messages || [],
+  set: () => { /* 禁止直接赋值；只能通过 store.addMessage 修改 */ }
+})
 const inputText = ref('')
 const streaming = ref(false)
 const currentAnswer = ref('')
 const currentToolCalls = ref([]) // 流式期间的 tool_call 列表（实时累计）
+const currentWarning = ref('')  // 流式期间的 warning（防失控等）
 const conversationId = ref(null)
 const messagesRef = ref(null)
 const toolCount = ref(15)
@@ -364,8 +409,7 @@ async function sendMessage() {
   if (!text || streaming.value) return
 
   // 1) 用户消息入列
-  const userMsg = { id: nextId++, role: 'user', content: text, ts: Date.now() }
-  messages.value.push(userMsg)
+  aiChatStore.addMessage({ id: nextId++, role: 'user', content: text, ts: Date.now() })
   inputText.value = ''
   // 强制滚到底（用户消息必须可见）
   nextTick(() => {
@@ -414,16 +458,18 @@ async function sendMessage() {
           // 流式期间的内容已经全部进 currentAnswer（fullAnswer），
           // 渲染气泡由下面 push 触发；push 后 nextTick 强制滚到底
           const finalContent = fullAnswer || event.answer || ''
-          messages.value.push({
+          aiChatStore.addMessage({
             id: nextId++,
             role: 'assistant',
             content: finalContent,
             tools: toolsUsed,
             toolCalls: [...currentToolCalls.value],  // 快照
+            warning: currentWarning.value || undefined,  // 携带 warning（如有）
             ts: Date.now(),
           })
           currentAnswer.value = ''
           currentToolCalls.value = []  // 清空
+          currentWarning.value = ''  // 清空 warning
           // 等 DOM 更新完再滚（push 和 currentAnswer 清空都触发 Vue 渲染）
           nextTick(() => {
             const el = messagesRef.value
@@ -431,13 +477,18 @@ async function sendMessage() {
           })
         } else if (event.type === 'error') {
           ElMessage.error(`AI 错误: ${event.message}`)
-          messages.value.push({
+          aiChatStore.addMessage({
             id: nextId++,
             role: 'assistant',
             content: `⚠️ ${event.message}`,
             tools: [],
             ts: Date.now(),
           })
+          scheduleScroll(true)
+        } else if (event.type === 'warning') {
+          // 防失控检测到：累计 warning 到当前回答
+          currentWarning.value = (currentWarning.value || '') +
+            (currentWarning.value ? '\n' : '') + event.message
           scheduleScroll(true)
         }
       },
@@ -447,7 +498,7 @@ async function sendMessage() {
     if (e?.name === 'CanceledError' || abortController.value?.signal.aborted) {
       // 用户主动停止：把已收的内容保留为一条消息
       if (fullAnswer) {
-        messages.value.push({
+        aiChatStore.addMessage({
           id: nextId++,
           role: 'assistant',
           content: fullAnswer + '\n\n_（已停止生成）_',
@@ -457,7 +508,7 @@ async function sendMessage() {
       }
     } else {
       ElMessage.error(`请求失败: ${e?.message || e}`)
-      messages.value.push({
+      aiChatStore.addMessage({
         id: nextId++,
         role: 'assistant',
         content: `⚠️ 网络错误: ${e?.message || e}`,
@@ -469,6 +520,7 @@ async function sendMessage() {
     streaming.value = false
     currentAnswer.value = ''
     currentToolCalls.value = []
+    currentWarning.value = ''
     abortController.value = null
     scheduleScroll(true)
   }
@@ -486,11 +538,45 @@ function newConversation() {
     ElMessage.warning('请先停止当前生成')
     return
   }
-  messages.value = []
+  aiChatStore.createSession()
   conversationId.value = null
   currentAnswer.value = ''
   currentToolCalls.value = []
+  currentWarning.value = ''
   ElMessage.success('已开始新对话')
+}
+
+// 切换会话
+function switchToSession(id) {
+  if (streaming.value) {
+    ElMessage.warning('请先停止当前生成')
+    return
+  }
+  if (aiChatStore.switchSession(id)) {
+    conversationId.value = null  // 重置后端 conversation_id（新会话由后端新建）
+    currentAnswer.value = ''
+    currentToolCalls.value = []
+    currentWarning.value = ''
+  }
+}
+
+// 删除会话（带确认）
+async function deleteSessionConfirm(id) {
+  if (streaming.value) {
+    ElMessage.warning('请先停止当前生成')
+    return
+  }
+  try {
+    await ElMessageBox.confirm('确定删除此会话？', '确认', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+    })
+    aiChatStore.deleteSession(id)
+    ElMessage.success('已删除')
+  } catch {
+    // 用户取消
+  }
 }
 
 function askSuggestion(s) {
@@ -524,6 +610,10 @@ watch(streaming, (isStreaming, wasStreaming) => {
 onMounted(async () => {
   await nextTick()
   setupScrollObserver()
+  // 初始化会话：如果没有当前会话，自动新建一个
+  if (!aiChatStore.currentSession) {
+    aiChatStore.createSession()
+  }
   // 拉工具数（可选，不阻塞 UI）
   try {
     const r = await aiAPI.health?.()
@@ -540,10 +630,127 @@ onBeforeUnmount(() => {
 <style scoped>
 /* ===== 整体布局 ===== */
 .ai-chat-page {
-  display: flex;
-  flex-direction: column;
+  display: flex;  /* 横向布局：sidebar + main */
+  flex-direction: row;
   height: 100dvh;  /* 直接视口高度，不被父级 flex 撑开 */
   background: linear-gradient(180deg, #f9fafb 0%, #f3f4f6 100%);
+}
+
+/* ===== 左侧会话历史侧边栏 ===== */
+.sessions-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: #fafbfc;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.sidebar-header {
+  padding: 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.sessions-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sessions-list::-webkit-scrollbar { width: 4px; }
+.sessions-list::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 2px;
+}
+
+.session-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #374151;
+  transition: background 0.12s;
+  user-select: none;
+}
+.session-item:hover {
+  background: #e5e7eb;
+}
+.session-item.active {
+  background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+  color: #4338ca;
+  font-weight: 500;
+}
+
+.session-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.session-title {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-delete {
+  font-size: 13px;
+  color: #9ca3af;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s;
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 3px;
+}
+.session-item:hover .session-delete { opacity: 1; }
+.session-delete:hover {
+  color: #ef4444;
+  background: #fee2e2;
+}
+
+.empty-hint {
+  text-align: center;
+  color: #9ca3af;
+  font-size: 12px;
+  padding: 24px 12px;
+}
+
+/* ===== 主聊天区 ===== */
+.chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ===== Warning 横幅（防失控等）===== */
+.warning-banner {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  padding: 6px 12px;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #92400e;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+}
+.warning-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.warning-text {
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .top-bar {
