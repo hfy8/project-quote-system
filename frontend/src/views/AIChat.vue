@@ -1,11 +1,5 @@
 <template>
   <div class="ai-chat-page">
-    <!-- 🔖 调试版本标签：v2 打字机 + 合并 \n+ -->
-    <div style="position: fixed; top: 4px; right: 4px; z-index: 9999;
-                background: #ff5722; color: white; padding: 2px 8px;
-                font-size: 11px; border-radius: 3px; font-weight: bold;">
-      v2 TYPEWRITER ✅
-    </div>
     <!-- 左侧会话历史侧边栏 -->
     <aside class="sessions-sidebar">
       <div class="sidebar-header">
@@ -56,8 +50,9 @@
 
     <!-- 聊天主区 -->
     <div class="chat-shell">
-      <!-- 消息流 -->
-      <div class="messages" ref="messagesRef">
+      <!-- 消息流（外层滚动容器撑满全宽，内层消息内容 960px 居中） -->
+      <div class="messages-scroll" ref="messagesRef">
+      <div class="messages">
         <!-- 欢迎卡片：只在空消息时显示 -->
         <div v-if="messages.length === 0" class="welcome">
           <div class="welcome-icon">💬</div>
@@ -197,6 +192,7 @@
           </div>
         </div>
       </div>
+      </div><!-- /messages-scroll -->
 
       <!-- 输入区 -->
       <div class="composer">
@@ -834,32 +830,35 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;  /* 关键：让内部 flex 正确收缩 */
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-  padding: 0 24px;
 }
 
-.messages {
+/* 外层滚动容器：撑满 chat-shell 全宽，滚动条在边缘 */
+.messages-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 0 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  scroll-behavior: smooth;
+  min-height: 0;
   /* 自定义滚动条 */
   scrollbar-width: thin;
   scrollbar-color: #d1d5db transparent;
 }
-
-.messages::-webkit-scrollbar { width: 6px; }
-.messages::-webkit-scrollbar-track { background: transparent; }
-.messages::-webkit-scrollbar-thumb {
+.messages-scroll::-webkit-scrollbar { width: 6px; }
+.messages-scroll::-webkit-scrollbar-track { background: transparent; }
+.messages-scroll::-webkit-scrollbar-thumb {
   background: #d1d5db;
   border-radius: 3px;
 }
-.messages::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+.messages-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* 内层消息内容：960px 居中，内容撑开高度，不做滚动 */
+.messages {
+  margin: 0 auto;
+  max-width: 960px;
+  width: 100%;
+  padding: 24px 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
 
 /* ===== 欢迎页 ===== */
 .welcome {
@@ -919,7 +918,7 @@ onBeforeUnmount(() => {
 .avatar { flex-shrink: 0; }
 
 .bubble-wrap {
-  max-width: calc(100% - 56px);
+  max-width: min(960px, calc(100% - 56px));
   display: flex;
   flex-direction: column;
   min-width: 0;  /* 关键：让 flex 子项能收缩到内容宽度 */
@@ -1153,6 +1152,9 @@ onBeforeUnmount(() => {
 /* ===== 输入区 ===== */
 .composer {
   padding: 12px 0 20px;
+  margin: 0 auto;
+  max-width: 960px;
+  width: 100%;
   background: linear-gradient(180deg, transparent 0%, #f9fafb 30%);
 }
 

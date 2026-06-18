@@ -2647,6 +2647,52 @@ def list_my_conversations(limit: int = 10) -> str:
     }, ensure_ascii=False)
 
 
+
+
+
+# ============== 块 10：原始 SQL 查询 ==============
+@tool("execute_sql")
+def execute_sql(sql: str, limit: int = 50) -> str:
+    """对数据库执行只读 SQL SELECT 查询。当需要的数据超过已有组合工具的能力范围时使用——跨表汇总、批量对比、复杂聚合。
+
+    重要规则：
+    1. 只允许 SELECT 开头
+    2. limit 默认 50，最大 200
+    3. 建议先了解表结构（看 db_schema_reference 模块）
+
+    Args:
+        sql: SELECT SQL 语句
+        limit: 最大返回行数
+
+    Returns:
+        JSON: {"columns": [...], "rows": [[...], ...], "total_rows": N}
+    """
+    import re
+    import json as _json
+    sql_stripped = sql.strip()
+    if not re.match(r'^\s*SELECT\b', sql_stripped, re.IGNORECASE):
+        return _json.dumps({"error": "只允许 SELECT 查询"}, ensure_ascii=False)
+    limit = min(limit, 200)
+    from db import db_session_factory
+    session = db_session_factory()
+    try:
+        from sqlalchemy import text
+        result = session.execute(text(sql))
+        columns = list(result.keys())
+        rows = []
+        for i, row in enumerate(result):
+            if i >= limit:
+                break
+            rows.append([str(v) if v is not None else None for v in row])
+        return _json.dumps({
+            "columns": columns, "rows": rows, "total_rows": len(rows),
+        }, ensure_ascii=False)
+    except Exception as e:
+        return _json.dumps({"error": str(e)}, ensure_ascii=False)
+    finally:
+        session.close()
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 
 
@@ -2776,6 +2822,28 @@ TOOLS += [
             }
         }
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "execute_sql",
+            "description": "【最终手段-直接数据库查询】对PostgreSQL执行只读SELECT查询。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sql": {
+                        "type": "string",
+                        "description": "SELECT SQL语句"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "最大返回行数(最多200)"
+                    }
+                },
+                "required": ["sql"]
+            }
+        }
+    }
 ]
 
 
