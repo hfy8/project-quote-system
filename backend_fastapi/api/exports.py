@@ -37,7 +37,8 @@ from fpdf import FPDF
 
 # 中文字体路径
 import os
-FONT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts')
+# exports.py 在 backend_fastapi/api/，fonts/ 与 api/ 同级
+FONT_DIR = os.path.join(os.path.dirname(__file__), '..', 'fonts')
 FONT_REGULAR = os.path.join(FONT_DIR, 'simhei.ttf')
 FONT_BOLD = os.path.join(FONT_DIR, 'simhei.ttf')
 
