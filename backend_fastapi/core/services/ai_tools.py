@@ -2693,6 +2693,216 @@ def execute_sql(sql: str, limit: int = 50) -> str:
         session.close()
 
 
+# ============== 块 11：系统日志读取（admin/manager 限定） ==============
+import os as _os
+import re as _re
+from datetime import datetime, timedelta as _td
+from pathlib import Path as _Path
+
+_LOG_FILE = _Path(__file__).resolve().parent.parent.parent / "logs" / "app.log"
+# 兜底：可能在容器里 logs 路径不同
+if not _LOG_FILE.parent.exists():
+    _LOG_FILE = _Path("/home/rs8568/project-quote-system/backend_fastapi/logs/app.log")
+
+
+def _parse_log_line_ts(line: str):
+    """从日志行提取时间戳。uvicorn 默认格式: '2026-06-22 10:00:00,123 [INFO] uvicorn...'"""
+    # 兼容多种格式
+    m = _re.match(r'^(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)', line)
+    if m:
+        ts_str = m.group(1).replace('T', ' ').replace(',', '.')
+        try:
+            return datetime.fromisoformat(ts_str.split('.')[0])
+        except ValueError:
+            pass
+    return None
+
+
+def _level_in_line(line: str, level: str) -> bool:
+    """判断日志行是否匹配级别。uvicorn 输出没显式级别，用关键词兜底。"""
+    upper = line.upper()
+    if level == 'ERROR':
+        return 'ERROR' in upper or 'TRACEBACK' in upper or 'EXCEPTION' in upper
+    if level == 'WARNING':
+        return 'WARN' in upper or 'ERROR' in upper or 'TRACEBACK' in upper or 'EXCEPTION' in upper
+    return True  # INFO / 空 = 全部
+
+
+@tool("tail_app_logs")
+def tail_app_logs(lines: int = 50, level: str = "") -> str:
+    """读取后端应用日志的最后 N 行。
+
+    Args:
+        lines: 要返回的最后行数（默认 50，最大 500）
+        level: 日志级别过滤：ERROR / WARNING / INFO / 空（全部）
+
+    Returns:
+        JSON: {lines: [...], file_size_mb, total_lines_read, level_filter}
+    """
+    import json as _json
+    lines = max(1, min(int(lines or 50), 500))
+    level = (level or "").upper()
+
+    if not _LOG_FILE.exists():
+        return _json.dumps({
+            "error": f"日志文件不存在: {_LOG_FILE}",
+            "hint": "请用 ./start.sh 启动后端，让日志重定向到 logs/app.log"
+        }, ensure_ascii=False)
+
+    try:
+        # 高效读取最后 N 行：从文件末尾往前读 chunks
+        file_size = _LOG_FILE.stat().st_size
+        chunk_size = 8192
+        blocks = []
+        remaining = file_size
+        with open(_LOG_FILE, 'rb') as f:
+            while remaining > 0 and sum(len(b) for b in blocks) < lines * 200:
+                read_size = min(chunk_size, remaining)
+                f.seek(remaining - read_size)
+                block = f.read(read_size)
+                blocks.insert(0, block)
+                remaining -= read_size
+                if remaining <= 0:
+                    break
+            text = b''.join(blocks).decode('utf-8', errors='replace')
+        all_lines = text.splitlines()
+        # 重新从文件完整读取最后 N 行（避免 chunk 边界截断中间行）
+        with open(_LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+        tail = all_lines[-lines:] if len(all_lines) > lines else all_lines
+
+        # 应用级别过滤
+        if level:
+            tail = [ln for ln in tail if _level_in_line(ln, level)]
+
+        # 去除尾随换行符
+        tail = [ln.rstrip('\n') for ln in tail]
+
+        return _json.dumps({
+            "lines": tail,
+            "count": len(tail),
+            "file": str(_LOG_FILE),
+            "file_size_mb": round(file_size / (1024 * 1024), 3),
+            "level_filter": level or "ALL",
+        }, ensure_ascii=False)
+    except Exception as e:
+        return _json.dumps({"error": f"读取日志失败: {e}"}, ensure_ascii=False)
+
+
+@tool("grep_app_logs")
+def grep_app_logs(pattern: str, context_lines: int = 2, max_matches: int = 30) -> str:
+    """在应用日志中搜索匹配 pattern 的行（支持正则）。
+
+    Args:
+        pattern: 要搜索的关键字或正则表达式
+        context_lines: 每个匹配的前后上下文行数（默认 2）
+        max_matches: 最大匹配条数（默认 30）
+
+    Returns:
+        JSON: {matches: [{line_no, content, context_before, context_after}], total_matches, ...}
+    """
+    import json as _json
+    if not pattern:
+        return _json.dumps({"error": "pattern 不能为空"}, ensure_ascii=False)
+    context_lines = max(0, min(int(context_lines or 2), 20))
+    max_matches = max(1, min(int(max_matches or 30), 200))
+
+    if not _LOG_FILE.exists():
+        return _json.dumps({"error": f"日志文件不存在: {_LOG_FILE}"}, ensure_ascii=False)
+
+    try:
+        regex = _re.compile(pattern, _re.IGNORECASE)
+    except _re.error as e:
+        return _json.dumps({"error": f"无效的正则: {e}"}, ensure_ascii=False)
+
+    try:
+        with open(_LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+    except Exception as e:
+        return _json.dumps({"error": f"读取日志失败: {e}"}, ensure_ascii=False)
+
+    matches = []
+    for i, line in enumerate(all_lines):
+        if regex.search(line):
+            ctx_before = ''.join(all_lines[max(0, i - context_lines):i]).rstrip('\n')
+            ctx_after = ''.join(all_lines[i + 1:i + 1 + context_lines]).rstrip('\n')
+            matches.append({
+                "line_no": i + 1,
+                "content": line.rstrip('\n'),
+                "context_before": ctx_before,
+                "context_after": ctx_after,
+            })
+            if len(matches) >= max_matches:
+                break
+
+    return _json.dumps({
+        "matches": matches,
+        "count": len(matches),
+        "truncated": len(matches) >= max_matches,
+        "total_lines_searched": len(all_lines),
+        "pattern": pattern,
+    }, ensure_ascii=False)
+
+
+@tool("get_recent_errors")
+def get_recent_errors(minutes: int = 30, include_warnings: bool = False) -> str:
+    """提取最近 N 分钟内的错误/异常。
+
+    Args:
+        minutes: 回溯多少分钟（默认 30，最大 1440）
+        include_warnings: 是否包含 WARNING 级别
+
+    Returns:
+        JSON: {errors: [...], count, time_range}
+    """
+    import json as _json
+    minutes = max(1, min(int(minutes or 30), 1440))
+    cutoff = datetime.now() - _td(minutes=minutes)
+
+    if not _LOG_FILE.exists():
+        return _json.dumps({"error": f"日志文件不存在: {_LOG_FILE}"}, ensure_ascii=False)
+
+    try:
+        with open(_LOG_FILE, 'r', encoding='utf-8', errors='replace') as f:
+            all_lines = f.readlines()
+    except Exception as e:
+        return _json.dumps({"error": f"读取日志失败: {e}"}, ensure_ascii=False)
+
+    errors = []
+    # 倒序遍历（最新错误优先）
+    for i in range(len(all_lines) - 1, -1, -1):
+        line = all_lines[i]
+        upper = line.upper()
+        is_error = 'ERROR' in upper or 'TRACEBACK' in upper or 'EXCEPTION' in upper
+        is_warning = 'WARN' in upper
+        if is_error or (include_warnings and is_warning):
+            ts = _parse_log_line_ts(line)
+            if ts is None or ts >= cutoff:
+                # 提取可能的 traceback 后续行（最多 5 行）
+                ctx = [line.rstrip('\n')]
+                for j in range(1, 6):
+                    if i + j < len(all_lines) and all_lines[i + j].startswith((' ', '\t', 'File ', 'Traceback')):
+                        ctx.append(all_lines[i + j].rstrip('\n'))
+                    else:
+                        break
+                errors.append({
+                    "line_no": i + 1,
+                    "timestamp": ts.isoformat() if ts else None,
+                    "content": '\n'.join(ctx),
+                })
+                if len(errors) >= 50:
+                    break
+
+    return _json.dumps({
+        "errors": errors,
+        "count": len(errors),
+        "minutes": minutes,
+        "cutoff": cutoff.isoformat(),
+        "include_warnings": include_warnings,
+        "file": str(_LOG_FILE),
+    }, ensure_ascii=False)
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 
 
@@ -2841,6 +3051,79 @@ TOOLS += [
                     }
                 },
                 "required": ["sql"]
+            }
+        }
+    },
+    # ============== 块 11：系统日志读取（admin/manager 限定） ==============
+    {
+        "type": "function",
+        "function": {
+            "name": "tail_app_logs",
+            "description": "【系统日志-查看最后N行】读取后端应用日志（logs/app.log）的最后 N 行。用于排查刚刚发生的错误或异常。需要 admin 权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "lines": {
+                        "type": "integer",
+                        "default": 50,
+                        "description": "要返回的最后行数（默认 50，最大 500）"
+                    },
+                    "level": {
+                        "type": "string",
+                        "enum": ["", "ERROR", "WARNING", "INFO"],
+                        "default": "",
+                        "description": "日志级别过滤：ERROR=只看错误，WARNING=错误+警告，INFO=所有，空=所有"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "grep_app_logs",
+            "description": "【系统日志-关键字搜索】在应用日志（logs/app.log）中搜索包含指定关键字的行，返回匹配内容+上下文。可用于查特定用户、特定错误码、特定 API 路径的访问记录。需要 admin 权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "要搜索的关键字或正则表达式（支持 re 语法）"
+                    },
+                    "context_lines": {
+                        "type": "integer",
+                        "default": 2,
+                        "description": "每个匹配的前后上下文行数（默认 2）"
+                    },
+                    "max_matches": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "最大匹配条数（默认 30）"
+                    }
+                },
+                "required": ["pattern"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_recent_errors",
+            "description": "【系统日志-错误汇总】提取最近 N 分钟内的错误/异常堆栈。用于诊断'现在系统是不是有问题'。需要 admin 权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {
+                        "type": "integer",
+                        "default": 30,
+                        "description": "回溯多少分钟（默认 30，最大 1440=24小时）"
+                    },
+                    "include_warnings": {
+                        "type": "boolean",
+                        "default": False,
+                        "description": "是否包含 WARNING 级别（默认只返回 ERROR）"
+                    }
+                }
             }
         }
     }

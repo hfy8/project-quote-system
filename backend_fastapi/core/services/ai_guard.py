@@ -13,6 +13,10 @@ TOOL_PERMISSIONS: Dict[str, str] = {
     "add_knowledge": "system.edit",              # 知识库管理 = 系统设置
     "upsert_knowledge_embedding": "system.edit", # 知识库管理 = 系统设置
     "create_quotation": "quotation.create",
+    # 系统日志读取：仅 admin/manager（看 system.edit 权限码）
+    "tail_app_logs": "system.edit",
+    "grep_app_logs": "system.edit",
+    "get_recent_errors": "system.edit",
 }
 
 # 工具 → 操作日志 action 映射
