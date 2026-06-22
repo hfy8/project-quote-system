@@ -179,18 +179,25 @@ def ask_llm_stream(messages: List[Dict[str, str]], temperature: float = 0.7,
                 stream=True,
                 timeout=60,
             )
-            data_json = {}
-            try:
-                # Peek first byte to see if it's an error
-                data_json = resp.json()
-            except (json.JSONDecodeError, ValueError):
-                pass  # not JSON = streaming response, good
 
-            if resp.status_code == 429 or (data_json and "error" in data_json and _is_rate_limit(data_json)):
+            # Check HTTP status first
+            if resp.status_code == 429:
                 logger.warning("⚠️ MiniMax 额度不足，切换到 DeepSeek")
+                resp.close()
                 raise FallbackTrigger("rate_limit")
-            if "error" in data_json:
-                yield {"type": "error", "message": f"MiniMax 报错: {data_json['error']}"}
+            if resp.status_code >= 400:
+                # Try to read error body, but don't break streaming
+                try:
+                    err_body = resp.text
+                    err_json = json.loads(err_body) if err_body else {}
+                    err_msg = err_json.get("error", {}).get("message", err_body[:200])
+                except Exception:
+                    err_msg = f"HTTP {resp.status_code}"
+                if _is_rate_limit({"error": err_msg}):
+                    logger.warning("⚠️ MiniMax 额度不足，切换到 DeepSeek")
+                    resp.close()
+                    raise FallbackTrigger("rate_limit")
+                yield {"type": "error", "message": f"MiniMax 报错: {err_msg}"}
                 return
 
             # Normal streaming
