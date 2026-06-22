@@ -244,12 +244,6 @@ const filters = reactive({
   keyword: ''
 })
 
-const pagination = reactive({
-  page: 1,
-  pageSize: 10,
-  total: 0
-})
-
 // 版本历史相关
 const versionDialogVisible = ref(false)
 const versionDetailDialogVisible = ref(false)
