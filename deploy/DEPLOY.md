@@ -96,21 +96,56 @@ nano deploy/.env   # 填入真实密码/密钥
 请求 (端口80)
     │
     ▼
-┌─────── frontend (nginx) ───────┐
+┌─── frontend (nginx 容器) ────┐
 │  /                  → 静态资源  │
 │  /api/...           → proxy    │
-└─────────┬──────────────────────┘
-           │ (容器内: backend:5001)
-           ▼
-┌─────── backend (uvicorn) ──────┐
-│  FastAPI + 39个 AI 工具        │
-│  logs/ → app.log               │
-└─────────┬──────────────────────┘
-           │ (远程: 10.60.100.3:5432)
-           ▼
-┌─────── PostgreSQL ─────────────┐
-│  quotation_db  (36个报价单)    │
-└────────────────────────────────┘
+└─────────┬───────────────┘
+          │ (容器内: backend:5001)
+          ▼
+┌─── backend (uvicorn 容器) ───┐
+│  FastAPI + 39个 AI 工具      │
+│  logs/ → app.log            │
+│  启动时:  init_db.py 创表   │
+└─────────┬───────────────┘
+          │ (容器内: db:5432)
+          ▼
+┌─── db (pgvector/pgvector) ───┐
+│  PostgreSQL 16 + vector 扩展 │
+│  自动:  CREATE EXTENSION     │
+│  启动时:  建表 + 基础数据    │
+│  持久化:  db_data volume      │
+└─────────────────────────────┘
+```
+
+## 启动顺序
+
+`docker compose up` 按 `depends_on` 顺序自动:
+
+1. **db** - PostgreSQL 启动 → 执行 `db-init/*.sql` (装 vector 扩展)
+2. **backend** - 等待 db healthy → 跑 `init_db.py` (建表+基础数据) → 启动 uvicorn
+3. **frontend** - 等待 backend healthy → 启动 nginx
+
+## 首次部署后
+
+admin 用户自动创建，**默认密码 `admin123`**，登录后请立即修改。
+
+数据库是空的，需要 seed 测试数据：
+
+```bash
+# 进入 backend 容器
+docker compose exec backend bash
+
+# 运行 seed 脚本
+python3 scripts/seed_quotations.py
+```
+
+## 已有数据的部署
+
+如果 DB 已有数据，不想再 init：
+
+```bash
+# .env 文件里
+SKIP_DB_INIT=true
 ```
 
 ## 注意事项

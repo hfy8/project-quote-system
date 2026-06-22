@@ -4,11 +4,17 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 系统依赖：gcc 编译、libpq PG 驱动、curl 健康检查、fonts-freefont 兜底字体
+# 系统依赖：
+#   gcc        - 编译 Python 包
+#   libpq-dev  - psycopg2 编译依赖
+#   curl       - 健康检查 + 下载
+#   postgresql-client - pg_isready 等待 db
+#   fonts-noto-cjk   - PDF 中文字体兜底
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    postgresql-client \
     fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
@@ -16,10 +22,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend_fastapi/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制后端代码（含 fonts/ 中文字体）
+# 复制后端代码（含 fonts/ 中文字体、scripts/、main.py）
 COPY backend_fastapi/ .
 
-# 复制 entrypoint 脚本
+# 复制 entrypoint
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
@@ -29,7 +35,7 @@ RUN mkdir -p /app/logs
 EXPOSE 5001
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:5001/api/ai/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
