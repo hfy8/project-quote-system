@@ -17,8 +17,7 @@
         :data="filteredAssignments"
         v-loading="loading"
         stripe
-        style="width: 100%;"
-        max-height="100%"
+        style="width: 100%; height: calc(100% - 93px);"
       >
         <el-table-column prop="quotation_name" label="报价单名称" min-width="180" />
         <el-table-column prop="quotation_scheme_no" label="方案号" width="150" />
