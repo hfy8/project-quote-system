@@ -95,16 +95,15 @@
               </div>
               <!-- 工具调用折叠卡片（已完成消息）-->
               <div v-if="msg.toolCalls && msg.toolCalls.length" class="tool-calls">
-                <details
-                  v-for="(tc, i) in msg.toolCalls"
-                  :key="i"
-                  class="tool-call-card"
-                >
+                <details v-for="(tc, i) in msg.toolCalls.slice(-1)" :key="i" class="tool-call-card">
                   <summary>
                     <span class="tool-icon">🔧</span>
                     <span class="tool-name">{{ tc.name }}</span>
                     <span class="tool-status" :class="tc.result ? 'ok' : 'pending'">
                       {{ tc.result ? '✓' : '…' }}
+                    </span>
+                    <span v-if="msg.toolCalls.length > 1" class="tool-count">
+                      （最新 1/{{ msg.toolCalls.length }}）
                     </span>
                   </summary>
                   <div class="tool-detail">
@@ -162,29 +161,28 @@
                 <span v-if="streaming" class="cursor">▍</span>
               </div>
             </div>
-            <!-- 流式期间的 tool_calls（实时显示）-->
+            <!-- 流式期间的 tool_calls（只显示最新一个，新 call 覆盖旧 call）-->
             <div v-if="currentToolCalls.length" class="tool-calls">
               <details
-                v-for="(tc, i) in currentToolCalls"
-                :key="i"
+                :key="currentToolCalls.length - 1"
                 class="tool-call-card"
                 open
               >
                 <summary>
                   <span class="tool-icon">🔧</span>
-                  <span class="tool-name">{{ tc.name }}</span>
-                  <span class="tool-status" :class="tc.result ? 'ok' : 'pending'">
-                    {{ tc.result ? '✓' : '…' }}
+                  <span class="tool-name">{{ currentToolCalls[currentToolCalls.length - 1].name }}</span>
+                  <span class="tool-status" :class="currentToolCalls[currentToolCalls.length - 1].result ? 'ok' : 'pending'">
+                    {{ currentToolCalls[currentToolCalls.length - 1].result ? '✓' : '…' }}
                   </span>
                 </summary>
                 <div class="tool-detail">
-                  <div v-if="tc.arguments && Object.keys(tc.arguments).length" class="tool-section">
+                  <div v-if="currentToolCalls[currentToolCalls.length - 1].arguments && Object.keys(currentToolCalls[currentToolCalls.length - 1].arguments).length" class="tool-section">
                     <div class="tool-label">参数：</div>
-                    <pre class="tool-pre">{{ formatJSON(tc.arguments) }}</pre>
+                    <pre class="tool-pre">{{ formatJSON(currentToolCalls[currentToolCalls.length - 1].arguments) }}</pre>
                   </div>
-                  <div v-if="tc.result" class="tool-section">
+                  <div v-if="currentToolCalls[currentToolCalls.length - 1].result" class="tool-section">
                     <div class="tool-label">结果：</div>
-                    <pre class="tool-pre">{{ tc.result }}</pre>
+                    <pre class="tool-pre">{{ currentToolCalls[currentToolCalls.length - 1].result }}</pre>
                   </div>
                 </div>
               </details>
@@ -1081,6 +1079,12 @@ onBeforeUnmount(() => {
 }
 .tool-status.ok { color: #10b981; }
 .tool-status.pending { color: #f59e0b; }
+.tool-count {
+  margin-left: 6px;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 400;
+}
 
 .tool-detail {
   padding: 8px 12px 10px;
