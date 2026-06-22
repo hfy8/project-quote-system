@@ -1,64 +1,63 @@
-version: '3.8'
+# v17 Docker Compose - 单机版（不用 swarm、不用 replicas）
+# 复用现有的远程 PostgreSQL 10.60.100.3
+# 用法:
+#   cp .env.example .env  # 填入密码
+#   docker compose up -d
+#   docker compose logs -f
 
 services:
   backend:
-    image: ${REGISTRY}/project-quote/backend:${VERSION}
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    image: project-quote-backend:latest
+    container_name: quote-backend
+    restart: unless-stopped
     environment:
-      - FLASK_ENV=production
-      - DATABASE_URL=postgresql://postgres:Quote2024@db:5432/quotation_db
-      - JWT_SECRET_KEY=${JWT_SECRET:-quote-jwt-secret-2024}
-      - SECRET_KEY=${SECRET_KEY:-quote-secret-2024}
-    deploy:
-      replicas: 2
-      update_config:
-        parallelism: 1
-        delay: 10s
-      restart_policy:
-        condition: on-failure
-        max_attempts: 3
+      - ENV=production
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      - LLM_BASE_URL=${LLM_BASE_URL}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - SECRET_KEY=${SECRET_KEY}
+      - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
+    volumes:
+      - backend_logs:/app/logs   # 日志持久化
+    networks:
+      - quote-net
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/api/ai/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    image: project-quote-frontend:latest
+    container_name: quote-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      db:
+      backend:
         condition: service_healthy
     networks:
       - quote-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/quotations"]
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
 
-  frontend:
-    image: ${REGISTRY}/project-quote/frontend:${VERSION}
-    deploy:
-      replicas: 2
-      restart_policy:
-        condition: on-failure
-    networks:
-      - quote-net
-
-  db:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_DB=quotation_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=Quote2024
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - quote-net
-
 volumes:
-  pgdata:
+  backend_logs:
 
 networks:
   quote-net:
-    driver: overlay
+    driver: bridge

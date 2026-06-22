@@ -1,20 +1,35 @@
+# Backend Dockerfile (v17 FastAPI)
+# 单机部署: docker compose up
 FROM python:3.12-slim
 
 WORKDIR /app
 
+# 系统依赖：gcc 编译、libpq PG 驱动、curl 健康检查、fonts-freefont 兜底字体
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     libpq-dev \
     curl \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-COPY backend/requirements.txt .
+# Python 依赖
+COPY backend_fastapi/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY backend/ .
+# 复制后端代码（含 fonts/ 中文字体）
+COPY backend_fastapi/ .
+
+# 复制 entrypoint 脚本
 COPY deploy/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 5000
+# 日志目录
+RUN mkdir -p /app/logs
+
+EXPOSE 5001
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -fsS http://localhost:5001/api/ai/health || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
