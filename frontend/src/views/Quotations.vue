@@ -178,7 +178,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { hasPermission } from '../router'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -263,7 +263,7 @@ const openVersionCompare = () => {
 }
 
 // 分页
-const pagination = ref({ page: 1, pageSize: 20, total: 0 })
+const pagination = reactive({ page: 1, pageSize: 20, total: 0 })
 
 const fetchData = async () => {
   loading.value = true
