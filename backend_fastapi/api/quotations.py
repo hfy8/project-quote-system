@@ -354,9 +354,13 @@ def get_quotations(
     parent_only: Optional[str] = Query(None),
     parent_id: Optional[int] = Query(None),
     keyword: Optional[str] = Query(None),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=200, description="每页条数"),
 ):
     user = db.query(User).get(int(user_id))
 
+    # 同时查父报价单和子报价单（父报价单分页，子报价单作为 _children 内联）
+    # 先查所有匹配的报价单
     query = db.query(Quotation)
 
     # 普通用户只能看到自己参与的报价单
@@ -384,19 +388,50 @@ def get_quotations(
             )
         )
 
-    # 子报价单数量
-    child_counts = db.query(
-        Quotation.parent_id, sa_func.count(Quotation.id)
-    ).filter(Quotation.parent_id.isnot(None)).group_by(Quotation.parent_id).all()
-    child_count_map = {pid: cnt for pid, cnt in child_counts}
+    # 一次性取所有数据（含 child_count，不分页）
+    # ⚠️ 不能用 .distinct() 因为 outerjoin 会造成重复行
+    all_quotations = query.order_by(Quotation.created_at.desc()).all()
 
-    quotations = query.order_by(Quotation.created_at.desc()).all()
-    result = []
-    for q in quotations:
+    # 分离父子（去重：outerjoin 可能导致重复）
+    seen_ids = set()
+    parents = []
+    children_map = {}
+    for q in all_quotations:
+        if q.id in seen_ids:
+            continue
+        seen_ids.add(q.id)
         qd = q.to_dict()
-        qd['child_count'] = child_count_map.get(q.id, 0)
-        result.append(qd)
-    return JSONResponse(content=result, status_code=200)
+        if q.parent_id:
+            # 子报价单
+            if q.parent_id not in children_map:
+                children_map[q.parent_id] = []
+            children_map[q.parent_id].append(qd)
+        else:
+            parents.append(qd)
+
+    # 计算总父报价单数
+    total_parents = len(parents)
+
+    # 分页（只在父报价单上分页）
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_parents = parents[start:end]
+
+    # 给当前页的父报价单附加子报价单
+    for qd in page_parents:
+        cids = children_map.pop(qd['id'], [])
+        if cids:
+            qd['_children'] = cids
+            qd['child_count'] = len(cids)
+        else:
+            qd['child_count'] = 0
+
+    return JSONResponse(content={
+        "items": page_parents,
+        "total": total_parents,
+        "page": page,
+        "page_size": page_size,
+    }, status_code=200)
 
 
 @router.post("/quotations")
@@ -703,25 +738,46 @@ def get_quotation_trends(
 def get_my_assignments(
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=200, description="每页条数"),
 ):
     uid = int(user_id)
     user = db.query(User).get(uid)
     if not user:
         raise HTTPException(status_code=401, detail='用户不存在')
 
-    participant_records = db.query(QuotationParticipant).filter_by(user_id=uid).all()
+    # 分页查参与记录
+    base_query = db.query(QuotationParticipant).filter_by(user_id=uid)
+    total = base_query.count()
+    participant_records = base_query.order_by(QuotationParticipant.created_at.desc())\
+        .offset((page - 1) * page_size).limit(page_size).all()
+
+    if not participant_records:
+        return JSONResponse(content={"items": [], "total": 0, "page": page, "page_size": page_size}, status_code=200)
+
+    # 批量查报价单
+    qids = [p.quotation_id for p in participant_records]
+    quotations = db.query(Quotation).filter(Quotation.id.in_(qids)).all()
+    q_map = {q.id: q for q in quotations}
+
+    # 批量查模块数和物料数
+    module_counts = dict(
+        db.query(Module.quotation_id, sa_func.count(Module.id))
+        .filter(Module.quotation_id.in_(qids))
+        .group_by(Module.quotation_id).all()
+    )
+    material_counts = dict(
+        db.query(Module.quotation_id, sa_func.count(ModuleMaterial.id))
+        .join(Module, ModuleMaterial.module_id == Module.id)
+        .filter(Module.quotation_id.in_(qids))
+        .group_by(Module.quotation_id).all()
+    )
 
     result = []
     for p in participant_records:
-        quotation = db.query(Quotation).get(p.quotation_id)
+        quotation = q_map.get(p.quotation_id)
         if not quotation:
             continue
-
-        module_count = db.query(Module).filter_by(quotation_id=quotation.id).count()
-        material_count = db.query(sa_func.count(ModuleMaterial.id)).join(Module).filter(
-            Module.quotation_id == quotation.id
-        ).scalar() or 0
-
         result.append({
             'quotation_id': quotation.id,
             'quotation_name': quotation.name,
@@ -729,39 +785,61 @@ def get_my_assignments(
             'quotation_status': quotation.status,
             'participant_type': p.participant_type,
             'business_owner_name': quotation.business_owner.real_name if quotation.business_owner else None,
-            'module_count': module_count,
-            'material_count': material_count,
+            'module_count': module_counts.get(p.quotation_id, 0),
+            'material_count': material_counts.get(p.quotation_id, 0),
             'created_at': quotation.created_at.isoformat() if quotation.created_at else None,
         })
 
-    return JSONResponse(content=result, status_code=200)
+    return JSONResponse(content={
+        "items": result,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }, status_code=200)
 
 
 @router.get("/quotations/my-assigned-modules")
 def get_my_assigned_modules(
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(20, ge=1, le=200, description="每页条数"),
 ):
     uid = int(user_id)
     user = db.query(User).get(uid)
     if not user:
         raise HTTPException(status_code=401, detail='用户不存在')
-    # 获取用户作为模块参与者的所有模块
 
-    participant_records = db.query(ModuleParticipant).filter_by(user_id=uid).all()
+    # 分页查模块参与记录
+    base_query = db.query(ModuleParticipant).filter_by(user_id=uid)
+    total = base_query.count()
+    participant_records = base_query.order_by(ModuleParticipant.created_at.desc())\
+        .offset((page - 1) * page_size).limit(page_size).all()
+
+    if not participant_records:
+        return JSONResponse(content={"items": [], "total": 0, "page": page, "page_size": page_size}, status_code=200)
 
     module_ids = [p.module_id for p in participant_records]
-
-    if not module_ids:
-        return JSONResponse(content=[], status_code=200)
-
     modules = db.query(Module).filter(Module.id.in_(module_ids)).all()
+    mod_map = {m.id: m for m in modules}
+
+    # 批量查物料数
+    material_counts = dict(
+        db.query(ModuleMaterial.module_id, sa_func.count(ModuleMaterial.id))
+        .filter(ModuleMaterial.module_id.in_(module_ids))
+        .group_by(ModuleMaterial.module_id).all()
+    )
+
+    # 批量查报价单
+    qids = list(set(m.quotation_id for m in modules if m.quotation_id))
+    q_map = {}
+    if qids:
+        quotations = db.query(Quotation).filter(Quotation.id.in_(qids)).all()
+        q_map = {q.id: q for q in quotations}
 
     result = []
     for mod in modules:
-        material_count = db.query(ModuleMaterial).filter_by(module_id=mod.id).count()
-        quotation = db.query(Quotation).get(mod.quotation_id)
-
+        quotation = q_map.get(mod.quotation_id)
         result.append({
             'id': mod.id,
             'module_name': mod.name,
@@ -770,10 +848,15 @@ def get_my_assigned_modules(
             'quotation_name': quotation.name if quotation else None,
             'quotation_scheme_no': quotation.scheme_no if quotation else None,
             'quotation_status': quotation.status if quotation else None,
-            'material_count': material_count
+            'material_count': material_counts.get(mod.id, 0),
         })
 
-    return JSONResponse(content=result, status_code=200)
+    return JSONResponse(content={
+        "items": result,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }, status_code=200)
 
 
 @router.get("/quotations/{quotation_id}")

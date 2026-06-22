@@ -28,8 +28,8 @@
         <el-table-column prop="material_count" label="物料数" width="80" align="center" />
         <el-table-column label="报价单状态" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.quotation_status === 'approved' ? 'success' : 'info'" size="small">
-              {{ row.quotation_status === 'approved' ? '已归档' : '草稿' }}
+            <el-tag :type="getStatusTag(row.quotation_status)" size="small">
+              {{ formatStatus(row.quotation_status) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -49,6 +49,19 @@
           <el-empty description="您还没有被分配的报价单" />
         </template>
       </el-table>
+
+      <!-- 分页 -->
+      <div class="pagination-wrapper" v-if="pagination.total > pagination.pageSize">
+        <el-pagination
+          v-model:current-page="pagination.page"
+          v-model:page-size="pagination.pageSize"
+          :total="pagination.total"
+          :page-sizes="[10, 20, 50]"
+          layout="total, sizes, prev, pager, next"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
     </el-card>
   </div>
 </template>
@@ -63,11 +76,22 @@ const router = useRouter()
 const assignments = ref([])
 const loading = ref(false)
 const filterType = ref('')
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 
 const filteredAssignments = computed(() => {
   if (!filterType.value) return assignments.value
   return assignments.value.filter(a => a.participant_type === filterType.value)
 })
+
+function getStatusTag(status) {
+  const map = { draft: 'info', submitted: 'warning', approved: 'success', archived: 'success', cancelled: 'danger', rejected: 'danger' }
+  return map[status] || 'info'
+}
+
+function formatStatus(status) {
+  const map = { draft: '草稿', submitted: '待审核', approved: '已归档', archived: '已归档', cancelled: '已取消', rejected: '已驳回' }
+  return map[status] || status
+}
 
 function getTypeLabel(type) {
   return typeNameMap.value[type] || type
@@ -78,7 +102,6 @@ function getTypeTag(type) {
   return map[type] || 'info'
 }
 
-// 动态加载参与类型中文名
 const typeNameMap = ref({})
 
 async function loadParticipantTypes() {
@@ -97,10 +120,6 @@ async function loadParticipantTypes() {
   }
 }
 
-onMounted(() => {
-  loadParticipantTypes()
-})
-
 function formatDate(dateStr) {
   if (!dateStr) return '-'
   const d = new Date(dateStr)
@@ -111,15 +130,25 @@ function viewQuotation(row) {
   router.push(`/my-assignments/quotations/${row.quotation_id}/view`)
 }
 
-onMounted(() => {
+const handleSizeChange = (size) => {
+  pagination.value.pageSize = size
+  pagination.value.page = 1
   fetchAssignments()
-})
+}
+
+const handlePageChange = (page) => {
+  pagination.value.page = page
+  fetchAssignments()
+}
 
 async function fetchAssignments() {
   loading.value = true
   try {
-    const res = await request.get('/quotations/my-assignments')
-    assignments.value = res.data || res || []
+    const res = await request.get('/quotations/my-assignments', {
+      params: { page: pagination.value.page, page_size: pagination.value.pageSize }
+    })
+    assignments.value = res.items || res.data || res || []
+    pagination.value.total = res.total || assignments.value.length
   } catch (error) {
     console.error('获取分配失败:', error)
     assignments.value = []
@@ -127,6 +156,11 @@ async function fetchAssignments() {
     loading.value = false
   }
 }
+
+onMounted(() => {
+  loadParticipantTypes()
+  fetchAssignments()
+})
 </script>
 
 <style scoped>
@@ -138,5 +172,11 @@ async function fetchAssignments() {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.pagination-wrapper {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

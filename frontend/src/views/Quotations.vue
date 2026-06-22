@@ -267,41 +267,26 @@ const openVersionCompare = () => {
   versionCompareVisible.value = true
 }
 
-// 子报价单树形
-const childrenMap = ref({})  // { parentId: [child] }
-const expandedRows = ref(new Set())
+// 分页
+const pagination = ref({ page: 1, pageSize: 20, total: 0 })
 
 const fetchData = async () => {
   loading.value = true
   try {
-    const params = {}
+    const params = {
+      page: pagination.page,
+      page_size: pagination.pageSize,
+    }
     if (filters.status) params.status = filters.status
     if (filters.type) params.type = filters.type
     if (filters.keyword) params.keyword = filters.keyword
 
     const res = await quotationsAPI.getList(params)
     const items = res.items || res || []
-    console.log('API返回所有报价单:', items.length, items.map(i => ({ id: i.id, name: i.name, parent_id: i.parent_id, child_count: i.child_count })))
 
-    // 分离父报价单和子报价单
-    tableData.value = []
-    childrenMap.value = {}
-    for (const item of items) {
-      if (item.parent_id) {
-        if (!childrenMap.value[item.parent_id]) {
-          childrenMap.value[item.parent_id] = []
-        }
-        childrenMap.value[item.parent_id].push({ ...item, _hidden: true })
-      } else {
-        if (childrenMap.value[item.id]) {
-          item._children = childrenMap.value[item.id]
-        }
-        tableData.value.push(item)
-      }
-    }
-    console.log('父报价单行:', tableData.value.map(i => ({ id: i.id, name: i.name, _children: i._children?.length })))
-    console.log('childrenMap:', Object.keys(childrenMap.value))
-    pagination.total = tableData.value.length
+    // 后端已分页+内联子报价单 _children
+    tableData.value = items
+    pagination.total = res.total || items.length
   } catch (error) {
     console.error('Failed to fetch quotations:', error)
     ElMessage.error('获取报价单列表失败')
@@ -318,7 +303,11 @@ const formatType = (type) => {
 const formatStatus = (status) => {
   const statuses = {
     draft: '草稿',
-    approved: '已归档'
+    submitted: '待审核',
+    approved: '已归档',
+    archived: '已归档',
+    cancelled: '已取消',
+    rejected: '已驳回',
   }
   return statuses[status] || status
 }

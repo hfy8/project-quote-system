@@ -7,7 +7,7 @@ class Module(db.Model):
     __tablename__ = 'modules'
 
     id = db.Column(db.Integer, primary_key=True)
-    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
+    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
     name_en = db.Column(db.String(150), nullable=True, comment='英文名称')
     code = db.Column(db.String(50), nullable=True)
@@ -42,8 +42,8 @@ class ModuleParticipant(db.Model):
     __tablename__ = 'module_participants'
 
     id = db.Column(db.Integer, primary_key=True)
-    module_id = db.Column(db.Integer, db.ForeignKey('modules.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    module_id = db.Column(db.Integer, db.ForeignKey('modules.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     user = db.relationship('User', backref='module_participations')

@@ -8,13 +8,13 @@ class Message(db.Model):
 
     id = db.Column(db.BigInteger, primary_key=True)
     sender_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=True)  # 系统消息sender为NULL
-    recipient_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False)
+    recipient_id = db.Column(db.BigInteger, db.ForeignKey('users.id'), nullable=False, index=True)
     title = db.Column(db.String(200), nullable=False)
     content = db.Column(db.Text, nullable=False)
     type = db.Column(db.String(50), nullable=False)  # module_member_added/change_request_submitted/change_request_approved/change_request_rejected/version_updated
-    related_id = db.Column(db.BigInteger, nullable=True)  # 关联的报价单/变更申请ID
-    related_type = db.Column(db.String(50), nullable=True)  # quotation/change_request
-    is_read = db.Column(db.Boolean, default=False)
+    related_id = db.Column(db.BigInteger, nullable=True, index=True)  # 关联的报价单/变更申请ID
+    related_type = db.Column(db.String(50), nullable=True)
+    is_read = db.Column(db.Boolean, default=False, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

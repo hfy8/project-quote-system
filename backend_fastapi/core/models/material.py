@@ -7,17 +7,17 @@ class Material(db.Model):
     __tablename__ = 'materials'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    spec = db.Column(db.String(100), nullable=True)
-    brand = db.Column(db.String(50), nullable=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    spec = db.Column(db.String(100), nullable=True, index=True)
+    brand = db.Column(db.String(50), nullable=True, index=True)
     unit = db.Column(db.String(20), nullable=True)
     unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0)
-    category = db.Column(db.String(20), nullable=False, default='普通件')  # 大件/普通件/其他件
+    category = db.Column(db.String(20), nullable=False, default='普通件', index=True)  # 大件/普通件/其他件
     # 三项关键参数（灵活字段，机构/电控选料参考）
     param1 = db.Column(db.String(100), nullable=True)   # 关键参数01
     param2 = db.Column(db.String(100), nullable=True)  # 关键参数02
     param3 = db.Column(db.String(100), nullable=True)   # 关键参数03
-    status = db.Column(db.String(20), nullable=False, default='active')  # active/inactive
+    status = db.Column(db.String(20), nullable=False, default='active', index=True)  # active/inactive
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def to_dict(self):
@@ -42,8 +42,8 @@ class ModuleMaterial(db.Model):
     __tablename__ = 'module_materials'
 
     id = db.Column(db.Integer, primary_key=True)
-    module_id = db.Column(db.Integer, db.ForeignKey('modules.id'), nullable=False)
-    material_id = db.Column(db.Integer, db.ForeignKey('materials.id'), nullable=False)
+    module_id = db.Column(db.Integer, db.ForeignKey('modules.id'), nullable=False, index=True)
+    material_id = db.Column(db.Integer, db.ForeignKey('materials.id'), nullable=False, index=True)
     is_other = db.Column(db.Boolean, default=False)  # true 表示其他类物料
     quantity = db.Column(db.Integer, nullable=False, default=1)
     unit_price_override = db.Column(db.Numeric(10, 2), nullable=True)  # 仅material_id=24时使用

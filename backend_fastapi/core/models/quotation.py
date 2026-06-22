@@ -7,18 +7,18 @@ class Quotation(db.Model):
     __tablename__ = 'quotations'
 
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    type = db.Column(db.String(20), nullable=False)  # single/line
-    scheme_no = db.Column(db.String(50), nullable=True)
-    status = db.Column(db.String(20), nullable=False, default='draft')  # draft/approved
-    business_owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    type = db.Column(db.String(20), nullable=False, index=True)  # single/line
+    scheme_no = db.Column(db.String(50), nullable=True, index=True)
+    status = db.Column(db.String(20), nullable=False, default='draft', index=True)  # draft/approved
+    business_owner_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, index=True)
+    creator_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     tax_rate = db.Column(db.Float, default=0.13, comment='税率')  # 默认13%增值税
     profit_rate = db.Column(db.Float, default=0.0, comment='对外利润率，如 0.15 表示 15%')  # 对外利润率
     currency = db.Column(db.String(10), default='CNY', comment='币种')  # CNY/USD/EUR
     current_version = db.Column(db.Integer, default=1, comment='当前版本号')
     parent_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=True, index=True, comment='父报价单ID（子报价单引用线体）')
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 关系
@@ -59,8 +59,8 @@ class QuotationParticipant(db.Model):
     __tablename__ = 'quotation_participants'
 
     id = db.Column(db.Integer, primary_key=True)
-    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False, index=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
     participant_type = db.Column(db.String(20), nullable=False, default='project', comment='参与类型: project/agency/electrical 项目/机构/电气')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

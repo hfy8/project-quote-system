@@ -78,24 +78,12 @@ def get_logs(
 @router.get("/modules")
 def get_log_modules(db=Depends(get_db), current_user=Depends(get_current_user_id)):
     """获取日志模块列表"""
-    modules = db.query(OperationLog.module).distinct().all()
-    items = []
-    for (m,) in modules:
-        items.append({
-            'value': m,
-            'label': MODULE_TEXT.get(m, m)
-        })
+    items = [{'value': k, 'label': v} for k, v in MODULE_TEXT.items()]
     return JSONResponse(content={'items': items})
 
 
 @router.get("/actions")
 def get_log_actions(db=Depends(get_db), current_user=Depends(get_current_user_id)):
     """获取日志操作类型列表"""
-    actions = db.query(OperationLog.action).distinct().all()
-    items = []
-    for (a,) in actions:
-        items.append({
-            'value': a,
-            'label': ACTION_TEXT.get(a, a)
-        })
+    items = [{'value': k, 'label': v} for k, v in ACTION_TEXT.items()]
     return JSONResponse(content={'items': items})
