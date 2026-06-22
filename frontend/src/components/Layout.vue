@@ -548,8 +548,10 @@ onUnmounted(() => {
 .main-content {
   flex: 1;
   margin-left: 240px;
-  min-height: 100vh;
+  height: 100vh;
   overflow: auto;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 消息铃铛 */

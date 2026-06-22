@@ -171,7 +171,7 @@ onMounted(() => {
 <style scoped>
 .my-assignments {
   padding: 16px;
-  height: calc(100vh - 60px);
+  height: 100%;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
