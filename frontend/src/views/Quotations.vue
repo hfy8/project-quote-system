@@ -40,16 +40,17 @@
     </div>
 
     <!-- 数据表格 -->
-    <div class="table-container card" style="flex:1;overflow:hidden;">
+    <div class="table-container card" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
       <el-table
         :data="tableData"
         v-loading="loading"
         stripe
         class="quotations-table"
+        style="flex:1;width:100%;"
         row-key="id"
         :tree-props="{ children: '_children' }"
         default-expand-all
-        height="calc(-200px + 100vh)"
+        max-height="calc(-200px + 100vh)"
       >
         <el-table-column prop="name" label="项目名称" width="200" show-overflow-tooltip />
         <el-table-column label="" width="90" align="center">
