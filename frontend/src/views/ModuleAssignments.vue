@@ -13,7 +13,13 @@
         </div>
       </template>
 
-      <el-table :data="filteredAssignments" v-loading="loading" stripe>
+      <el-table
+        :data="filteredAssignments"
+        v-loading="loading"
+        stripe
+        style="width: 100%;"
+        max-height="100%"
+      >
         <el-table-column prop="quotation_name" label="报价单名称" min-width="180" />
         <el-table-column prop="quotation_scheme_no" label="方案号" width="150" />
         <el-table-column label="参与类型" width="100" align="center">
@@ -166,6 +172,25 @@ onMounted(() => {
 <style scoped>
 .my-assignments {
   padding: 16px;
+  height: calc(100vh - 60px);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+.my-assignments :deep(.el-card) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.my-assignments :deep(.el-card__body) {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow: hidden;
 }
 
 .card-header {
