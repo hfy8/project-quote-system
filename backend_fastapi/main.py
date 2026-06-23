@@ -29,7 +29,10 @@ logger = logging.getLogger("fastapi-app")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
 
 
-# ============== 加载后端（启动时） ==============
+# ============== 加载 .env 文件 (优先级: shell env > .env > 代码默认值) ==============
+from utils.env_loader import load_env
+load_env()
+
 # 这一步会触发 core 包导入所有 models（注册到 ModuleBase.metadata）
 from db import db, engine
 from core.config import Config
