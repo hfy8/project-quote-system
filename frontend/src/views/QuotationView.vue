@@ -2029,7 +2029,9 @@ async function submitCopyModules() {
     const totalMaterials = r.total_materials
     ElMessage.success(`成功复制 ${totalModules} 个模块（含 ${totalMaterials} 项物料）`)
     copyModuleDialogVisible.value = false
-    loadModules()  // 刷新当前模块列表
+    // 刷新模块列表 + 物料列表 (filteredModuleGroups 用 moduleMaterials)
+    await loadModules()
+    await loadModuleMaterials()
   } catch (e) {
     const msg = e?.response?.data?.error || e?.response?.data?.detail || '复制失败'
     ElMessage.error(msg)
