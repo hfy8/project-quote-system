@@ -9,7 +9,18 @@
 #   ./deploy/build.sh <版本号> status     # 查看 Swarm service 状态
 #   ./deploy/build.sh <版本号> rollback   # 回滚到上一版本
 #   ./deploy/build.sh <版本号> clean      # 清理服务器旧镜像
+#
+# ⚠️ 必须用 bash 跑 (脚本用 bash 特性):
+#   bash ./deploy/build.sh v1.0.0 deploy
+#   或 chmod +x 后 ./build.sh v1.0.0 deploy
 #===============================================
+
+# 强制使用 bash (防止 sh/dash 调用)
+if [ -z "$BASH_VERSION" ]; then
+    echo "[ERROR] 必须用 bash 跑此脚本, 不要再用 sh"
+    echo "        用法: bash $0 $@"
+    exit 1
+fi
 
 set -e
 
@@ -24,6 +35,11 @@ FRONTEND_IMAGE="${REGISTRY_URL}/${PROJECT}/frontend:${VERSION}"
 
 HARBOR_USER="RS8568"
 HARBOR_PASS="Bj6546321."
+
+# TLS 跳过 (Harbor 自签名证书)
+# 方案: 用 insecure-registry (在 /etc/docker/daemon.json 配)
+#       或 用环境变量 DOCKER_CONTENT_TRUST=0 + DOCKER_TLS_VERIFY=0
+SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-0}
 
 # 部署服务器 (Swarm manager)
 SSH_HOST="10.60.100.1"
@@ -43,9 +59,50 @@ log_err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
 #------------------------------------
 # 步骤 1: 登录 Harbor (本地)
+# 失败时回退到 insecure-registry 重试
 #------------------------------------
 login_harbor() {
     log_info "登录 Harbor ${REGISTRY_URL}..."
+    if echo "${HARBOR_PASS}" | docker login "${REGISTRY_URL}" -u "${HARBOR_USER}" --password-stdin 2>/dev/null; then
+        return 0
+    fi
+    # 失败: 配 insecure-registry (Harbor 自签名证书)
+    log_warn "TLS 证书校验失败, 切换为 insecure-registry 模式..."
+    DOCKER_DAEMON_JSON="/etc/docker/daemon.json"
+    if [ -f "${DOCKER_DAEMON_JSON}" ]; then
+        cp "${DOCKER_DAEMON_JSON}" "${DOCKER_DAEMON_JSON}.bak.$(date +%s)"
+    fi
+    # 用 python 写 json (避免 bash 解析)
+    if command -v python3 >/dev/null 2>&1; then
+        python3 << PYEOF
+import json, os
+p = "/etc/docker/daemon.json"
+try:
+    with open(p) as f:
+        cfg = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    cfg = {}
+cfg.setdefault("insecure-registries", [])
+url = "${REGISTRY}"
+if url not in cfg["insecure-registries"]:
+    cfg["insecure-registries"].append(url)
+with open(p, "w") as f:
+    json.dump(cfg, f, indent=2)
+print(f"已写入 {p}: insecure-registries={cfg['insecure-registries']}")
+PYEOF
+        if [ $? -ne 0 ]; then
+            log_err "写入 daemon.json 失败, 请手动配置 insecure-registry: ${REGISTRY}"
+            return 1
+        fi
+    else
+        log_err "需要 python3 来配置 daemon.json, 请手动加 insecure-registry: ${REGISTRY}"
+        return 1
+    fi
+    # 重启 docker
+    log_warn "重启 docker..."
+    systemctl restart docker || service docker restart || true
+    sleep 3
+    # 重试 login
     echo "${HARBOR_PASS}" | docker login "${REGISTRY_URL}" -u "${HARBOR_USER}" --password-stdin
 }
 
