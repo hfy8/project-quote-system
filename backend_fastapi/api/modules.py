@@ -288,3 +288,140 @@ def get_all_modules(
         result.append(mod_dict)
 
     return result
+
+
+# ============== 复制模块（从其他报价单）==============
+@router.post("/quotations/{quotation_id}/copy-modules", summary="从源报价单复制模块到当前报价单")
+def copy_modules_from_quotation(
+    quotation_id: int,
+    body: dict,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    从指定源报价单复制模块到当前报价单（事务内一次性完成）。
+
+    Body:
+        {
+            "source_quotation_id": int,   # 源报价单 ID
+            "module_ids": [int, ...]      # 要复制的模块 ID 列表
+        }
+
+    逻辑:
+        1. 校验权限: 同 create_module 规则 (module.create OR 是参与人)
+        2. 校验源报价单存在
+        3. 校验所有 module_id 都属于源报价单
+        4. 对每个模块:
+           - 新建 Module (同名, code 同名, 描述同名)
+           - 复制所有 ModuleMaterial (quantity, unit_price_override, is_other 全部带过去)
+        5. 提交事务, 返回新模块列表
+
+    Returns:
+        {"copied": [{"new_module_id": N, "source_module_id": M, "materials_count": K}, ...]}
+    """
+    from core.models import Module, ModuleMaterial, Quotation, User, QuotationParticipant
+    from utils.permissions import has_permission
+
+    # 参数解析
+    source_qid = body.get('source_quotation_id')
+    module_ids = body.get('module_ids', [])
+
+    if not source_qid or not isinstance(source_qid, int):
+        raise HTTPException(status_code=400, detail="source_quotation_id 必填且为整数")
+    if not module_ids or not isinstance(module_ids, list) or not all(isinstance(x, int) for x in module_ids):
+        raise HTTPException(status_code=400, detail="module_ids 必填且为整数列表")
+
+    if source_qid == quotation_id:
+        raise HTTPException(status_code=400, detail="源报价单不能与目标报价单相同")
+
+    # 权限检查 (1:1 复刻 create_module)
+    user = db.query(User).get(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    if not has_permission(user.role, "module.create"):
+        participant = db.query(QuotationParticipant).filter_by(
+            quotation_id=quotation_id, user_id=user_id
+        ).first()
+        if not participant:
+            raise HTTPException(status_code=403, detail="没有权限")
+
+    # 校验源报价单
+    source_q = db.query(Quotation).get(source_qid)
+    if not source_q:
+        raise HTTPException(status_code=404, detail=f"源报价单 #{source_qid} 不存在")
+
+    # 校验目标报价单
+    target_q = db.query(Quotation).get(quotation_id)
+    if not target_q:
+        raise HTTPException(status_code=404, detail=f"目标报价单 #{quotation_id} 不存在")
+
+    # 校验所有 module_ids 都属于源报价单
+    source_modules = db.query(Module).filter(
+        Module.id.in_(module_ids),
+        Module.quotation_id == source_qid,
+    ).all()
+    found_ids = {m.id for m in source_modules}
+    missing = set(module_ids) - found_ids
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"模块 {sorted(missing)} 不属于源报价单 #{source_qid}",
+        )
+
+    # 复制 (单事务)
+    try:
+        copied = []
+        for src_mod in source_modules:
+            # 1. 新建模块
+            new_mod = Module(
+                quotation_id=quotation_id,
+                name=src_mod.name,
+                name_en=src_mod.name_en,
+                code=src_mod.code,
+                description=src_mod.description,
+            )
+            db.add(new_mod)
+            db.flush()  # 拿到 new_mod.id
+
+            # 2. 复制物料
+            materials_count = 0
+            for src_mm in src_mod.materials:
+                new_mm = ModuleMaterial(
+                    module_id=new_mod.id,
+                    material_id=src_mm.material_id,
+                    is_other=src_mm.is_other,
+                    quantity=src_mm.quantity,
+                    unit_price_override=src_mm.unit_price_override,
+                    selected_by_id=user_id,  # 当前用户作为选人
+                )
+                db.add(new_mm)
+                materials_count += 1
+
+            copied.append({
+                "source_module_id": src_mod.id,
+                "source_module_name": src_mod.name,
+                "new_module_id": new_mod.id,
+                "new_module_name": new_mod.name,
+                "materials_count": materials_count,
+            })
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"复制失败: {str(e)}")
+
+    # 失效缓存
+    try:
+        from core.services.cache import cache_invalidate_prefix
+        cache_invalidate_prefix('quotations:list:')
+    except Exception:
+        pass
+
+    return {
+        "success": True,
+        "target_quotation_id": quotation_id,
+        "source_quotation_id": source_qid,
+        "copied": copied,
+        "total_copied": len(copied),
+        "total_materials": sum(c["materials_count"] for c in copied),
+    }

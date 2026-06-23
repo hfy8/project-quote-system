@@ -70,6 +70,7 @@
         <el-tab-pane v-if="permissions.tabs?.includes('modules')" label="模块管理" name="modules">
           <div class="module-actions">
             <el-button type="primary" @click="showAddModule">添加模块</el-button>
+            <el-button type="success" @click="showCopyModuleDialog">从其他报价单复制模块</el-button>
           </div>
 
           <el-table :data="modules" border style="width: 100%; margin-top: 16px;">
@@ -100,6 +101,97 @@
             <template #footer>
               <el-button @click="moduleDialogVisible = false">取消</el-button>
               <el-button type="primary" @click="saveModule">确定</el-button>
+            </template>
+          </el-dialog>
+
+          <!-- 复制模块弹窗 -->
+          <el-dialog v-model="copyModuleDialogVisible" title="从其他报价单复制模块" width="800px" :close-on-click-modal="false">
+            <el-form label-width="100px">
+              <el-form-item label="选择报价单">
+                <el-select
+                  v-model="copyForm.sourceQuotationId"
+                  placeholder="搜索报价单名称/方案号"
+                  filterable
+                  remote
+                  :remote-method="searchQuotationsForCopy"
+                  :loading="copyForm.searching"
+                  style="width: 100%;"
+                  @change="onCopySourceChange"
+                >
+                  <el-option
+                    v-for="q in copyForm.quotationOptions"
+                    :key="q.id"
+                    :label="`#${q.id} ${q.name} (${q.scheme_no || '无方案号'})`"
+                    :value="q.id"
+                  />
+                </el-select>
+              </el-form-item>
+
+              <el-form-item v-if="copyForm.sourceQuotationId" label="选择模块">
+                <div style="width: 100%;">
+                  <div style="margin-bottom: 8px;">
+                    <el-button size="small" @click="selectAllCopyModules" :disabled="!copyForm.availableModules.length">
+                      全选
+                    </el-button>
+                    <el-button size="small" @click="deselectAllCopyModules" :disabled="!copyForm.selectedModuleIds.length">
+                      全不选
+                    </el-button>
+                    <span style="margin-left: 12px; color: #909399; font-size: 12px;">
+                      已选 {{ copyForm.selectedModuleIds.length }} / {{ copyForm.availableModules.length }} 个模块
+                    </span>
+                  </div>
+                  <el-table
+                    :data="copyForm.availableModules"
+                    border
+                    max-height="300"
+                    @selection-change="handleCopyModuleSelection"
+                    v-loading="copyForm.loadingModules"
+                  >
+                    <el-table-column type="selection" width="50" />
+                    <el-table-column prop="id" label="ID" width="60" />
+                    <el-table-column prop="name" label="模块名称" />
+                    <el-table-column prop="name_en" label="英文名称" />
+                    <el-table-column label="物料数" width="80">
+                      <template #default="{ row }">
+                        {{ (row.materials || []).length }}
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="小计" width="100">
+                      <template #default="{ row }">
+                        ¥{{ Number(row.total || 0).toFixed(2) }}
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </el-form-item>
+
+              <el-alert
+                v-if="copyForm.sourceQuotationId"
+                type="info"
+                :closable="false"
+                show-icon
+                style="margin-top: 12px;"
+              >
+                <template #title>
+                  <span style="font-size: 13px;">
+                    确认后将复制所选模块到当前报价单
+                    <strong style="color: #409EFF;">「{{ quotation?.name }}」</strong>
+                    ，新模块将包含相同的名称和物料信息。
+                  </span>
+                </template>
+              </el-alert>
+            </el-form>
+
+            <template #footer>
+              <el-button @click="copyModuleDialogVisible = false">取消</el-button>
+              <el-button
+                type="primary"
+                :disabled="!copyForm.selectedModuleIds.length"
+                :loading="copyForm.submitting"
+                @click="submitCopyModules"
+              >
+                确定复制 ({{ copyForm.selectedModuleIds.length }})
+              </el-button>
             </template>
           </el-dialog>
         </el-tab-pane>
@@ -1105,7 +1197,19 @@ const moduleForm = reactive({
   id: null,
   name: '',
   name_en: '',
-  description: ''
+  description: '',
+})
+
+// ============== 复制模块弹窗 ==============
+const copyModuleDialogVisible = ref(false)
+const copyForm = reactive({
+  sourceQuotationId: null,
+  quotationOptions: [],   // 远程搜索结果
+  availableModules: [],   // 源报价单的模块列表
+  selectedModuleIds: [],  // 选中的模块 ID
+  searching: false,        // 搜索报价单中
+  loadingModules: false,   // 加载模块中
+  submitting: false,       // 提交复制中
 })
 
 // 物料弹窗
@@ -1845,6 +1949,92 @@ async function saveModule() {
     loadModules()
   } catch (error) {
     ElMessage.error('保存失败')
+  }
+}
+
+// ============== 复制模块 ==============
+// 打开弹窗
+function showCopyModuleDialog() {
+  copyForm.sourceQuotationId = null
+  copyForm.quotationOptions = []
+  copyForm.availableModules = []
+  copyForm.selectedModuleIds = []
+  copyModuleDialogVisible.value = true
+  // 预加载: 默认列出前 20 个草稿
+  searchQuotationsForCopy('')
+}
+
+// 远程搜索报价单
+async function searchQuotationsForCopy(keyword) {
+  if (!keyword || keyword.length < 1) {
+    // 默认加载前 20 个草稿
+    keyword = ''
+  }
+  copyForm.searching = true
+  try {
+    const r = await api.get('/quotations', {
+      params: { keyword, page: 1, page_size: 20, status: 'draft' }
+    })
+    // 过滤掉当前报价单
+    copyForm.quotationOptions = (r.items || []).filter(q => q.id !== quotationId.value)
+  } catch (e) {
+    ElMessage.error('搜索报价单失败')
+  } finally {
+    copyForm.searching = false
+  }
+}
+
+// 源报价单改变 → 加载它的模块
+async function onCopySourceChange(quotationId) {
+  copyForm.availableModules = []
+  copyForm.selectedModuleIds = []
+  if (!quotationId) return
+  copyForm.loadingModules = true
+  try {
+    const modules = await api.get(`/quotations/${quotationId}/modules`)
+    // 过滤掉 0 物料的（避免空模块）
+    copyForm.availableModules = modules
+  } catch (e) {
+    ElMessage.error('加载源报价单模块失败')
+  } finally {
+    copyForm.loadingModules = false
+  }
+}
+
+// 选择变化
+function handleCopyModuleSelection(selections) {
+  copyForm.selectedModuleIds = selections.map(m => m.id)
+}
+
+// 全选
+function selectAllCopyModules() {
+  copyForm.selectedModuleIds = copyForm.availableModules.map(m => m.id)
+}
+
+// 全不选
+function deselectAllCopyModules() {
+  copyForm.selectedModuleIds = []
+}
+
+// 提交复制
+async function submitCopyModules() {
+  if (!copyForm.sourceQuotationId || !copyForm.selectedModuleIds.length) return
+  copyForm.submitting = true
+  try {
+    const r = await api.post(`/quotations/${quotationId.value}/copy-modules`, {
+      source_quotation_id: copyForm.sourceQuotationId,
+      module_ids: copyForm.selectedModuleIds,
+    })
+    const totalModules = r.total_copied
+    const totalMaterials = r.total_materials
+    ElMessage.success(`成功复制 ${totalModules} 个模块（含 ${totalMaterials} 项物料）`)
+    copyModuleDialogVisible.value = false
+    loadModules()  // 刷新当前模块列表
+  } catch (e) {
+    const msg = e?.response?.data?.error || e?.response?.data?.detail || '复制失败'
+    ElMessage.error(msg)
+  } finally {
+    copyForm.submitting = false
   }
 }
 
