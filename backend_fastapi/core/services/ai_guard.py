@@ -17,6 +17,8 @@ TOOL_PERMISSIONS: Dict[str, str] = {
     "tail_app_logs": "system.edit",
     "grep_app_logs": "system.edit",
     "get_recent_errors": "system.edit",
+    "get_slow_queries": "system.edit",
+    "get_slow_query_stats": "system.edit",
 }
 
 # 工具 → 操作日志 action 映射

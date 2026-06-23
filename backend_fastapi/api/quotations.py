@@ -357,6 +357,17 @@ def get_quotations(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=200, description="每页条数"),
 ):
+    # ============== Redis 缓存 (30s TTL, 写时自动失效) ==============
+    from core.services.cache import cache_get, cache_set
+    cache_key = (
+        f"quotations:list:user={user_id}:status={status or ''}:type={type or ''}"
+        f":parent_only={parent_only or ''}:parent_id={parent_id or ''}"
+        f":keyword={keyword or ''}:page={page}:size={page_size}"
+    )
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return JSONResponse(content=cached, status_code=200)
+
     user = db.query(User).get(int(user_id))
 
     # 同时查父报价单和子报价单（父报价单分页，子报价单作为 _children 内联）
@@ -426,12 +437,15 @@ def get_quotations(
         else:
             qd['child_count'] = 0
 
-    return JSONResponse(content={
+    response_body = {
         "items": page_parents,
         "total": total_parents,
         "page": page,
         "page_size": page_size,
-    }, status_code=200)
+    }
+    # 写入缓存 (TTL 30s, 写操作会主动失效)
+    cache_set(cache_key, response_body, ttl=30)
+    return JSONResponse(content=response_body, status_code=200)
 
 
 @router.post("/quotations")
@@ -477,6 +491,10 @@ def create_quotation(
         resource_id=quotation.scheme_no or str(quotation.id),
         detail=f'创建报价单 "{quotation.name}"'
     )
+
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
 
     return JSONResponse(content=quotation.to_dict(), status_code=201)
 
@@ -975,6 +993,11 @@ def update_quotation(
         quotation.parent_id = data['parent_id']
 
     db.commit()
+
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
     return JSONResponse(content=quotation.to_dict(), status_code=200)
 
 
@@ -1087,6 +1110,10 @@ def update_status(
                 resource_id=str(quotation.id),
                 detail=f'撤销归档 "{quotation.name}"'
             )
+
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
 
     return JSONResponse(content=quotation.to_dict(), status_code=200)
 
@@ -1350,11 +1377,16 @@ def archive_quotation(
             related_type='quotation'
         )
 
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
     return {
         'message': '归档成功',
         'quotation': quotation.to_dict(),
         'version': version.to_dict()
     }
+
 
 
 @router.post("/quotations/{quotation_id}/unarchive")
@@ -1387,6 +1419,10 @@ def unarchive_quotation(
         resource_id=str(quotation.id),
         detail=f'撤销归档 "{quotation.name}"'
     )
+
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
 
     return {
         'message': '撤销归档成功',
@@ -1542,6 +1578,11 @@ def copy_quotation(
         db.add(new_fee)
 
     db.commit()
+
+    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
     return JSONResponse(content=new_quotation.to_dict(), status_code=201)
 
 

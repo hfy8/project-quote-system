@@ -1,0 +1,134 @@
+[
+  {
+    "id": "Q01",
+    "category": "simple_query",
+    "question": "系统里有多少个报价单？",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "36"
+    ],
+    "verify_sql": "SELECT COUNT(*) FROM quotations;",
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q02",
+    "category": "simple_query",
+    "question": "列出所有状态为草稿的报价单",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "草稿"
+    ],
+    "verify_sql": "SELECT name FROM quotations WHERE status='draft' ORDER BY name LIMIT 5;",
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q03",
+    "category": "simple_query",
+    "question": "物料分类有几种？",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "分类"
+    ],
+    "verify_sql": "SELECT COUNT(*) FROM material_categories;",
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q04",
+    "category": "join_query",
+    "question": "线体报价单有哪些？各有多少子报价单？",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "线体"
+    ],
+    "verify_sql": "\n            SELECT q.name, COUNT(c.id) as child_count\n            FROM quotations q\n            LEFT JOIN quotations c ON c.parent_id = q.id\n            WHERE q.type='line' AND q.parent_id IS NULL\n            GROUP BY q.id, q.name\n            ORDER BY q.name;\n        ",
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q05",
+    "category": "join_query",
+    "question": "谁创建了最多的报价单？前 5 名",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "用户",
+      "创建"
+    ],
+    "verify_sql": "\n            SELECT u.real_name, COUNT(q.id) as cnt\n            FROM quotations q\n            JOIN users u ON u.id = q.creator_id\n            GROUP BY u.id, u.real_name\n            ORDER BY cnt DESC\n            LIMIT 5;\n        ",
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q06",
+    "category": "business_analysis",
+    "question": "平均报价金额是多少？",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "平均",
+      "金额"
+    ],
+    "verify_sql": "SELECT AVG(total_amount) FROM quotations WHERE total_amount IS NOT NULL;",
+    "difficulty": "medium"
+  },
+  {
+    "id": "Q07",
+    "category": "business_analysis",
+    "question": "差旅费最贵的是哪几个报价单？前 5",
+    "expected_tools": [
+      "execute_sql"
+    ],
+    "expected_answer_contains": [
+      "差旅"
+    ],
+    "verify_sql": "\n            SELECT q.name, SUM(te.amount) as total_travel\n            FROM quotations q\n            JOIN travel_entries te ON te.quotation_id = q.id\n            GROUP BY q.id, q.name\n            ORDER BY total_travel DESC NULLS LAST\n            LIMIT 5;\n        ",
+    "difficulty": "hard"
+  },
+  {
+    "id": "Q08",
+    "category": "system_monitoring",
+    "question": "系统最近有什么错误？",
+    "expected_tools": [
+      "get_recent_errors"
+    ],
+    "expected_answer_contains": [
+      "错误",
+      "日志"
+    ],
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q09",
+    "category": "system_monitoring",
+    "question": "数据库慢查询有哪些？",
+    "expected_tools": [
+      "get_slow_queries"
+    ],
+    "expected_answer_contains": [
+      "慢",
+      "SQL"
+    ],
+    "difficulty": "easy"
+  },
+  {
+    "id": "Q10",
+    "category": "system_monitoring",
+    "question": "DB 性能怎么样？",
+    "expected_tools": [
+      "get_slow_query_stats"
+    ],
+    "expected_answer_contains": [
+      "性能",
+      "统计"
+    ],
+    "difficulty": "easy"
+  }
+]

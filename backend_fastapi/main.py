@@ -42,6 +42,11 @@ logger.info(f"✅ DB engine created: {Config.SQLALCHEMY_DATABASE_URI[:50]}...")
 logger.info(f"✅ 已注册 {len(ModuleBase.metadata.tables)} 个表")
 
 
+# ============== 慢 SQL 监听 (启动成本 0, 内存环形缓冲 200 条) ==============
+from core.services.slow_query_monitor import init_slow_query_monitor
+init_slow_query_monitor(engine(), threshold_ms=int(os.environ.get('SLOW_QUERY_THRESHOLD_MS', '500')))
+
+
 # ============== DB Session 依赖（从 core.auth 导入，避免循环依赖） ==============
 from core.auth import (
     get_db,

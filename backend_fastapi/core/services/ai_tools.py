@@ -2903,6 +2903,57 @@ def get_recent_errors(minutes: int = 30, include_warnings: bool = False) -> str:
     }, ensure_ascii=False)
 
 
+# ============== 块 12：慢 SQL 监控 (admin/manager 限定) ==============
+@tool("get_slow_queries")
+def get_slow_queries(limit: int = 10, min_duration_ms: int = 0) -> str:
+    """获取最近的慢 SQL 查询（执行时间 > SLOW_QUERY_THRESHOLD_MS 的 SQL）。
+
+    用于定位性能瓶颈:
+    - 问"系统有什么慢查询"、"最近慢 SQL"、"哪个接口最慢"时调用
+    - 问"为什么这个 API 慢"、"DB 性能问题"时调 get_slow_queries(limit=20) 看具体 SQL
+    - 也可以问"系统里有没有执行超过 1 秒的 SQL"
+
+    Args:
+        limit: 返回最近多少条（默认 10，最大 50）
+        min_duration_ms: 过滤条件: 只返回 >= 该值的（默认 0 = 不过滤）
+
+    Returns:
+        JSON: {queries: [{timestamp, duration_ms, sql, params}], count, stats}
+    """
+    import json as _json
+    from core.services.slow_query_monitor import slow_query_buffer
+
+    limit = max(1, min(int(limit or 10), 50))
+    min_ms = max(0, float(min_duration_ms or 0))
+
+    queries = slow_query_buffer.get_recent(limit=limit, min_ms=min_ms)
+    stats = slow_query_buffer.get_stats()
+
+    return _json.dumps({
+        "queries": queries,
+        "count": len(queries),
+        "limit": limit,
+        "min_duration_ms": min_ms,
+        "stats": stats,
+        "log_file": "logs/slow_queries.log",
+        "hint": "完整历史看 logs/slow_queries.log 文件 (用 grep_app_logs 搜索)",
+    }, ensure_ascii=False)
+
+
+@tool("get_slow_query_stats")
+def get_slow_query_stats() -> str:
+    """获取慢 SQL 统计汇总: 数量/平均/P95/最大。
+
+    问"系统性能怎么样"、"DB 慢不慢"、"最近慢查询统计"时调。
+
+    Returns:
+        JSON: {total_recent, total_since_start, avg_ms, max_ms, p95_ms}
+    """
+    import json as _json
+    from core.services.slow_query_monitor import slow_query_buffer
+    return _json.dumps(slow_query_buffer.get_stats(), ensure_ascii=False)
+
+
 # ============== 工具定义（OpenAI 协议格式） ==============
 
 
@@ -3124,6 +3175,39 @@ TOOLS += [
                         "description": "是否包含 WARNING 级别（默认只返回 ERROR）"
                     }
                 }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_slow_queries",
+            "description": "【慢SQL监控-查询】获取最近的慢 SQL（执行时间 >500ms）。用于定位性能瓶颈: '系统有什么慢查询'、'最近慢 SQL'、'哪个接口最慢'。需要 admin 权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {
+                        "type": "integer",
+                        "default": 10,
+                        "description": "返回最近多少条（默认 10，最大 50）"
+                    },
+                    "min_duration_ms": {
+                        "type": "integer",
+                        "default": 0,
+                        "description": "过滤条件: 只返回 >= 该毫秒值的（默认 0=不过滤；如想看 1秒+ 慢 SQL 传 1000）"
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_slow_query_stats",
+            "description": "【慢SQL监控-统计】获取慢 SQL 汇总: 总数/平均/P95/最大。问'系统性能怎么样'、'DB 慢不慢'时调。需要 admin 权限。",
+            "parameters": {
+                "type": "object",
+                "properties": {}
             }
         }
     }

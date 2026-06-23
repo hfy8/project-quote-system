@@ -14,6 +14,10 @@ psycopg2-binary>=2.9  # PostgreSQL 驱动
 python-jose[cryptography]>=3.3
 python-multipart>=0.0.7
 
+# Redis 缓存（AI 工具 + 列表页热数据）
+redis>=5.0
+hiredis>=2.3.0   # 加速解析
+
 # PDF / Word 导出
 reportlab>=4.0
 python-docx>=1.0
