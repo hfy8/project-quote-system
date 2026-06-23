@@ -75,6 +75,17 @@ case "${ACTION}" in
     shell-frontend)
         docker compose exec frontend /bin/sh
         ;;
+    shell-redis)
+        docker compose exec redis redis-cli
+        ;;
+    shell-db)
+        docker compose exec db psql -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-quotation_db}
+        ;;
+    cache-stats)
+        # 调用后端 debug 端点看 cache 命中率
+        TOKEN=${DEBUG_TOKEN:-hermes-debug-2024}
+        docker compose exec backend curl -s -H "X-Debug-Token: $TOKEN" http://localhost:5001/api/_debug/cache-stats | python3 -m json.tool
+        ;;
     clean)
         log_warn "将删除容器+卷+镜像（数据会丢）"
         read -p "确认? (y/N) " -n 1 -r
@@ -85,7 +96,7 @@ case "${ACTION}" in
         fi
         ;;
     *)
-        echo "用法: $0 {up|down|logs|rebuild|status|shell-backend|shell-frontend|clean}"
+        echo "用法: $0 {up|down|logs|rebuild|status|shell-backend|shell-frontend|shell-redis|shell-db|cache-stats|clean}"
         exit 1
         ;;
 esac

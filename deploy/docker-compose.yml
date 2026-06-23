@@ -1,24 +1,24 @@
 # v17 Docker Compose - 单机版
-# 自动启动 PostgreSQL + pgvector + 后端 + 前端
+# 自动启动 PostgreSQL + pgvector + Redis + 后端 + 前端
 # 用法:
-#   cp .env.example .env  # 填入密码
+#   cp .env.example .env
 #   docker compose up -d
 #   docker compose logs -f
 
 services:
-  # ============== PostgreSQL + pgvector ==============
   db:
-    image: pgvector/pgvector:pg16   # 内置 vector 扩展
+    image: pgvector/pgvector:pg16
     container_name: quote-db
     restart: unless-stopped
     environment:
       - POSTGRES_DB=${POSTGRES_DB:-quotation_db}
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=***    volumes:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}    
+    volumes:
       - db_data:/var/lib/postgresql/data
-      - ./db-init:/docker-entrypoint-initdb.d   # 自动执行 .sql
+      - ./db-init:/docker-entrypoint-initdb.d
     ports:
-      - "${POSTGRES_PORT_HOST:-5432}:5432"      # 暴露给宿主机（可选）
+      - "${POSTGRES_PORT_HOST:-5432}:5432"
     networks:
       - quote-net
     healthcheck:
@@ -28,7 +28,22 @@ services:
       retries: 10
       start_period: 10s
 
-  # ============== Backend (FastAPI) ==============
+  redis:
+    image: redis:7-alpine
+    container_name: quote-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - quote-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   backend:
     build:
       context: ..
@@ -39,10 +54,12 @@ services:
     environment:
       - ENV=production
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
       - LLM_BASE_URL=${LLM_BASE_URL}
-      - LLM_API_KEY=***      - LLM_MODEL=${LLM_MODEL}
-      - MINIMAX_API_KEY=${MINI...Y}
-      - DEEPSEEK_API_KEY=${DEEP...Y}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - SECRET_KEY=${SECRET_KEY}
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
@@ -51,6 +68,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - quote-net
     healthcheck:
@@ -58,9 +77,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s   # 等待 init_db 完成
+      start_period: 30s
 
-  # ============== Frontend (Nginx) ==============
   frontend:
     build:
       context: ..
@@ -82,8 +100,9 @@ services:
       retries: 3
 
 volumes:
-  db_data:          # DB 数据持久化
-  backend_logs:     # 后端日志
+  db_data:
+  redis_data:
+  backend_logs:
 
 networks:
   quote-net:

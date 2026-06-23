@@ -7,10 +7,12 @@ deploy/
 ├── .env.example          # 环境变量模板（复制为 .env）
 ├── Dockerfile.backend    # 后端镜像（Python 3.12 + uvicorn :5001）
 ├── Dockerfile.frontend   # 前端镜像（node构建 + nginx :80）
-├── docker-compose.yml    # 单机编排（不含DB容器）
+├── docker-compose.yml    # 单机编排（db + redis + backend + frontend）
 ├── docker-deploy.sh      # 一键部署脚本
 ├── entrypoint.sh         # 后端容器入口（uvicorn 多worker启动）
 ├── nginx.conf            # 反向代理配置（/api/ → backend:5001）
+├── db-init/              # PostgreSQL 初始化 SQL（建 vector 扩展）
+│   └── 01-extensions.sql
 └── build.sh              # 旧版（Harbor ← 已废弃，参考用）
 ```
 
@@ -20,11 +22,27 @@ deploy/
 |---|---|
 | **Docker** | 已安装（推荐 Docker Desktop + WSL2 集成）|
 | **Docker Compose** | V2（`docker compose` 命令）|
-| **远程 PostgreSQL** | `10.60.100.3:5432/quotation_db`（已有数据）|
 | **网络** | 容器能访问 MiniMax/DeepSeek API |
 
-> ⚠️ 本项目**不使用容器内的 PostgreSQL**（复用 10.60.100.3），
-> docker-compose.yml 中**不包含 db 服务**。
+## 服务清单
+
+docker-compose 启动 4 个容器：
+
+| 服务 | 镜像 | 端口 | 作用 |
+|---|---|---|---|
+| **db** | `pgvector/pgvector:pg16` | 5432 (可选暴露) | PostgreSQL + pgvector |
+| **redis** | `redis:7-alpine` | 6379 (内网) | 缓存 (取代本地内存 LRU) |
+| **backend** | `python:3.12-slim` 自建 | 5001 (内网) | FastAPI + uvicorn |
+| **frontend** | `node:20-alpine` 两阶段 + nginx | 80 (暴露) | Vue3 + 反向代理 |
+
+**Redis 缓存**：
+- 自动启用（无需密码，内网通信）
+- 后端优先用 Redis；不可用时自动降级到内存 LRU
+- 健康检查: `redis-cli ping`
+
+**调试技巧**：
+- 想从宿主机连 Redis：`docker compose exec redis redis-cli`
+- 想从宿主机连 DB：`docker compose exec db psql -U postgres`
 
 ## 快速部署
 
@@ -103,7 +121,11 @@ nano deploy/.env   # 填入真实密码/密钥
           │ (容器内: backend:5001)
           ▼
 ┌─── backend (uvicorn 容器) ───┐
-│  FastAPI + 39个 AI 工具      │
+│  FastAPI + 41 个 AI 工具     │
+│  ┌────────────┐ ┌──────────┐ │
+│  │ cache 层   │─│ Redis    │ │
+│  │ (LRU 兜底)  │ │ 容器内    │ │
+│  └────────────┘ └──────────┘ │
 │  logs/ → app.log            │
 │  启动时:  init_db.py 创表   │
 └─────────┬───────────────┘
@@ -121,9 +143,10 @@ nano deploy/.env   # 填入真实密码/密钥
 
 `docker compose up` 按 `depends_on` 顺序自动:
 
-1. **db** - PostgreSQL 启动 → 执行 `db-init/*.sql` (装 vector 扩展)
-2. **backend** - 等待 db healthy → 跑 `init_db.py` (建表+基础数据) → 启动 uvicorn
-3. **frontend** - 等待 backend healthy → 启动 nginx
+1. **db** - PostgreSQL 启动 → 执行 `db-init/*.sql` (装 vector 扩展) → healthy
+2. **redis** - Redis 启动 → `PING` healthy
+3. **backend** - 等待 db+redis healthy → 跑 `init_db.py` (建表+基础数据) → 启动 uvicorn
+4. **frontend** - 等待 backend healthy → 启动 nginx
 
 ## 首次部署后
 
