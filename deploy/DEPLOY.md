@@ -1,5 +1,16 @@
 # Docker 部署文档 (v17 FastAPI)
 
+## 部署模式
+
+本项目支持**两种**部署模式：
+
+| 模式 | 脚本 | 适用场景 |
+|---|---|---|
+| **单机 (Docker compose)** | `docker-deploy.sh` | 本地开发、单机测试 |
+| **生产 (Swarm + Harbor)** | `build.sh` | 正式上线, 多节点集群 |
+
+下面分别介绍。
+
 ## 目录结构
 
 ```
@@ -7,13 +18,14 @@ deploy/
 ├── .env.example          # 环境变量模板（复制为 .env）
 ├── Dockerfile.backend    # 后端镜像（Python 3.12 + uvicorn :5001）
 ├── Dockerfile.frontend   # 前端镜像（node构建 + nginx :80）
-├── docker-compose.yml    # 单机编排（db + redis + backend + frontend）
-├── docker-deploy.sh      # 一键部署脚本
+├── docker-compose.yml    # 单机版编排（db + redis + backend + frontend）
+├── docker-deploy.sh      # 单机一键部署脚本
+├── build.sh              # Harbor 上传 + Swarm 部署脚本 (生产用)
 ├── entrypoint.sh         # 后端容器入口（uvicorn 多worker启动）
 ├── nginx.conf            # 反向代理配置（/api/ → backend:5001）
 ├── db-init/              # PostgreSQL 初始化 SQL（建 vector 扩展）
 │   └── 01-extensions.sql
-└── build.sh              # 旧版（Harbor ← 已废弃，参考用）
+└── DEPLOY.md             # 本文档
 ```
 
 ## 前提条件
@@ -178,3 +190,119 @@ SKIP_DB_INIT=true
 3. **流式 API**：nginx `proxy_buffering off` + 600s 超时，确保 AI SSE 正常工作
 4. **健康检查**：后端 `HEALTHCHECK` 依赖 curl，满足后 frontend 才会启动
 5. **第一次访问**：需先手动 seed 数据（`python3 scripts/seed_quotations.py`）
+
+---
+
+# 生产部署：Swarm + Harbor
+
+## 流程图
+
+```
+开发机 (WSL)
+  │
+  ├── docker login Harbor
+  ├── docker build backend  → 10.60.100.2/rstech_saas/backend:v1.0.0
+  ├── docker build frontend → 10.60.100.2/rstech_saas/frontend:v1.0.0
+  ├── docker push × 2
+  │
+  └── ssh 10.60.100.1 (Swarm manager)
+       ├── docker login Harbor
+       ├── docker stack deploy quote-system
+       └── (Swarm 自动从 Harbor pull + 调度到 worker 节点)
+```
+
+## 配置 (build.sh 头部)
+
+| 项 | 值 |
+|---|---|
+| **Harbor** | `10.60.100.2:443` (user: `RS8568`) |
+| **镜像命名** | `rstech_saas/backend:vX.Y.Z` / `rstech_saas/frontend:vX.Y.Z` |
+| **Swarm Manager** | `10.60.100.1` (user: `rs`) |
+| **部署目录** | `/opt/docker-swarm/rstech_saas` |
+
+## 快速部署
+
+```bash
+# 完整流程: 登录 Harbor → 构建 → 推送 → 部署 Swarm
+./deploy/build.sh v1.0.0 deploy
+
+# 分步:
+./deploy/build.sh v1.0.0 build    # 仅构建+推送 (不部署)
+./deploy/build.sh v1.0.0 deploy   # 完整流程
+./deploy/build.sh v1.0.0 status   # 查看 Swarm service
+./deploy/build.sh v1.0.0 rollback # 回滚到上一版本
+./deploy/build.sh v1.0.0 clean    # 清理 24h 旧镜像
+```
+
+## 部署到 Swarm 后手动步骤
+
+build.sh 会自动生成 `docker-compose.yml` 和 `.env` 模板到 `/opt/docker-swarm/rstech_saas/`，但有几项需要手动确认：
+
+```bash
+# SSH 到 manager
+ssh rs@10.60.100.1
+
+cd /opt/docker-swarm/rstech_saas
+
+# 1) 复制 db-init (建 vector 扩展)
+cp -r /path/to/project-quote-system/deploy/db-init/* db-init/
+
+# 2) 编辑 .env 填入真实密钥
+nano .env
+#   POSTGRES_PASSWORD=<真实密码>
+#   MINIMAX_API_KEY=<真实>
+#   DEEPSEEK_API_KEY=<真实>
+#   JWT_SECRET_KEY=<随机 32+ 字符>
+#   SECRET_KEY=<随机 32+ 字符>
+#   DATABASE_URL=postgresql://postgres:***@db:5432/quotation_db
+#                  (或外部 PG: postgresql://postgres:***@10.60.100.3:5432/quotation_db)
+
+# 3) 重新部署 (让 .env 生效)
+docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
+```
+
+## Swarm Service 状态
+
+```bash
+# 列出所有 service
+docker stack services quote-system
+
+# 列出所有 task (容器)
+docker stack ps quote-system
+
+# 看某个 service 日志
+docker service logs quote-system_backend
+
+# 看某个 task 日志
+docker service logs <task-id>
+```
+
+## 架构 (Swarm 部署)
+
+```
+┌─────── 10.60.100.2 (Harbor) ───────┐
+│  rstech_saas/backend:v1.0.0        │
+│  rstech_saas/frontend:v1.0.0       │
+└────────────────┬───────────────────┘
+                 │ pull
+                 ▼
+┌─────── Swarm Manager (10.60.100.1) ──────┐
+│  Stack: quote-system                      │
+│  ├─ db      (pgvector/pgvector:pg16)      │
+│  ├─ redis   (redis:7-alpine)              │
+│  ├─ backend × 2 (FastAPI + uvicorn)       │
+│  └─ frontend × 2 (nginx + Vue)            │
+│      端口 80 暴露                          │
+└──────┬────────────────────┬───────────────┘
+       │                    │
+   Worker 1            Worker 2
+   (任务调度)           (任务调度)
+```
+
+## 注意事项 (Swarm)
+
+1. **db 节点约束**：Swarm overlay 网络对 db 有要求, db/redis 限制在 manager 节点 (`node.role == manager`) — 修改 compose 让 db 也能放到 worker
+2. **`--with-registry-auth`**：让 manager 能用本地凭据从 Harbor pull
+3. **首次部署**：会触发 init_db.py 自动建表, 第二次会跳过 (用 `pg_isready` healthcheck 等)
+4. **回滚**：`docker service rollback quote-system_backend` — 用 Swarm 自带 rollback
+5. **重新部署**：`./deploy/build.sh v1.0.1 deploy` 会触发 rolling update (parallelism=1 delay=10s)

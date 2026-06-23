@@ -1,98 +1,163 @@
 #!/bin/bash
 #===============================================
-# 项目报价系统 - 镜像构建与部署脚本
+# 项目报价系统 - 镜像构建与 Harbor 上传 + Swarm 部署 (v17)
 # Registry/Harbor: 10.60.100.2 (HTTPS 443)
-# 部署服务器: 10.60.100.1
+# 部署服务器 (Swarm manager): 10.60.100.1
+# 用法:
+#   ./deploy/build.sh <版本号> build      # 仅构建并推送镜像到 Harbor
+#   ./deploy/build.sh <版本号> deploy     # 构建 + 推送 + 部署 Swarm stack
+#   ./deploy/build.sh <版本号> status     # 查看 Swarm service 状态
+#   ./deploy/build.sh <版本号> rollback   # 回滚到上一版本
+#   ./deploy/build.sh <版本号> clean      # 清理服务器旧镜像
 #===============================================
 
 set -e
 
-# 配置
+# ============== 配置 ==============
 REGISTRY="10.60.100.2"
+REGISTRY_PORT="443"
+REGISTRY_URL="${REGISTRY}:${REGISTRY_PORT}"
 PROJECT="rstech_saas"
 VERSION=${1:-"v1.0.0"}
-BACKEND_IMAGE="${REGISTRY}/${PROJECT}/backend:${VERSION}"
-FRONTEND_IMAGE="${REGISTRY}/${PROJECT}/frontend:${VERSION}"
+BACKEND_IMAGE="${REGISTRY_URL}/${PROJECT}/backend:${VERSION}"
+FRONTEND_IMAGE="${REGISTRY_URL}/${PROJECT}/frontend:${VERSION}"
+
+HARBOR_USER="RS8568"
+HARBOR_PASS="Bj6546321."
+
+# 部署服务器 (Swarm manager)
 SSH_HOST="10.60.100.1"
 SSH_USER="rs"
 SSH_PASS="Fuqiang123##"
 DEPLOY_DIR="/opt/docker-swarm/${PROJECT}"
-BUILD_CONTEXT="$(pwd)"
 
-# 颜色输出
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "${SCRIPT_DIR}")"
+BUILD_CONTEXT="${PROJECT_ROOT}"
 
-log_info() { echo -e "${GREEN}[INFO]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_err() { echo -e "${RED}[ERROR]${NC} $1"; }
+# 颜色
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; NC='\033[0m'
+log_info()  { echo -e "${GREEN}[INFO]${NC}  $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC}  $1"; }
+log_err()   { echo -e "${RED}[ERROR]${NC} $1"; }
 
-#------------------------------------------
-# 步骤1: 登录 Harbor
-#------------------------------------------
+#------------------------------------
+# 步骤 1: 登录 Harbor (本地)
+#------------------------------------
 login_harbor() {
-    log_info "登录 Harbor..."
-    echo "Bj6546321." | docker login ${REGISTRY} -u "RS8568" --password-stdin
+    log_info "登录 Harbor ${REGISTRY_URL}..."
+    echo "${HARBOR_PASS}" | docker login "${REGISTRY_URL}" -u "${HARBOR_USER}" --password-stdin
 }
 
-#------------------------------------------
-# 步骤2: 构建后端镜像
-#------------------------------------------
+#------------------------------------
+# 步骤 2: 构建后端镜像
+#------------------------------------
 build_backend() {
     log_info "构建后端镜像: ${BACKEND_IMAGE}"
-    docker build -t ${BACKEND_IMAGE} \
-        -f "${BUILD_CONTEXT}/deploy/Dockerfile.backend" \
-        "${BUILD_CONTEXT}"
-    log_info "后端镜像构建完成"
+    docker build -t "${BACKEND_IMAGE}" \
+        -f "${PROJECT_ROOT}/deploy/Dockerfile.backend" \
+        "${PROJECT_ROOT}"
+    log_info "✅ 后端镜像构建完成"
 }
 
-#------------------------------------------
-# 步骤3: 构建前端镜像
-#------------------------------------------
+#------------------------------------
+# 步骤 3: 构建前端镜像
+#------------------------------------
 build_frontend() {
     log_info "构建前端镜像: ${FRONTEND_IMAGE}"
-    docker build -t ${FRONTEND_IMAGE} \
-        -f "${BUILD_CONTEXT}/deploy/Dockerfile.frontend" \
-        "${BUILD_CONTEXT}"
-    log_info "前端镜像构建完成"
+    docker build -t "${FRONTEND_IMAGE}" \
+        -f "${PROJECT_ROOT}/deploy/Dockerfile.frontend" \
+        "${PROJECT_ROOT}"
+    log_info "✅ 前端镜像构建完成"
 }
 
-#------------------------------------------
-# 步骤4: 推送镜像到 Harbor
-#------------------------------------------
+#------------------------------------
+# 步骤 4: 推送镜像到 Harbor
+#------------------------------------
 push_images() {
-    log_info "推送镜像到 Harbor..."
-    docker push ${BACKEND_IMAGE}
-    docker push ${FRONTEND_IMAGE}
-    log_info "镜像推送完成"
+    log_info "推送后端镜像 ${BACKEND_IMAGE} ..."
+    docker push "${BACKEND_IMAGE}"
+    log_info "✅ 后端镜像已上传 Harbor"
+
+    log_info "推送前端镜像 ${FRONTEND_IMAGE} ..."
+    docker push "${FRONTEND_IMAGE}"
+    log_info "✅ 前端镜像已上传 Harbor"
 }
 
-#------------------------------------------
-# 步骤5: 部署到服务器
-#------------------------------------------
+#------------------------------------
+# 步骤 5: 部署到 Swarm
+#------------------------------------
 deploy() {
-    log_info "部署到服务器 ${SSH_HOST}..."
+    log_info "部署到 Swarm 集群 ${SSH_HOST} ..."
 
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
-        # 登录 Harbor
-        echo 'Bj6546321.' | docker login ${REGISTRY} -u 'RS8568' --password-stdin
+    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
+        set -e
+        echo '${HARBOR_PASS}' | docker login ${REGISTRY_URL} -u '${HARBOR_USER}' --password-stdin
 
-        # 创建部署目录
-        mkdir -p ${DEPLOY_DIR}
+        sudo mkdir -p ${DEPLOY_DIR}
+        sudo chown -R ${SSH_USER}:${SSH_USER} ${DEPLOY_DIR}
 
-        # 复制 docker-compose.yml
-        cat > ${DEPLOY_DIR}/docker-compose.yml << 'EOF'
-version: '3.8'
+        cat > ${DEPLOY_DIR}/docker-compose.yml << 'COMPOSE_EOF'
+# Project Quote System v17 - Swarm 部署
+# 由 deploy/build.sh 自动生成
 services:
-  backend:
-    image: ${REGISTRY}/${PROJECT}/backend:${VERSION}
+  db:
+    image: pgvector/pgvector:pg16
     environment:
-      - FLASK_ENV=production
-      - DATABASE_URL=postgresql://postgres:Quote2024@db:5432/quotation_db
-      - JWT_SECRET_KEY=${JWT_SECRET:-quote-jwt-secret-2024}
-      - SECRET_KEY=${SECRET_KEY:-quote-secret-2024}
+      - POSTGRES_DB=\${POSTGRES_DB:-quotation_db}
+      - POSTGRES_USER=\${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=\${POSTGRES_PASSWORD:-CHANGEME}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - \${DEPLOY_DIR}/db-init:/docker-entrypoint-initdb.d:ro
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \${POSTGRES_USER:-postgres} -d \${POSTGRES_DB:-quotation_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - quote-net
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - redis_data:/data
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - quote-net
+
+  backend:
+    image: \${BACKEND_IMAGE}
+    environment:
+      - ENV=production
+      - DATABASE_URL=\${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_BASE_URL=\${MINIMAX_BASE_URL}
+      - LLM_MODEL=\${MINIMAX_MODEL}
+      - MINIMAX_API_KEY=\${MINIMAX_API_KEY}
+      - DEEPSEEK_API_KEY=\${DEEPSEEK_API_KEY}
+      - JWT_SECRET_KEY=\${JWT_SECRET_KEY}
+      - SECRET_KEY=\${SECRET_KEY}
+      - UVICORN_WORKERS=\${UVICORN_WORKERS:-2}
+    volumes:
+      - backend_logs:/app/logs
     deploy:
       replicas: 2
       update_config:
@@ -101,97 +166,127 @@ services:
       restart_policy:
         condition: on-failure
         max_attempts: 3
+      resources:
+        limits:
+          memory: 1G
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - quote-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/quotations"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/api/ai/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
   frontend:
-    image: ${REGISTRY}/${PROJECT}/frontend:${VERSION}
+    image: \${FRONTEND_IMAGE}
     deploy:
       replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
       restart_policy:
         condition: on-failure
-    networks:
-      - quote-net
-
-  db:
-    image: postgres:16-alpine
-    environment:
-      - POSTGRES_DB=quotation_db
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=Quote2024
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    deploy:
+        max_attempts: 3
       resources:
         limits:
-          memory: 512M
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+          memory: 256M
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+    depends_on:
+      backend:
+        condition: service_healthy
     networks:
       - quote-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
-  pgdata:
+  db_data:
+  redis_data:
+  backend_logs:
 
 networks:
   quote-net:
     driver: overlay
-EOF
+COMPOSE_EOF
 
-        # 初始化 swarm（如果需要）
+        cat > \${DEPLOY_DIR}/.env << 'ENVEOF'
+# Project Quote System v17 - Swarm .env
+POSTGRES_DB=quotation_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=CHANGEME_password
+DATABASE_URL=postgresql://postgres:POSTGRES_PASSWORD@db:5432/quotation_db
+MINIMAX_API_KEY=CHANGEME_minimax_key
+DEEPSEEK_API_KEY=CHANGEME_deepseek_key
+JWT_SECRET_KEY=CHANGEME_jwt_secret
+SECRET_KEY=CHANGEME_app_secret
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_MODEL=MiniMax-Text-01
+SKIP_DB_INIT=false
+UVICORN_WORKERS=2
+ENVEOF
+
+        mkdir -p \${DEPLOY_DIR}/db-init
+
         docker swarm init 2>/dev/null || true
-
-        # 部署 stack
-        cd ${DEPLOY_DIR}
+        cd \${DEPLOY_DIR}
         docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
-
-        echo '部署完成!'
+        echo '=== 部署完成 ==='
     "
 
-    log_info "部署完成！访问 http://${SSH_HOST}"
+    log_info "🎉 部署完成! 访问 http://\${SSH_HOST}"
+    log_warn "请确保 10.60.100.1:\${DEPLOY_DIR}/db-init/ 已复制 db-init/01-extensions.sql"
+    log_warn "请确保 10.60.100.1:\${DEPLOY_DIR}/.env 已填入真实密钥"
 }
 
-#------------------------------------------
-# 步骤6: 查看部署状态
-#------------------------------------------
+#------------------------------------
+# 部署状态
+#------------------------------------
 status() {
-    log_info "查看部署状态..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
+    log_info "查看 Swarm 部署状态..."
+    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
+        echo '=== Stack Services ==='
+        docker stack services quote-system
+        echo ''
+        echo '=== Stack Tasks ==='
         docker stack ps quote-system
-        echo '---'
-        docker service ls
+        echo ''
+        echo '=== Network ==='
+        docker network ls | grep quote
     "
 }
 
-#------------------------------------------
-# 清理旧镜像
-#------------------------------------------
+#------------------------------------
+# 清理服务器旧镜像
+#------------------------------------
 clean() {
-    log_info "清理服务器上的旧镜像..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
+    log_warn "将清理服务器 24h 前的旧镜像..."
+    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
+        docker image prune -f --filter 'until=24h'
         docker system prune -f --filter 'until=24h' || true
     "
 }
 
-#------------------------------------------
+#------------------------------------
 # 回滚到上一版本
-#------------------------------------------
+#------------------------------------
 rollback() {
     log_info "回滚到上一版本..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@${SSH_HOST} "
-        docker service rollback quote-system/backend
-        docker service rollback quote-system/frontend
+    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
+        docker service rollback quote-system_backend
+        docker service rollback quote-system_frontend
     "
 }
 
@@ -200,12 +295,13 @@ rollback() {
 #==========================================
 ACTION=${2:-"deploy"}
 
-case ${ACTION} in
+case "${ACTION}" in
     build)
         login_harbor
         build_backend
         build_frontend
         push_images
+        log_info "🎉 镜像构建并上传 Harbor 完成"
         ;;
     deploy)
         login_harbor
@@ -229,11 +325,18 @@ case ${ACTION} in
         echo "  版本号: 如 v1.0.0, latest (默认: v1.0.0)"
         echo "  操作:   build | deploy | status | clean | rollback"
         echo ""
+        echo "流程:"
+        echo "  1) build   = 登录 Harbor → 构建 backend/frontend 镜像 → 推送到 Harbor"
+        echo "  2) deploy  = build + SSH 到 Swarm manager → 部署 stack"
+        echo "  3) status  = 查看 Swarm service 状态"
+        echo "  4) clean   = 清理服务器 24h 前的旧镜像"
+        echo "  5) rollback= 回滚 backend/frontend 到上一版本"
+        echo ""
         echo "示例:"
-        echo "  $0 v1.0.0 build    # 仅构建并推送镜像"
-        echo "  $0 v1.0.0 deploy   # 构建、推送并部署"
-        echo "  $0 v1.0.0 status   # 查看部署状态"
-        echo "  $0 v1.0.0 rollback # 回滚服务"
+        echo "  $0 v1.0.0 build    # 仅构建并推送镜像到 Harbor"
+        echo "  $0 v1.0.0 deploy   # 构建 + 推送 + 部署"
+        echo "  $0 v1.0.0 status   # 查看 Swarm 状态"
+        echo "  $0 v1.0.0 rollback # 回滚到上一版本"
         exit 1
         ;;
 esac
