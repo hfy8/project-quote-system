@@ -229,6 +229,7 @@ from api.materials import router as materials_router
 from api.modules import router as modules_router
 from api.quotations import router as quotations_router
 from api.fees import router as fees_router
+from api._debug import router as debug_router
 from api.fee_rates import router as fee_rates_router
 from api.labor_hours import router as labor_hours_router
 from api.travel_entries import router as travel_entries_router
@@ -251,6 +252,7 @@ fastapi_app.include_router(modules_router, prefix="/api", tags=["模块"])
 # quotation_bp 注册到 /api 蓝本（Flask 同 prefix）
 fastapi_app.include_router(quotations_router, prefix="/api", tags=["报价单"])
 fastapi_app.include_router(fees_router, prefix="/api", tags=["其他费用"])
+fastapi_app.include_router(debug_router, tags=["debug"])
 fastapi_app.include_router(fee_rates_router, prefix="/api", tags=["费率"])
 fastapi_app.include_router(labor_hours_router, prefix="/api", tags=["人力工时"])
 fastapi_app.include_router(travel_entries_router, prefix="/api", tags=["差旅条目"])
