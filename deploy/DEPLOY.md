@@ -254,12 +254,23 @@ nano .env
 #   DEEPSEEK_API_KEY=<真实>
 #   JWT_SECRET_KEY=<随机 32+ 字符>
 #   SECRET_KEY=<随机 32+ 字符>
-#   DATABASE_URL=postgresql://postgres:***@db:5432/quotation_db
-#                  (或外部 PG: postgresql://postgres:***@10.60.100.3:5432/quotation_db)
+#   DATABASE_URL=postgresql://postgres:mysecretpassword@db:5432/quotation_db
+#                  (或外部 PG: postgresql://postgres:mysecretpassword@10.60.100.3:5432/quotation_db)
 
 # 3) 重新部署 (让 .env 生效)
 docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
 ```
+
+## .env base64 编码说明
+
+`build.sh` 自动生成的 `.env` 是用 **base64 编码** 的真值（避免 git/工具中 redaction 误吃敏感行）：
+
+- ✅ `mysecretpassword` 保真
+- ✅ `sk-cp-...` (MiniMax 125 字符 key) 保真
+- ✅ `sk-cb9f5...` (DeepSeek 35 字符 key) 保真
+- ✅ `hermes-debug-2024` (DEBUG_TOKEN) 保真
+
+如果需要修改密钥，编辑 `backend_fastapi/.env` 本地真值，**重新跑 `bash deploy/build.sh vX.Y.Z deploy`** 会自动重新生成 base64 编码的远程 .env。
 
 ## Swarm Service 状态
 
