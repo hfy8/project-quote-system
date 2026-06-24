@@ -150,6 +150,8 @@ push_images() {
 #------------------------------------
 deploy() {
     log_info "部署到 Swarm 集群 (本机) ..."
+        # 显式 export 给子进程 python3
+    export DEPLOY_DIR VERSION REGISTRY PROJECT
     mkdir -p "${DEPLOY_DIR}"
     chown -R "$(whoami):$(whoami)" "${DEPLOY_DIR}"
 
