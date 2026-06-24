@@ -159,9 +159,15 @@ deploy() {
     # Python 字符串中保留 ${...} 字面, 写文件后 docker compose 从 .env 替换
     python3 - << 'PYEOF'
 import os
+deploy_dir = os.environ["DEPLOY_DIR"]
+registry = os.environ["REGISTRY"]
+project = os.environ["PROJECT"]
+version = os.environ["VERSION"]
+backend_image = f"{registry}/{project}/backend:{version}"
+frontend_image = f"{registry}/{project}/frontend:{version}"
+
 compose = f"""# Project Quote System v17 - Swarm 部署
 # 由 deploy/build.sh 自动生成
-# image 用 env_file 引用 .env 中的 BACKEND_IMAGE/FRONTEND_IMAGE 变量
 services:
   db:
     image: pgvector/pgvector:pg16
@@ -172,7 +178,7 @@ services:
       - .env
     volumes:
       - db_data:/var/lib/postgresql/data
-      - /opt/docker-swarm/rstech_saas/db-init:/docker-entrypoint-initdb.d:ro
+      - {deploy_dir}/db-init:/docker-entrypoint-initdb.d:ro
     deploy:
       placement:
         constraints:
@@ -207,7 +213,7 @@ services:
       - quote-net
 
   backend:
-    image: {chr(36)}{'{BACKEND_IMAGE}'}
+    image: {backend_image}
     environment:
       - ENV=production
       - REDIS_URL=redis://redis:6379/0
@@ -236,7 +242,7 @@ services:
       start_period: 30s
 
   frontend:
-    image: {chr(36)}{'{FRONTEND_IMAGE}'}
+    image: {frontend_image}
     deploy:
       replicas: 2
       update_config:
@@ -270,9 +276,11 @@ networks:
   quote-net:
     driver: overlay
 """
-with open(f"{os.environ['DEPLOY_DIR']}/docker-compose.yml", "w") as f:
+with open(f"{deploy_dir}/docker-compose.yml", "w") as f:
     f.write(compose)
-print(f"✅ docker-compose.yml written to {os.environ['DEPLOY_DIR']}/docker-compose.yml")
+print(f"✅ docker-compose.yml written to {deploy_dir}/docker-compose.yml")
+print(f"   backend image: {backend_image}")
+print(f"   frontend image: {frontend_image}")
 PYEOF
 
     # 1.5) 写 .env (base64 编码的真值, 绕过 redaction)
