@@ -351,17 +351,18 @@ rollback() {
 # 主流程
 #==========================================
 ACTION=${2:-"deploy"}
+SKIP_LOGIN=${SKIP_LOGIN:-0}
 
 case "${ACTION}" in
     build)
-        login_harbor
+        if [ "${SKIP_LOGIN}" != "1" ]; then login_harbor; else log_info "跳过 Harbor 登录 (SKIP_LOGIN=1)"; fi
         build_backend
         build_frontend
         push_images
         log_info "🎉 镜像构建并上传 Harbor 完成"
         ;;
     deploy)
-        login_harbor
+        if [ "${SKIP_LOGIN}" != "1" ]; then login_harbor; else log_info "跳过 Harbor 登录 (SKIP_LOGIN=1)"; fi
         build_backend
         build_frontend
         push_images
