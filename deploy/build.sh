@@ -228,11 +228,7 @@ services:
       resources:
         limits:
           memory: 1G
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    # 注意: Swarm 不支持 depends_on (用 healthcheck + 重试来确保依赖)
     networks:
       - quote-net
     healthcheck:
@@ -260,9 +256,7 @@ services:
         published: 80
         protocol: tcp
         mode: host
-    depends_on:
-      backend:
-        condition: service_healthy
+    # 注意: Swarm 不支持 depends_on
     networks:
       - quote-net
     healthcheck:
