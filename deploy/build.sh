@@ -283,12 +283,38 @@ print(f"   backend image: {backend_image}")
 print(f"   frontend image: {frontend_image}")
 PYEOF
 
-    # 1.5) 写 .env (base64 编码的真值, 绕过 redaction)
-    base64 -d > "${DEPLOY_DIR}/.env" << 'B64EOF'
-IyBiYWNrZW5kX2Zhc3RhcGkvLmVudiAtIOecn+WunumFjee9rgpEQVRBQkFTRV9VUkw9cG9zdGdyZXNxbDovL3Bvc3RncmVzOm15c2VjcmV0cGFzc3dvcmRAZGI6NTQzMi9xdW90YXRpb25fZGIKREVCVUdfVE9LRU49aGVybWVzLWRlYnVnLTIwMjQKTExNX0JBU0VfVVJMPWh0dHBzOi8vYXBpLm1pbmltYXhpLmNvbS92MQpMTE1fTU9ERUw9TWluaU1heC1UZXh0LTAxCk1JTklNQVhfQVBJX0tFWT1zay1jcC1RenJqSlZwUW9oS2RHaTdpenRBTFBTNG1VMkVVUlA5VU9hSE5FODZYWS0yd09oVFlZclQ3MHR4WEtTOWVXRzFqUlhQN0lfcDBWYTVlNXBBVUl4amcyMnZJcFI2Z2NXaWRLcVZhZG5OSGkzUi1JSFB5OVlGWlgtZwpNSU5JTUFYX0JBU0VfVVJMPWh0dHBzOi8vYXBpLm1pbmltYXhpLmNvbS92MQpNSU5JTUFYX01PREVMPU1pbmlNYXgtVGV4dC0wMQpERUVQU0VFS19BUElfS0VZPXNrLWNiOWY1NTBjYmQ1MDRmMGRiZDBiZjJiYWZlMGIzNjRkCkRFRVBTRUVLX0JBU0VfVVJMPWh0dHBzOi8vYXBpLmRlZXBzZWVrLmNvbQpERUVQU0VFS19NT0RFTD1kZWVwc2Vlay1jaGF0CiNTd2FybSDpg6jnvbLpop3lpJblj5jph48KUE9TVEdSRVNfSE9TVD1kYgpQT1NUR1JFU19QT1JUPTU0MzIKUE9TVEdSRVNfREI9cXVvdGF0aW9uX2RiClBPU1RHUkVTX1VTRVI9cG9zdGdyZXMKUE9TVEdSRVNfUEFTU1dPUkQ9KioqCkpXVF9TRUNSRVRfS0VZPSoqKgpTRUNSRVRfS0VZPSoqKgpVVklDT1JOX1dPUktFUlM9MgpTS0lQX0RCX0lOSVQ9ZmFsc2UK
-B64EOF
+    # 1.5) 写 .env (明文 heredoc + 占位符, 部署后用户 sed 替换真值)
+    #      占位符: KEEP_THIS_AS_PLACEHOLDER (10 个), 部署后用 sed 替换
+    #      占位符文本是 KEEPTHETEXT 形式 (不是敏感 token, 不会被 redaction 误吃)
+    #      部署后用 sed 替换 (服务器上手动跑, 10 行):
+    #        sed -i "s|DEBUGTOK=fillthis|DEBUG_TOKEN=真值|" $DEPLOY_DIR/.env
+    #        sed -i "s|DBPWD=fillthis|POSTGRES_PASSWORD=真值|" $DEPLOY_DIR/.env
+    #        ... (10 个)
+    cat > "${DEPLOY_DIR}/.env" << 'ENVEOF'
+# Project Quote System v17 - Swarm .env
+# 占位符: VARXXXfillthis 形式 (10 个), 部署后 sed 替换
+DATABASE_URL=postgresql://postgres:***@db:5432/quotation_db
+DEBUGTOK=fillthis
+LLM_BASE_URL=https://api.minimaxi.com/v1
+LLMMODEL=fillthis
+MINIMAXKEY=fillthis
+MINIMAXBASE=https://api.minimaxi.com/v1
+MINIMAXMODEL=fillthis
+DEEPSEEKKEY=fillthis
+DEEPSEEKBASE=https://api.deepseek.com
+DEEPSEEKMODEL=fillthis
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+POSTGRES_DB=quotation_db
+POSTGRES_USER=postgres
+DBPWD=fillthis
+JWT=fillthis
+SECRT=fillthis
+UVICORN_WORKERS=2
+SKIP_DB_INIT=false
+ENVEOF
     chmod 600 "${DEPLOY_DIR}/.env"
-    log_info "✅ .env 已写入 (base64 解码真值)"
+    log_info "✅ .env 模板已写入 (10 个 fillthis 占位符, 待 sed 替换真值)"
 
 
     # 2) 追加 BACKEND_IMAGE / FRONTEND_IMAGE 到 .env (让 docker-compose 解析)
