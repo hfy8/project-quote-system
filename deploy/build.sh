@@ -5,10 +5,13 @@
 # 部署服务器 (Swarm manager): 10.60.100.1
 # 用法:
 #   ./deploy/build.sh <版本号> build      # 仅构建并推送镜像到 Harbor
-#   ./deploy/build.sh <版本号> deploy     # 构建 + 推送 + 部署 Swarm stack
-#   ./deploy/build.sh <版本号> status     # 查看 Swarm service 状态
-#   ./deploy/build.sh <版本号> rollback   # 回滚到上一版本
-#   ./deploy/build.sh <版本号> clean      # 清理服务器旧镜像
+#   ./deploy/build.sh <版本号> deploy     # 构建 + 推送 + 部署 Swarm stack (本机)
+#   ./deploy/build.sh <版本号> status     # 查看 Swarm service 状态 (本机)
+#   ./deploy/build.sh <版本号> rollback   # 回滚到上一版本 (本机)
+#   ./deploy/build.sh <版本号> clean      # 清理本机旧镜像
+#
+# ⚠️ 此脚本在 Swarm manager 节点上直接执行, 不再 SSH 远程部署
+#   跑前先 git pull 拉最新代码
 #
 # ⚠️ 必须用 bash 跑 (脚本用 bash 特性):
 #   bash ./deploy/build.sh v1.0.0 deploy
@@ -43,10 +46,8 @@ HARBOR_PASS="Bj6546321."
 #       或 用环境变量 DOCKER_CONTENT_TRUST=0 + DOCKER_TLS_VERIFY=0
 SKIP_TLS_VERIFY=${SKIP_TLS_VERIFY:-0}
 
-# 部署服务器 (Swarm manager)
-SSH_HOST="10.60.100.1"
-SSH_USER="rs"
-SSH_PASS="Fuqiang123##"
+# ============== 部署目录 (本机执行) ==============
+# 此脚本在 Swarm manager 节点上直接运行
 DEPLOY_DIR="/opt/docker-swarm/${PROJECT}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -144,19 +145,19 @@ push_images() {
 }
 
 #------------------------------------
-# 步骤 5: 部署到 Swarm
+# 步骤 5: 部署到 Swarm (本地执行, 不 SSH)
+# 适用: 在 Swarm manager 节点上直接跑此脚本
 #------------------------------------
 deploy() {
-    log_info "部署到 Swarm 集群 ${SSH_HOST} ..."
+    log_info "部署到 Swarm 集群 (本机) ..."
+    log_info "请确保 ${DEPLOY_DIR}/db-init/ 已复制 db-init/01-extensions.sql"
+    log_info "请确保 ${DEPLOY_DIR}/.env 已填入真实密钥"
 
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
-        set -e
-        echo '${HARBOR_PASS}' | docker login ${REGISTRY_URL} -u '${HARBOR_USER}' --password-stdin
+    # 写 docker-compose.yml
+    sudo mkdir -p "${DEPLOY_DIR}"
+    sudo chown -R "${USER}:${USER}" "${DEPLOY_DIR}"
 
-        sudo mkdir -p ${DEPLOY_DIR}
-        sudo chown -R ${SSH_USER}:${SSH_USER} ${DEPLOY_DIR}
-
-        cat > ${DEPLOY_DIR}/docker-compose.yml << 'COMPOSE_EOF'
+    cat > "${DEPLOY_DIR}/docker-compose.yml" << 'COMPOSE_EOF'
 # Project Quote System v17 - Swarm 部署
 # 由 deploy/build.sh 自动生成
 services:
@@ -275,12 +276,13 @@ networks:
     driver: overlay
 COMPOSE_EOF
 
-        cat > \${DEPLOY_DIR}/.env << 'ENVEOF'
+    # 写 .env 模板
+    cat > "${DEPLOY_DIR}/.env" << 'ENVEOF'
 # Project Quote System v17 - Swarm .env
 POSTGRES_DB=quotation_db
 POSTGRES_USER=postgres
 POSTGRES_PASSWORD=CHANGEME_password
-DATABASE_URL=postgresql://postgres:POSTGRES_PASSWORD@db:5432/quotation_db
+DATABASE_URL=postgresql://postgres:***@db:5432/quotation_db
 MINIMAX_API_KEY=CHANGEME_minimax_key
 DEEPSEEK_API_KEY=CHANGEME_deepseek_key
 JWT_SECRET_KEY=CHANGEME_jwt_secret
@@ -291,45 +293,45 @@ SKIP_DB_INIT=false
 UVICORN_WORKERS=2
 ENVEOF
 
-        mkdir -p \${DEPLOY_DIR}/db-init
+    # 创建 db-init 目录
+    mkdir -p "${DEPLOY_DIR}/db-init"
 
-        docker swarm init 2>/dev/null || true
-        cd \${DEPLOY_DIR}
-        docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
-        echo '=== 部署完成 ==='
-    "
+    # 初始化 Swarm (已初始化就跳过)
+    docker swarm init 2>/dev/null || true
 
-    log_info "🎉 部署完成! 访问 http://\${SSH_HOST}"
-    log_warn "请确保 10.60.100.1:\${DEPLOY_DIR}/db-init/ 已复制 db-init/01-extensions.sql"
-    log_warn "请确保 10.60.100.1:\${DEPLOY_DIR}/.env 已填入真实密钥"
+    # 部署 stack
+    cd "${DEPLOY_DIR}"
+    docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
+    echo "=== 部署完成 ==="
+
+    log_info "🎉 部署完成! 访问 http://localhost"
+    log_warn "请手动操作: 编辑 ${DEPLOY_DIR}/.env 填入真实密钥"
+    log_warn "请手动操作: 复制 db-init/01-extensions.sql 到 ${DEPLOY_DIR}/db-init/"
+    log_warn "然后再次跑: bash deploy/build-safe.sh ${VERSION} deploy (或: docker stack deploy -c ${DEPLOY_DIR}/docker-compose.yml quote-system --with-registry-auth)"
 }
 
 #------------------------------------
-# 部署状态
+# 部署状态 (本机)
 #------------------------------------
 status() {
     log_info "查看 Swarm 部署状态..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
-        echo '=== Stack Services ==='
-        docker stack services quote-system
-        echo ''
-        echo '=== Stack Tasks ==='
-        docker stack ps quote-system
-        echo ''
-        echo '=== Network ==='
-        docker network ls | grep quote
-    "
+    echo "=== Stack Services ==="
+    docker stack services quote-system
+    echo ""
+    echo "=== Stack Tasks ==="
+    docker stack ps quote-system
+    echo ""
+    echo "=== Network ==="
+    docker network ls | grep quote
 }
 
 #------------------------------------
-# 清理服务器旧镜像
+# 清理本机旧镜像
 #------------------------------------
 clean() {
-    log_warn "将清理服务器 24h 前的旧镜像..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
-        docker image prune -f --filter 'until=24h'
-        docker system prune -f --filter 'until=24h' || true
-    "
+    log_warn "将清理本机 24h 前的旧镜像..."
+    docker image prune -f --filter "until=24h"
+    docker system prune -f --filter "until=24h" || true
 }
 
 #------------------------------------
@@ -337,10 +339,8 @@ clean() {
 #------------------------------------
 rollback() {
     log_info "回滚到上一版本..."
-    sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no "${SSH_USER}@${SSH_HOST}" "
-        docker service rollback quote-system_backend
-        docker service rollback quote-system_frontend
-    "
+    docker service rollback quote-system_backend
+    docker service rollback quote-system_frontend
 }
 
 #==========================================
