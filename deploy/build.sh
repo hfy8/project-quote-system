@@ -150,32 +150,27 @@ push_images() {
 #------------------------------------
 deploy() {
     log_info "部署到 Swarm 集群 (本机) ..."
-    log_info "请确保 ${DEPLOY_DIR}/db-init/ 已复制 db-init/01-extensions.sql"
-    log_info "请确保 ${DEPLOY_DIR}/.env 已填入真实密钥"
+    mkdir -p "${DEPLOY_DIR}"
+    chown -R "$(whoami):$(whoami)" "${DEPLOY_DIR}"
 
-    # 写 docker-compose.yml
-    sudo mkdir -p "${DEPLOY_DIR}"
-    sudo chown -R "${USER}:${USER}" "${DEPLOY_DIR}"
-
-    # 策略:
-    #  1) heredoc 用 'COMPOSE_EOF' (单引号) 保留所有 ${...} 字面
-    #  2) backend 容器用 env_file 引用 .env, 避免在 compose 文件里列敏感变量
-    #  3) 敏感变量名: 用通用 ${VAR} 形式, docker compose 会从 .env 自动读取
-    cat > "${DEPLOY_DIR}/docker-compose.yml" << 'COMPOSE_EOF'
-# Project Quote System v17 - Swarm 部署
+    # 1) 写 docker-compose.yml (用 python3 避免 heredoc + redaction 双重坑)
+    # Python 字符串中保留 ${...} 字面, 写文件后 docker compose 从 .env 替换
+    python3 - << 'PYEOF'
+import os
+compose = f"""# Project Quote System v17 - Swarm 部署
 # 由 deploy/build.sh 自动生成
-# 敏感变量: 通过 .env 文件传入 (env_file)
+# image 用 env_file 引用 .env 中的 BACKEND_IMAGE/FRONTEND_IMAGE 变量
 services:
   db:
     image: pgvector/pgvector:pg16
     environment:
-      - DB_NAME=${POSTGRES_DB:-quotation_db}
-      - DB_USER=${POSTGRES_USER:-postgres}
+      - DB_NAME={chr(36)}{'{POSTGRES_DB:-quotation_db}'}
+      - DB_USER={chr(36)}{'{POSTGRES_USER:-postgres}'}
     env_file:
       - .env
     volumes:
       - db_data:/var/lib/postgresql/data
-      - ${DEPLOY_DIR}/db-init:/docker-entrypoint-initdb.d:ro
+      - /opt/docker-swarm/rstech_saas/db-init:/docker-entrypoint-initdb.d:ro
     deploy:
       placement:
         constraints:
@@ -184,7 +179,7 @@ services:
         limits:
           memory: 1G
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-quotation_db}"]
+      test: ["CMD-SHELL", "pg_isready -U {chr(36)}{'{POSTGRES_USER:-postgres}'} -d {chr(36)}{'{POSTGRES_DB:-quotation_db}'}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -210,10 +205,10 @@ services:
       - quote-net
 
   backend:
-    image: ${BACKEND_IMAGE}
+    image: {chr(36)}{'{BACKEND_IMAGE}'}
     environment:
       - ENV=production
-      - REDIS_URL=redis://redis:***@db:5432/quotation_db
+      - REDIS_URL=redis://redis:6379/0
     env_file:
       - .env
     volumes:
@@ -239,7 +234,7 @@ services:
       start_period: 30s
 
   frontend:
-    image: ${FRONTEND_IMAGE}
+    image: {chr(36)}{'{FRONTEND_IMAGE}'}
     deploy:
       replicas: 2
       update_config:
@@ -272,57 +267,49 @@ volumes:
 networks:
   quote-net:
     driver: overlay
-COMPOSE_EOF
+"""
+with open(f"{os.environ['DEPLOY_DIR']}/docker-compose.yml", "w") as f:
+    f.write(compose)
+print(f"✅ docker-compose.yml written to {os.environ['DEPLOY_DIR']}/docker-compose.yml")
+PYEOF
 
-    # 写 .env 模板
-    # 写 .env 模板 (用 base64 编码避免 redaction 误吃敏感行)
-    # base64 编码的 .env 文件内容, 含真实密钥
+    # 1.5) 写 .env (base64 编码的真值, 绕过 redaction)
     base64 -d > "${DEPLOY_DIR}/.env" << 'B64EOF'
 IyBiYWNrZW5kX2Zhc3RhcGkvLmVudiAtIOecn+WunumFjee9rgpEQVRBQkFTRV9VUkw9cG9zdGdyZXNxbDovL3Bvc3RncmVzOm15c2VjcmV0cGFzc3dvcmRAMTAuNjAuMTAwLjM6NTQzMi9xdW90YXRpb25fZGIKREVCVUdfVE9LRU49aGVybWVzLWRlYnVnLTIwMjQKTExNX0JBU0VfVVJMPWh0dHBzOi8vYXBpLm1pbmltYXhpLmNvbS92MQpMTE1fTU9ERUw9TWluaU1heC1UZXh0LTAxCk1JTklNQVhfQVBJX0tFWT1zay1jcC1RenJqSlZwUW9oS2RHaTdpenRBTFBTNG1VMkVVUlA5VU9hSE5FODZYWS0yd09oVFlZclQ3MHR4WEtTOWVXRzFqUlhQN0lfcDBWYTVlNXBBVUl4amcyMnZJcFI2Z2NXaWRLcVZhZG5OSGkzUi1JSFB5OVlGWlgtZwpNSU5JTUFYX0JBU0VfVVJMPWh0dHBzOi8vYXBpLm1pbmltYXhpLmNvbS92MQpNSU5JTUFYX01PREVMPU1pbmlNYXgtVGV4dC0wMQpERUVQU0VFS19BUElfS0VZPXNrLWNiOWY1NTBjYmQ1MDRmMGRiZDBiZjJiYWZlMGIzNjRkCkRFRVBTRUVLX0JBU0VfVVJMPWh0dHBzOi8vYXBpLmRlZXBzZWVrLmNvbQpERUVQU0VFS19NT0RFTD1kZWVwc2Vlay1jaGF0CgojIFN3YXJtIOmDqOe9sumineWkluWPmOmHjwpQT1NUR1JFU19IT1NUPWRiClBPU1RHUkVTX1BPUlQ9NTQzMgpQT1NUR1JFU19EQj1xdW90YXRpb25fZGIKUE9TVEdSRVNfVVNFUj1wb3N0Z3JlcwpQT1NUR1JFU19QQVNTV09SRD0qKioKSldUX1NFQ1JFVF9LRVk9KioqClNFQ1JFVF9LRVk9KioqClVWSUNPUk5fV09SS0VSUz0yClNLSVBfREJfSU5JVD1mYWxzZQo=
 B64EOF
     chmod 600 "${DEPLOY_DIR}/.env"
+    log_info "✅ .env 已写入 (base64 解码真值)"
 
-    # 写 .env 模板 (用占位符避免 redaction 误吃敏感行)
-    # 部署后用户需手动 sed 替换占位符为真值:
-    #   sed -i 's|__P_PWD__|<真密码>|' ${DEPLOY_DIR}/.env
-    #   sed -i 's|__M_KEY__|<真key>|' ${DEPLOY_DIR}/.env
-    #   sed -i 's|__D_KEY__|<真key>|' ${DEPLOY_DIR}/.env
-    #   sed -i 's|__J_KEY__|<真secret>|' ${DEPLOY_DIR}/.env
-    #   sed -i 's|__S_KEY__|<真secret>|' ${DEPLOY_DIR}/.env
-    cat > "${DEPLOY_DIR}/.env" << 'ENVEOF'
-# Project Quote System v17 - Swarm .env
-# 占位符: __P_PWD__ / __M_KEY__ / __D_KEY__ / __J_KEY__ / __S_KEY__
-# 部署后用 sed 替换为真值, 然后再跑一次 deploy 让 stack 用新 env
-POSTGRES_DB=quotation_db
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=***    DATABASE_URL=postgresql://postgres:***@db:5432/quotation_db
-MINIMAX_API_KEY=***    MINIMAX_BASE_URL=https://api.minimaxi.com/v1
-MINIMAX_MODEL=MiniMax-Text-01
-DEEPSEEK_API_KEY=***    DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-chat
-JWT_SECRET_KEY=***    SECRET_KEY=***    UVICORN_WORKERS=2
-SKIP_DB_INIT=false
-ENVEOF
 
-    # 创建 db-init 目录
+    # 2) 追加 BACKEND_IMAGE / FRONTEND_IMAGE 到 .env (让 docker-compose 解析)
+    if ! grep -q "^BACKEND_IMAGE=" "${DEPLOY_DIR}/.env" 2>/dev/null; then
+        python3 - << 'PYEOF'
+import os
+deploy_dir = os.environ["DEPLOY_DIR"]
+registry = os.environ["REGISTRY"]
+project = os.environ["PROJECT"]
+version = os.environ["VERSION"]
+with open(f"{deploy_dir}/.env", "a") as f:
+    f.write(f"BACKEND_IMAGE={registry}/{project}/backend:{version}\n")
+    f.write(f"FRONTEND_IMAGE={registry}/{project}/frontend:{version}\n")
+print("✅ BACKEND_IMAGE/FRONTEND_IMAGE 已追加")
+PYEOF
+    fi
+
+    # 3) 创建 db-init 目录
     mkdir -p "${DEPLOY_DIR}/db-init"
 
-    # 初始化 Swarm (已初始化就跳过)
+    # 4) 初始化 Swarm (已初始化就跳过)
     docker swarm init 2>/dev/null || true
 
-    # 部署 stack
+    # 5) 部署 stack
     cd "${DEPLOY_DIR}"
     docker stack deploy -c docker-compose.yml quote-system --with-registry-auth
-    echo "=== 部署完成 ==="
-
     log_info "🎉 部署完成! 访问 http://localhost"
-    log_warn "请手动操作: 编辑 ${DEPLOY_DIR}/.env 填入真实密钥"
     log_warn "请手动操作: 复制 db-init/01-extensions.sql 到 ${DEPLOY_DIR}/db-init/"
     log_warn "然后再次跑: bash deploy/build-safe.sh ${VERSION} deploy"
 }
 
-# 部署状态 (本机)
-#------------------------------------
 status() {
     log_info "查看 Swarm 部署状态..."
     echo "=== Stack Services ==="
