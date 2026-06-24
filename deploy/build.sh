@@ -26,12 +26,14 @@ set -e
 
 # ============== 配置 ==============
 REGISTRY="10.60.100.2"
+# 注意: REGISTRY_PORT 仅用于 docker login 时的 URL, 不放在镜像 tag 中
 REGISTRY_PORT="443"
 REGISTRY_URL="${REGISTRY}:${REGISTRY_PORT}"
 PROJECT="rstech_saas"
 VERSION=${1:-"v1.0.0"}
-BACKEND_IMAGE="${REGISTRY_URL}/${PROJECT}/backend:${VERSION}"
-FRONTEND_IMAGE="${REGISTRY_URL}/${PROJECT}/frontend:${VERSION}"
+# 镜像 tag 用纯 hostname (不带 :443)
+BACKEND_IMAGE="${REGISTRY}/${PROJECT}/backend:${VERSION}"
+FRONTEND_IMAGE="${REGISTRY}/${PROJECT}/frontend:${VERSION}"
 
 HARBOR_USER="RS8568"
 HARBOR_PASS="Bj6546321."
