@@ -1,26 +1,52 @@
-# Backend Dockerfile (v17 FastAPI)
+# Backend Dockerfile (v17 FastAPI) - 优化版
+# 优化:
+#   1) apt 用阿里云源 (国内下载快 10x)
+#   2) multi-stage build 排除 gcc/libpq-dev
+#   3) 不装 fonts-noto-cjk (项目自带 simhei.ttf)
+#   4) pip 用清华源
+#   5) 单独 pip install 层缓存依赖
 # 单机部署: docker compose up
+#==================== Stage 1: builder ====================
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# 用阿里云 apt 源 (国内快)
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list
+
+# 编译依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python 依赖 (单独层, 缓存友好)
+COPY backend_fastapi/requirements.txt .
+# pip 用清华源
+RUN pip install --no-cache-dir \
+    -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    -r requirements.txt
+
+#==================== Stage 2: runtime ====================
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# 系统依赖：
-#   gcc        - 编译 Python 包
-#   libpq-dev  - psycopg2 编译依赖
-#   curl       - 健康检查 + 下载
-#   postgresql-client - pg_isready 等待 db
-#   fonts-noto-cjk   - PDF 中文字体兜底
+# 用阿里云 apt 源
+RUN sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+    sed -i 's|deb.debian.org|mirrors.aliyun.com|g' /etc/apt/sources.list
+
+# 运行时依赖 (没有 gcc, 镜像小)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
+    libpq5 \
     curl \
     postgresql-client \
-    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
-# Python 依赖
-COPY backend_fastapi/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 从 builder 复制已安装的 Python 包
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
 
 # 复制后端代码（含 fonts/ 中文字体、scripts/、main.py）
 COPY backend_fastapi/ .
