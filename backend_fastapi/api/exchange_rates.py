@@ -167,8 +167,11 @@ def convert_currency(
         raise HTTPException(status_code=400, detail="货币代码不存在")
 
     # 转换为基准货币，再转换为目标货币
-    base_amount = amount / from_rate.rate
-    result = base_amount * to_rate.rate
+    # 本地 rate 语义: 1 单位本币 = rate 基准币 (e.g. 1 USD = 6.817 CNY, 1 CNY = 1.0 CNY)
+    # amount (from_currency) -> 基准币: 乘以 from_rate
+    # 基准币 -> to_currency: 除以 to_rate (因为 1 to = to_rate 基准币)
+    base_amount = amount * from_rate.rate
+    result = base_amount / to_rate.rate if to_rate.rate else 0
 
     return JSONResponse(content={
         'from': from_currency,
