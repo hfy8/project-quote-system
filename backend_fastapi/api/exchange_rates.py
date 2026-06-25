@@ -177,3 +177,24 @@ def convert_currency(
         'result': round(result, 2),
         'rate': round(to_rate.rate / from_rate.rate, 4),
     })
+
+
+@router.post('/sync')
+def trigger_sync_exchange_rates(db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
+    """手动触发汇率同步 (admin only)
+
+    调用外部接口 https://open.er-api.com/v6/latest/CNY
+    同步到本地 exchange_rates 表
+
+    Returns:
+        {updated, created, skipped, total_external, base_ccy, synced_at}
+    """
+    # 权限检查: 只有 admin 角色可触发
+    from core.models.user import User
+    user = db.query(User).get(int(user_id))
+    if not user or user.role != 'admin':
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+
+    from core.tasks.exchange_rate_sync import sync_exchange_rates
+    result = sync_exchange_rates(base_ccy="CNY", create_missing=True)
+    return JSONResponse(content=result, status_code=200 if "error" not in result else 500)

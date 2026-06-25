@@ -94,8 +94,18 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
             )
 
+            # 汇率同步：外部 API 每天 ~08:13 UTC 更新, 09:00 本地时间同步
+            from core.tasks.exchange_rate_sync import scheduled_sync_exchange_rates
+            _scheduler.add_job(
+                func=scheduled_sync_exchange_rates,
+                trigger=CronTrigger(hour=9, minute=0),
+                id='daily_exchange_rate_sync',
+                name='每日汇率同步',
+                replace_existing=True,
+            )
+
             _scheduler.start()
-            logger.info("✅ 定时任务已启动：22:00 数据同步 / 03:00 清理过期消息")
+            logger.info("✅ 定时任务已启动：22:00 数据同步 / 03:00 清理过期消息 / 09:00 汇率同步")
         except Exception as e:
             logger.exception(f"⚠️ 定时任务启动失败: {e}")
 
