@@ -271,6 +271,8 @@ fastapi_app.include_router(exports_router, tags=["导出"])
 # AI Agent 路由（prefix 已在 router 里 = /api/ai）
 from api.ai import router as ai_router
 fastapi_app.include_router(ai_router)
+from api.public import router as public_router
+fastapi_app.include_router(public_router)
 
 
 # ============== Flask legacy 挂载已移除 ==============
