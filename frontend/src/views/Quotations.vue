@@ -88,7 +88,7 @@
             <div class="action-buttons">
               <button v-if="row.type === 'line'" class="action-btn add-child" @click="handleAddChild(row)">+子项</button>
               <button v-if="row.status === 'draft' && !row.parent_id" class="action-btn archive" @click="handleArchive(row)">归档</button>
-              <button v-if="row.status === 'approved' && !row.parent_id" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
+              <button v-if="row.status === 'approved' && !row.parent_id && !row.has_project" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
               <button v-if="row.status === 'approved'" class="action-btn version" @click="handleViewVersions(row)">版本</button>
               <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row)">编辑</button>
               <button class="action-btn delete" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</button>
@@ -383,7 +383,9 @@ const handleUnarchive = async (row) => {
     fetchData()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('撤销归档失败')
+      // 后端返回的 detail 优先展示 (如"已落地项目")
+      const msg = error?.response?.data?.detail || error?.message || '撤销归档失败'
+      ElMessage.error(msg)
     }
   }
 }

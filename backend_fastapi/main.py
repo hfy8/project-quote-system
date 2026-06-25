@@ -109,6 +109,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.exception(f"⚠️ 定时任务启动失败: {e}")
 
+    # 启动项目落地状态同步服务 (内存 set, 每 5 分钟刷新)
+    try:
+        from core.services.project_sync import project_sync
+        project_sync.start()
+        logger.info("✅ 项目落地状态同步服务已启动")
+    except Exception as e:
+        logger.exception(f"⚠️ 项目落地状态同步服务启动失败: {e}")
+
     yield
 
     # 关闭时停止 scheduler
@@ -118,6 +126,14 @@ async def lifespan(app: FastAPI):
             logger.info("⏹ 定时任务调度器已停止")
         except Exception:
             pass
+
+    # 停止项目落地状态同步服务
+    try:
+        from core.services.project_sync import project_sync
+        project_sync.stop()
+        logger.info("⏹ 项目落地状态同步服务已停止")
+    except Exception:
+        pass
 
     logger.info("👋 FastAPI 关闭")
 

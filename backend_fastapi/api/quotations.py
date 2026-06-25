@@ -407,11 +407,15 @@ def get_quotations(
     seen_ids = set()
     parents = []
     children_map = {}
+    # 项目落地状态 (从外部 project_sync 内存 set 查询)
+    from core.services.project_sync import project_sync as _project_sync
     for q in all_quotations:
         if q.id in seen_ids:
             continue
         seen_ids.add(q.id)
         qd = q.to_dict()
+        # 给每个报价单附加是否已落地项目的标记 (供前端禁用"撤销归档"按钮)
+        qd['has_project'] = _project_sync.has_project(qd.get('scheme_no'))
         if q.parent_id:
             # 子报价单
             if q.parent_id not in children_map:
@@ -1402,6 +1406,14 @@ def unarchive_quotation(
 
     if quotation.status != 'approved':
         raise HTTPException(status_code=400, detail='报价单未归档')
+
+    # 项目落地状态检查: 如果对应 scheme_no 已在外部项目系统中, 禁止撤销归档
+    from core.services.project_sync import project_sync as _project_sync
+    if _project_sync.has_project(quotation.scheme_no):
+        raise HTTPException(
+            status_code=400,
+            detail=f'报价单方案号 "{quotation.scheme_no}" 已在项目管理系统落地, 不可撤销归档'
+        )
 
     quotation.status = 'draft'
 
