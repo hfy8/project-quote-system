@@ -407,15 +407,25 @@ def get_quotations(
     seen_ids = set()
     parents = []
     children_map = {}
-    # 项目落地状态 (从外部 project_sync 内存 set 查询)
-    from core.services.project_sync import project_sync as _project_sync
+
+    # 项目落地状态: 一次性 SQL 查所有 scheme_no 对应的 landing_projects 记录
+    # 避免 N 次内存 set 查询 (报价单 10000+ 时性能更好)
+    landing_set = set()
+    all_scheme_nos = {q.scheme_no for q in all_quotations if q.scheme_no}
+    if all_scheme_nos:
+        from core.models.landing_project import LandingProject
+        landing_rows = db.query(LandingProject.scheme_no).filter(
+            LandingProject.scheme_no.in_(all_scheme_nos)
+        ).all()
+        landing_set = {row[0] for row in landing_rows}
+
     for q in all_quotations:
         if q.id in seen_ids:
             continue
         seen_ids.add(q.id)
         qd = q.to_dict()
         # 给每个报价单附加是否已落地项目的标记 (供前端禁用"撤销归档"按钮)
-        qd['has_project'] = _project_sync.has_project(qd.get('scheme_no'))
+        qd['has_project'] = qd.get('scheme_no') in landing_set
         if q.parent_id:
             # 子报价单
             if q.parent_id not in children_map:
@@ -1408,12 +1418,14 @@ def unarchive_quotation(
         raise HTTPException(status_code=400, detail='报价单未归档')
 
     # 项目落地状态检查: 如果对应 scheme_no 已在外部项目系统中, 禁止撤销归档
-    from core.services.project_sync import project_sync as _project_sync
-    if _project_sync.has_project(quotation.scheme_no):
-        raise HTTPException(
-            status_code=400,
-            detail=f'报价单方案号 "{quotation.scheme_no}" 已在项目管理系统落地, 不可撤销归档'
-        )
+    if quotation.scheme_no:
+        from core.models.landing_project import LandingProject
+        landing = db.query(LandingProject).filter_by(scheme_no=quotation.scheme_no).first()
+        if landing:
+            raise HTTPException(
+                status_code=400,
+                detail=f'报价单方案号 "{quotation.scheme_no}" 已在项目管理系统落地 (项目状态: {landing.project_status}), 不可撤销归档'
+            )
 
     quotation.status = 'draft'
 

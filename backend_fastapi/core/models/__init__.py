@@ -7,6 +7,7 @@ from .version import VersionSnapshot
 from .fee_rate import FeeRate
 from .labor_hour import LaborHour
 from .exchange_rate import ExchangeRate
+from .landing_project import LandingProject
 from .department import Department
 from .position import Position
 from .organization import Organization
@@ -34,6 +35,7 @@ __all__ = [
     'FeeRate',
     'LaborHour',
     'ExchangeRate',
+    'LandingProject',
     'Department',
     'Position',
     'Organization',

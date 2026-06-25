@@ -96,3 +96,35 @@ def get_quotation_labor_hours_total(
             "total_amount": round(total_amount, 2),
         },
     }
+
+
+# ============== 项目落地状态 (webhook + 监控) ==============
+
+@router.post("/landing-projects/webhook")
+async def landing_project_webhook(payload: dict):
+    """外部项目管理系统 webhook (无 auth)
+
+    触发场景: 项目状态变化时主动通知 (减少轮询延迟)
+    Body 格式: 自由 JSON, 内部存到 full_data 并按 scheme_no UPSERT
+
+    简单实现: 收到 webhook 后立即触发一次 DB 同步 + cache 重载
+    """
+    try:
+        from core.services.project_sync import project_sync
+        # 同步一次 DB
+        project_sync._sync_db()
+        # 重载 cache
+        project_sync.reload_cache()
+        return {"ok": True, "message": "已同步"}
+    except Exception as e:
+        return JSONResponse(
+            content={"ok": False, "error": str(e)},
+            status_code=500,
+        )
+
+
+@router.get("/landing-projects/sync-stats")
+async def landing_project_sync_stats():
+    """同步状态查询 (公开接口, 仅返回统计信息)"""
+    from core.services.project_sync import project_sync
+    return project_sync.get_stats()
