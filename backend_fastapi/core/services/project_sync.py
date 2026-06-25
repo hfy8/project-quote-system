@@ -19,8 +19,6 @@ import time
 from typing import Optional, Set
 
 import requests
-from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -94,9 +92,9 @@ class ProjectSyncService:
 
     def _load_cache_from_db(self):
         """从 DB 加载所有 scheme_no 到内存 cache"""
-        from db import db
+        from db import db_session_factory
         from core.models.landing_project import LandingProject
-        session = db()
+        session = db_session_factory()
         try:
             rows = session.query(LandingProject.scheme_no).all()
             new_set = {row[0] for row in rows if row[0]}
@@ -173,32 +171,54 @@ class ProjectSyncService:
             logger.info("[ProjectSync] 外部接口无数据")
             return
 
-        # UPSERT 到 DB
-        from db import db
+        # 去重: 外部接口可能返回重复 scheme_no (如 L104229 多个子项)
+        # 用 last_synced_at 最大的版本
+        from collections import OrderedDict
+        deduped = OrderedDict()
+        for r in all_rows:
+            sno = r["scheme_no"]
+            if sno not in deduped or r["last_synced_at"] > deduped[sno]["last_synced_at"]:
+                deduped[sno] = r
+        unique_rows = list(deduped.values())
+
+        # UPSERT 到 DB (逐条 ORM merge, 避免 ON CONFLICT DO UPDATE 重复 conflict target 错误)
+        from db import db_session_factory
         from core.models.landing_project import LandingProject
-        session = db()
+        from sqlalchemy import select
+        session = db_session_factory()
         try:
-            # 用 PostgreSQL ON CONFLICT DO UPDATE 语法
-            stmt = pg_insert(LandingProject.__table__).values(all_rows)
-            # 冲突时 (scheme_no 已存在): 更新所有字段, 但保留 first_synced_at
-            update_dict = {
-                col.name: stmt.excluded[col.name]
-                for col in LandingProject.__table__.columns
-                if col.name not in ("scheme_no", "first_synced_at")
-            }
-            stmt = stmt.on_conflict_do_update(
-                index_elements=["scheme_no"],
-                set_=update_dict,
-            )
-            session.execute(stmt)
+            inserted_count = 0
+            updated_count = 0
+            for row in unique_rows:
+                # 查是否已存在
+                existing = session.query(LandingProject).filter_by(scheme_no=row["scheme_no"]).first()
+                if existing:
+                    # 更新 (保留 first_synced_at)
+                    for k, v in row.items():
+                        if k != "first_synced_at":
+                            setattr(existing, k, v)
+                    updated_count += 1
+                else:
+                    # 新增
+                    obj = LandingProject(**row)
+                    session.add(obj)
+                    inserted_count += 1
+
+                # 每 100 条 flush 一次, 避免长事务
+                if (inserted_count + updated_count) % 100 == 0:
+                    session.flush()
+
             session.commit()
 
             with self._lock:
                 self._last_db_sync_at = time.time()
-                self._last_db_sync_count = len(all_rows)
+                self._last_db_sync_count = len(unique_rows)
                 self._last_error = None
 
-            logger.info(f"[ProjectSync] DB 同步成功: {len(all_rows)} 条")
+            logger.info(
+                f"[ProjectSync] DB 同步成功: 总 {len(all_rows)} 条, "
+                f"去重后 {len(unique_rows)} 条 (新增 {inserted_count}, 更新 {updated_count})"
+            )
         except Exception as e:
             session.rollback()
             with self._lock:
