@@ -4,8 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from core.models.user import User
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter(prefix='/api/users')
 
@@ -111,9 +113,10 @@ def get_users(
 def create_user(
     body: UserCreate,
     current_user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """创建用户"""
+    _check_permission(db, int(current_user_id), 'user.create')
     # 检查用户名是否已存在
     existing = db.query(User).filter_by(username=body.username).first()
     if existing:
@@ -138,9 +141,10 @@ def update_user(
     user_id: int,
     body: UserUpdate,
     current_user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """更新用户信息"""
+    _check_permission(db, int(current_user_id), 'user.edit')
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -174,9 +178,10 @@ def update_user(
 def delete_user(
     user_id: int,
     current_user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """删除用户"""
+    _check_permission(db, int(current_user_id), 'user.delete')
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -211,9 +216,10 @@ def reset_own_password(
 def admin_reset_password(
     body: AdminResetPasswordBody,
     current_user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """管理员重置指定用户的密码"""
+    _check_permission(db, int(current_user_id), 'user.reset_password')
     admin = db.query(User).get(int(current_user_id))
     if not admin or admin.role != "admin":
         raise HTTPException(status_code=403, detail="无权限，仅管理员可重置他人密码")
@@ -235,9 +241,10 @@ def toggle_user_status(
     user_id: int,
     body: StatusUpdate,
     current_user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """启用/禁用用户"""
+    _check_permission(db, int(current_user_id), 'user.edit')
     user = db.query(User).get(user_id)
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")

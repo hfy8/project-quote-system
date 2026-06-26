@@ -15,12 +15,14 @@ import uuid
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from typing import Optional, List, Dict
+from sqlalchemy.orm import Session
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from core.auth import get_current_user_id
+from core.auth import get_current_user_id, get_db
 from core.services.ai_agent import run_agent
+from api.quotations import _check_permission
 
 import logging
 logger = logging.getLogger(__name__)
@@ -73,8 +75,10 @@ class AskResponse(BaseModel):
 def ask(
     req: AskRequest,
     user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
     """AI 智能问答 - 非流式版本（兼容旧客户端）"""
+    _check_permission(db, int(user_id), 'ai.query')
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="query 不能为空")
 
@@ -147,6 +151,7 @@ def ask(
 def ask_stream(
     req: AskRequest,
     user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
     """AI 智能问答 - SSE 流式输出
 
@@ -161,6 +166,7 @@ def ask_stream(
         data: {"type": "done", "answer": "...", "steps": N, "tools_used": [...]}
         data: {"type": "error", "message": "..."}
     """
+    _check_permission(db, int(user_id), 'ai.query')
     if not req.query or not req.query.strip():
         raise HTTPException(status_code=400, detail="query 不能为空")
 
@@ -205,8 +211,10 @@ def ask_stream(
 def clear_conversation(
     conversation_id: str,
     user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
 ):
     """清除指定会话的历史"""
+    _check_permission(db, int(user_id), 'ai.query')
     if conversation_id in _CONVERSATIONS:
         del _CONVERSATIONS[conversation_id]
         return {"status": "ok", "message": f"已清除会话 {conversation_id[:8]}"}
