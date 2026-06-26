@@ -15,6 +15,11 @@ export const quotationsAPI = {
   removeParticipant: (quotationId, userId) => request.delete(`/quotations/${quotationId}/participants/${userId}`),
   archive: (id, remark) => request.post(`/quotations/${id}/archive`, { remark }),
   unarchive: (id) => request.post(`/quotations/${id}/unarchive`),
+  // 归档审批流
+  approveArchive: (id, remark) => request.post(`/quotations/${id}/approve-archive`, { remark }),
+  rejectArchive: (id, reason) => request.post(`/quotations/${id}/reject-archive`, { reason }),
+  cancelArchive: (id) => request.post(`/quotations/${id}/cancel-archive`),
+  listPendingArchiveApprovals: () => request.get('/quotations/pending-archive-approvals'),
   getVersions: (id) => request.get(`/quotations/${id}/versions`),
   getVersionDetail: (id, versionNo) => request.get(`/quotations/${id}/versions/${versionNo}`)
 }

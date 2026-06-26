@@ -45,6 +45,9 @@ from core.models.participant_type_permission import ParticipantTypePermission
 from core.models.travel import TravelPersonTripFee
 from core.models.travel_entry import TravelPersonDays, TravelPersonTrip, PackingEntry
 from core.models.operation_log import Action, Module as LogModule, OperationLog
+from core.models.archive_approval import ArchiveApproval
+from core.models.department import Department
+from core.models.position import Position
 from core.auth import get_db, get_current_user_id
 from datetime import datetime
 
@@ -150,6 +153,10 @@ class ParticipantUpdate(BaseModel):
 
 class ArchiveRequest(BaseModel):
     remark: Optional[str] = "归档发布"
+
+
+class RejectArchiveRequest(BaseModel):
+    reason: str = Field(..., min_length=5, description="驳回原因, 至少 5 个字")
 
 
 # ============== 辅助函数 ==============
@@ -930,6 +937,30 @@ def get_my_assigned_modules(
     }, status_code=200)
 
 
+@router.get("/quotations/pending-archive-approvals")
+def list_pending_archive_approvals(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """部门领导查询待办归档审批"""
+    approvals = db.query(ArchiveApproval).filter(
+        ArchiveApproval.approver_id == int(user_id),
+        ArchiveApproval.status == 'pending'
+    ).order_by(ArchiveApproval.requested_at.desc()).all()
+
+    # 联表拼装完整信息 (报价单名/负责人/部门等)
+    result = []
+    for a in approvals:
+        q = db.query(Quotation).get(a.quotation_id)
+        u = db.query(User).get(a.requested_by)
+        result.append({
+            **a.to_dict(),
+            'quotation_name': q.name if q else None,
+            'requester_name': u.real_name or u.username if u else None,
+        })
+    return {'items': result, 'total': len(result)}
+
+
 @router.get("/quotations/{quotation_id}")
 def get_quotation(
     quotation_id: int,
@@ -1011,6 +1042,12 @@ def update_quotation(
     _check_permission(db, int(user_id), 'quotation.edit')
     quotation = _validate_quotation(db, quotation_id)
 
+    # 审批中锁定 (admin 可强制覆盖)
+    user = db.query(User).get(int(user_id))
+    is_admin = user and user.role == 'admin'
+    if quotation.status == 'approved_pending' and not is_admin:
+        raise HTTPException(status_code=409, detail='报价单正在审批中, 不能修改. 请先撤回审批')
+
     data = body.model_dump(exclude_unset=True)
     # 校验：非子报价单的 scheme_no 不能改成已存在的值
     if 'scheme_no' in data and data['scheme_no'] and (data.get('parent_id', quotation.parent_id) is None):
@@ -1063,6 +1100,12 @@ def delete_quotation(
     _check_permission(db, int(user_id), 'quotation.delete')
     quotation = _validate_quotation(db, quotation_id)
 
+    # 审批中锁定
+    user = db.query(User).get(int(user_id))
+    is_admin = user and user.role == 'admin'
+    if quotation.status == 'approved_pending' and not is_admin:
+        raise HTTPException(status_code=409, detail='报价单正在审批中, 不能删除. 请先撤回审批')
+
     if quotation.type == 'line' and quotation.children.count() > 0:
         raise HTTPException(
             status_code=400,
@@ -1095,6 +1138,12 @@ def update_status(
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
         raise HTTPException(status_code=404, detail='报价单不存在')
+
+    # 审批中禁止手动改状态
+    user = db.query(User).get(int(user_id))
+    is_admin = user and user.role == 'admin'
+    if quotation.status == 'approved_pending' and not is_admin:
+        raise HTTPException(status_code=409, detail='报价单正在审批中, 不能修改状态. 请先撤回审批')
 
     new_status = body.status
 
@@ -1355,32 +1404,24 @@ def get_version_detail(
 
 # ---- 归档/撤销归档 ----
 
-@router.post("/quotations/{quotation_id}/archive")
-def archive_quotation(
-    quotation_id: int,
-    body: ArchiveRequest = ArchiveRequest(),
-    db=Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    _check_permission(db, int(user_id), 'quotation.edit')
-    quotation = db.query(Quotation).get(quotation_id)
-    if not quotation:
-        raise HTTPException(status_code=404, detail='报价单不存在')
+def _execute_archive_core(db, quotation, user_id: int, remark: str = '', via: str = 'admin'):
+    """核心归档逻辑: 创建版本快照 + 生成 PDF + 改 status + 通知 + 失效缓存
 
+    via='admin': admin 直接归档 (不走审批, 也写一条 via='admin' 的 approval 记录留痕)
+    via='approval': 审批通过后归档
+    """
     if quotation.status == 'approved':
         raise HTTPException(status_code=400, detail='报价单已经归档')
 
-    remark = body.remark
-    version = _create_version_snapshot(db, quotation, int(user_id), 'archive', remark)
-    db.commit()  # 必须先 commit，让 VersionSnapshot 在 DB 可见，generate_version_pdfs 才能查到
+    version = _create_version_snapshot(db, quotation, user_id, 'archive', remark)
+    db.commit()  # 必须先 commit，让 VersionSnapshot 在 DB 可见
 
-    # 归档时生成中英 PDF（无 Flask - 直接调导出服务）
+    # 归档时生成中英 PDF
     try:
-        print(f"[archive {quotation_id}] generate_version_pdfs start", flush=True)
+        print(f"[archive {quotation.id}] generate_version_pdfs start", flush=True)
         from core.services.export_service import generate_version_pdfs
-        # 纯 SQLAlchemy session，不需要 Flask app context
         result = generate_version_pdfs(quotation.id, version.version_no)
-        print(f"[archive {quotation_id}] generate_version_pdfs result: {result}", flush=True)
+        print(f"[archive {quotation.id}] generate_version_pdfs result: {result}", flush=True)
     except Exception as e:
         import traceback
         print(f"生成版本 PDF 失败: {e}", flush=True)
@@ -1393,11 +1434,10 @@ def archive_quotation(
             if child.status == 'draft':
                 child.status = 'approved'
                 child_version = _create_version_snapshot(
-                    db, child, int(user_id), 'archive', '随线体报价单归档')
-                db.commit()  # 同样：子版本需先 commit
+                    db, child, user_id, 'archive', '随线体报价单归档')
+                db.commit()
                 try:
                     from core.services.export_service import generate_version_pdfs
-                    # 纯 SQLAlchemy session，不需要 Flask app context
                     generate_version_pdfs(child.id, child_version.version_no)
                 except Exception as e:
                     import traceback
@@ -1406,7 +1446,7 @@ def archive_quotation(
 
     db.commit()
 
-    _log_op(db, int(user_id),
+    _log_op(db, user_id,
         action=Action.UPDATE,
         module=LogModule.QUOTATION,
         resource_type='quotation',
@@ -1414,7 +1454,7 @@ def archive_quotation(
         detail=f'归档报价单 "{quotation.name}"'
     )
 
-    # 消息通知
+    # 消息通知 (复用原逻辑)
     user_ids = [quotation.business_owner_id] if quotation.business_owner_id else []
     for mod in quotation.modules:
         for participant in mod.participants:
@@ -1430,16 +1470,301 @@ def archive_quotation(
             related_type='quotation'
         )
 
-    # 失效报价单列表缓存
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
+    return version
+
+
+# ============== 归档审批流路由 (必须在 /{quotation_id}/... 之前声明, 避免路径冲突) ==============
+
+@router.post("/quotations/{quotation_id}/approve-archive")
+def approve_archive(
+    quotation_id: int,
+    body: ArchiveRequest = ArchiveRequest(),
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """部门领导同意归档"""
+    _check_permission(db, int(user_id), 'quotation.edit')
+    approval = db.query(ArchiveApproval).filter_by(
+        quotation_id=quotation_id, status='pending'
+    ).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail='没有待审批记录')
+    if approval.approver_id != int(user_id):
+        raise HTTPException(status_code=403, detail='您不是该审批的指定审批人')
+
+    quotation = db.query(Quotation).get(quotation_id)
+    if not quotation:
+        raise HTTPException(status_code=404, detail='报价单不存在')
+
+    # 标记 approval 通过
+    approval.status = 'approved'
+    approval.approved_at = datetime.utcnow()
+    approval.remark = body.remark
+    db.commit()
+
+    # 走核心归档逻辑
+    version = _execute_archive_core(db, quotation, int(user_id), body.remark or '部门领导审批通过', via='approval')
+
+    # 通知发起人
+    _notify_users(db, [approval.requested_by],
+        title='报价单归档已通过',
+        content=f'您申请的报价单 "{quotation.name}" 已被部门领导审批通过, 已归档到v{version.version_no}',
+        msg_type='archive_approved',
+        related_id=quotation_id,
+        related_type='quotation'
+    )
+
     from core.services.cache import cache_invalidate_prefix
     cache_invalidate_prefix('quotations:list:')
 
     return {
-        'message': '归档成功',
+        'message': '已审批通过, 归档成功',
         'quotation': quotation.to_dict(),
-        'version': version.to_dict()
+        'version': version.to_dict(),
     }
 
+
+@router.post("/quotations/{quotation_id}/reject-archive")
+def reject_archive(
+    quotation_id: int,
+    body: RejectArchiveRequest,
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """部门领导驳回归档"""
+    _check_permission(db, int(user_id), 'quotation.edit')
+
+    approval = db.query(ArchiveApproval).filter_by(
+        quotation_id=quotation_id, status='pending'
+    ).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail='没有待审批记录')
+    if approval.approver_id != int(user_id):
+        raise HTTPException(status_code=403, detail='您不是该审批的指定审批人')
+
+    quotation = db.query(Quotation).get(quotation_id)
+    if not quotation:
+        raise HTTPException(status_code=404, detail='报价单不存在')
+
+    # 标记 approval 驳回 + 报价单回草稿
+    approval.status = 'rejected'
+    approval.approved_at = datetime.utcnow()
+    approval.reject_reason = body.reason
+    quotation.status = 'draft'  # ← 你的决策: 驳回后回到草稿
+    db.commit()
+
+    # 通知发起人
+    user = db.query(User).get(int(user_id))
+    _notify_users(db, [approval.requested_by],
+        title='报价单归档被驳回',
+        content=f'您申请的报价单 "{quotation.name}" 被 {user.real_name or user.username} 驳回. 原因: {body.reason}',
+        msg_type='archive_rejected',
+        related_id=quotation_id,
+        related_type='quotation'
+    )
+
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
+    return {'message': '已驳回, 报价单回到草稿状态'}
+
+
+@router.post("/quotations/{quotation_id}/cancel-archive")
+def cancel_archive(
+    quotation_id: int,
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """发起人撤回归档申请"""
+    _check_permission(db, int(user_id), 'quotation.edit')
+    quotation = db.query(Quotation).get(quotation_id)
+    if not quotation:
+        raise HTTPException(status_code=404, detail='报价单不存在')
+    if quotation.status != 'approved_pending':
+        raise HTTPException(status_code=400, detail='报价单不在审批中, 无需撤回')
+
+    approval = db.query(ArchiveApproval).filter_by(
+        quotation_id=quotation_id, status='pending'
+    ).first()
+    if not approval:
+        raise HTTPException(status_code=404, detail='没有待审批记录')
+    if approval.requested_by != int(user_id):
+        raise HTTPException(status_code=403, detail='只有发起人可以撤回')
+
+    # 标记 approval 撤回 + 报价单回草稿
+    approval.status = 'cancelled'
+    approval.approved_at = datetime.utcnow()
+    quotation.status = 'draft'
+    db.commit()
+
+    # 通知部门领导
+    user = db.query(User).get(int(user_id))
+    _notify_users(db, [approval.approver_id],
+        title='归档申请已撤回',
+        content=f'{user.real_name or user.username} 撤回了报价单 "{quotation.name}" 的归档申请',
+        msg_type='archive_cancelled',
+        related_id=quotation_id,
+        related_type='quotation'
+    )
+
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
+    return {'message': '已撤回, 报价单回到草稿状态'}
+
+
+# ============== 辅助函数 ==============
+
+def _get_department_leader(db, user_id: int):
+    """根据用户部门, 找部门领导
+    返回 dict {id, real_name, position_name} 或 None
+    """
+    user = db.query(User).get(user_id)
+    if not user or not user.dept_id:
+        return None
+    dept = db.query(Department).get(user.dept_id)
+    if not dept or not dept.header_id:
+        return None
+    leader = db.query(User).get(dept.header_id)
+    if not leader or not leader.is_active:
+        return None
+    position_name = None
+    if leader.position_id:
+        pos = db.query(Position).get(leader.position_id)
+        if pos:
+            position_name = pos.name
+    return {
+        'id': leader.id,
+        'real_name': leader.real_name or leader.username,
+        'username': leader.username,
+        'position_name': position_name,
+    }
+
+
+# ---- 归档/撤销归档 ----
+
+@router.post("/quotations/{quotation_id}/archive")
+def archive_quotation(
+    quotation_id: int,
+    body: ArchiveRequest = ArchiveRequest(),
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
+    quotation = db.query(Quotation).get(quotation_id)
+    if not quotation:
+        raise HTTPException(status_code=404, detail='报价单不存在')
+
+    if quotation.status == 'approved':
+        raise HTTPException(status_code=400, detail='报价单已经归档')
+    if quotation.status == 'approved_pending':
+        raise HTTPException(status_code=400, detail='报价单正在审批中, 请等待审批完成或先撤回')
+
+    user = db.query(User).get(int(user_id))
+    is_admin = user and user.role == 'admin'
+
+    # admin 直接归档
+    if is_admin:
+        version = _execute_archive_core(db, quotation, int(user_id), body.remark, via='admin')
+        # 留痕: admin 归档也写一条 approval (status=approved, via=admin)
+        approval = ArchiveApproval(
+            quotation_id=quotation_id,
+            requested_by=int(user_id),
+            approver_id=int(user_id),
+            requested_at=datetime.utcnow(),
+            approved_at=datetime.utcnow(),
+            status='approved',
+            via='admin',
+            remark=body.remark,
+        )
+        db.add(approval)
+        db.commit()
+        return {
+            'message': '归档成功',
+            'quotation': quotation.to_dict(),
+            'version': version.to_dict()
+        }
+
+    # 非 admin: 必须是报价单负责人
+    if quotation.business_owner_id != int(user_id):
+        raise HTTPException(status_code=403, detail='只有报价单负责人或管理员可以发起归档')
+
+    # 找部门领导
+    leader = _get_department_leader(db, int(user_id))
+    if not leader:
+        raise HTTPException(status_code=400, detail='所在部门未配置领导, 请联系管理员')
+    if leader['id'] == int(user_id):
+        raise HTTPException(status_code=400, detail='部门领导不能是本人 (数据异常), 请联系管理员')
+
+    # 检查是否已有 pending 审批
+    existing = db.query(ArchiveApproval).filter_by(
+        quotation_id=quotation_id, status='pending'
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail='已存在待审批记录')
+
+    # 创建审批 + 改 status
+    approval = ArchiveApproval(
+        quotation_id=quotation_id,
+        requested_by=int(user_id),
+        approver_id=leader['id'],
+        status='pending',
+        via='approval',
+        remark=body.remark,
+    )
+    quotation.status = 'approved_pending'
+    db.add(approval)
+    db.commit()
+
+    # 通知部门领导
+    _notify_users(db, [leader['id']],
+        title='报价单归档待审批',
+        content=f'{user.real_name or user.username} 申请归档报价单 "{quotation.name}", 请审批',
+        msg_type='archive_pending',
+        related_id=quotation_id,
+        related_type='quotation'
+    )
+
+    from core.services.cache import cache_invalidate_prefix
+    cache_invalidate_prefix('quotations:list:')
+
+    return {
+        'message': '归档申请已提交, 等待部门领导审批',
+        'approval_id': approval.id,
+        'approver': leader,
+        'status': 'pending',
+    }
+
+
+# ============== 辅助函数 ==============
+
+def _get_department_leader(db, user_id: int):
+    """根据用户部门, 找部门领导
+    返回 dict {id, real_name, position_name} 或 None
+    """
+    user = db.query(User).get(user_id)
+    if not user or not user.dept_id:
+        return None
+    dept = db.query(Department).get(user.dept_id)
+    if not dept or not dept.header_id:
+        return None
+    leader = db.query(User).get(dept.header_id)
+    if not leader or not leader.is_active:
+        return None
+    position_name = None
+    if leader.position_id:
+        pos = db.query(Position).get(leader.position_id)
+        if pos:
+            position_name = pos.name
+    return {
+            'id': leader.id,
+            'real_name': leader.real_name or leader.username,
+            'username': leader.username,
+            'position_name': position_name,
+        }
 
 
 @router.post("/quotations/{quotation_id}/unarchive")
