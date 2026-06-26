@@ -4,7 +4,9 @@ from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter(prefix='/api/roles')
 
@@ -65,8 +67,13 @@ def get_roles(
 # ──────────────────────────────────────────────
 
 @router.post("", status_code=201)
-def create_role(body: RoleCreate, db=Depends(get_db)):
+def create_role(
+    body: RoleCreate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """创建新角色"""
+    _check_permission(db, int(user_id), 'role.create')
     from core.models import Role, Permission, User
 
     if not body.name:
@@ -148,8 +155,14 @@ def get_role(role_id: int, db=Depends(get_db)):
 # ──────────────────────────────────────────────
 
 @router.put("/{role_id}")
-def update_role(role_id: int, body: RoleUpdate, db=Depends(get_db)):
+def update_role(
+    role_id: int,
+    body: RoleUpdate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """更新角色信息（名称、描述、权限）"""
+    _check_permission(db, int(user_id), 'role.edit')
     from core.models import Role, Permission
 
     role = db.query(Role).get(role_id)
@@ -181,8 +194,13 @@ def update_role(role_id: int, body: RoleUpdate, db=Depends(get_db)):
 # ──────────────────────────────────────────────
 
 @router.delete("/{role_id}")
-def delete_role(role_id: int, db=Depends(get_db)):
+def delete_role(
+    role_id: int,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """删除角色（角色下有用户时禁止删除）"""
+    _check_permission(db, int(user_id), 'role.delete')
     from core.models import Role, User
 
     role = db.query(Role).get(role_id)
@@ -223,8 +241,14 @@ def get_role_permissions(role_id: int, db=Depends(get_db)):
 # ──────────────────────────────────────────────
 
 @router.put("/{role_id}/permissions")
-def update_role_permissions(role_id: int, body: RolePermissionsUpdate, db=Depends(get_db)):
+def update_role_permissions(
+    role_id: int,
+    body: RolePermissionsUpdate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
     """更新指定角色的权限列表"""
+    _check_permission(db, int(user_id), 'role.edit')
     from core.models import Role, Permission
 
     role = db.query(Role).get(role_id)
