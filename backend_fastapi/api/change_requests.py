@@ -17,6 +17,7 @@ from core.models.version import VersionSnapshot
 from core.models.fee import OtherFee
 from core.models.operation_log import Action, Module as LogModule
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 from utils.logger import log_operation
 
 router = APIRouter()
@@ -92,6 +93,7 @@ def create_change_request(
     user_id: str = Depends(get_current_user_id),
 ):
     """创建变更申请"""
+    _check_permission(db, int(user_id), 'quotation.edit')
     quotation = db.query(Quotation).get(body.quotation_id)
     if not quotation:
         raise HTTPException(status_code=404, detail="报价单不存在")
@@ -177,6 +179,7 @@ def approve_change_request(
     user_id: str = Depends(get_current_user_id),
 ):
     """批准变更申请"""
+    _check_permission(db, int(user_id), 'quotation.edit')
     change_request = db.query(ChangeRequest).get(request_id)
     if not change_request:
         raise HTTPException(status_code=404, detail="变更申请不存在")
@@ -362,6 +365,7 @@ def reject_change_request(
     user_id: str = Depends(get_current_user_id),
 ):
     """拒绝变更申请"""
+    _check_permission(db, int(user_id), 'quotation.edit')
     change_request = db.query(ChangeRequest).get(request_id)
     if not change_request:
         raise HTTPException(status_code=404, detail="变更申请不存在")
