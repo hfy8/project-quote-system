@@ -215,6 +215,15 @@ class ProjectSyncService:
                 self._last_db_sync_count = len(unique_rows)
                 self._last_error = None
 
+            # 同步后失效报价单列表缓存, 让 has_project 字段立即反映最新状态
+            # 之前: 30s 缓存期内前端一直看到旧状态 → "有的时候有, 有的时候没有"
+            try:
+                from core.services.cache import cache_invalidate_prefix
+                invalidated = cache_invalidate_prefix('quotations:list:')
+                logger.info(f"[ProjectSync] 失效报价单列表缓存: {invalidated} 个 key")
+            except Exception as e:
+                logger.warning(f"[ProjectSync] 失效缓存失败 (非致命): {e}")
+
             logger.info(
                 f"[ProjectSync] DB 同步成功: 总 {len(all_rows)} 条, "
                 f"去重后 {len(unique_rows)} 条 (新增 {inserted_count}, 更新 {updated_count})"

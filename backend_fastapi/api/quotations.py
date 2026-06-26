@@ -358,6 +358,8 @@ def get_quotations(
     page_size: int = Query(20, ge=1, le=200, description="每页条数"),
 ):
     # ============== Redis 缓存 (30s TTL, 写时自动失效) ==============
+    # 注意: has_project 字段不缓存, 因为它依赖 landing_projects 表 (项目同步每 30 分钟更新)
+    # 缓存只缓存 "主体数据" (报价单列表), has_project 在返回时实时算
     from core.services.cache import cache_get, cache_set
     cache_key = (
         f"quotations:list:user={user_id}:status={status or ''}:type={type or ''}"
@@ -366,6 +368,33 @@ def get_quotations(
     )
     cached = cache_get(cache_key)
     if cached is not None:
+        # 缓存命中: 重新计算 has_project (实时查 DB, 不超过缓存本身的 30s 窗口)
+        try:
+            from core.models.landing_project import LandingProject
+            items = cached.get('items', [])
+            # 收集所有 scheme_no (含 _children)
+            scheme_nos = set()
+            for it in items:
+                if it.get('scheme_no'):
+                    scheme_nos.add(it['scheme_no'])
+                for c in it.get('_children', []) or []:
+                    if c.get('scheme_no'):
+                        scheme_nos.add(c['scheme_no'])
+            if scheme_nos:
+                landing_rows = db.query(LandingProject.scheme_no).filter(
+                    LandingProject.scheme_no.in_(scheme_nos)
+                ).all()
+                landing_set = {row[0] for row in landing_rows}
+            else:
+                landing_set = set()
+            for it in items:
+                it['has_project'] = it.get('scheme_no') in landing_set
+                for c in it.get('_children', []) or []:
+                    c['has_project'] = c.get('scheme_no') in landing_set
+        except Exception as e:
+            # 实时计算失败时回退到缓存里的 has_project (保持向后兼容)
+            import logging
+            logging.getLogger('quotations').warning(f"实时 has_project 计算失败: {e}")
         return JSONResponse(content=cached, status_code=200)
 
     user = db.query(User).get(int(user_id))
