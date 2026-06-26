@@ -4,9 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from core.models.labor_hour import LaborHour
 from core.models.quotation import Quotation
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter()
 
@@ -48,8 +50,9 @@ def get_labor_hours(quotation_id: int, db=Depends(get_db)):
 @router.post("/quotations/{quotation_id}/labor-hours", status_code=201)
 def create_labor_hour(
     quotation_id: int, body: LaborHourCreate,
-    db=Depends(get_db), user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
 ):
+    _check_permission(db, int(user_id), 'quotation.edit')
     total = body.hours * body.unit_price
     item = LaborHour(
         quotation_id=quotation_id,
@@ -79,8 +82,10 @@ def _query_labor_item(db, quotation_id, item_id):
 
 @router.put("/quotations/{quotation_id}/labor-hours/{item_id}")
 def update_labor_hour(
-    quotation_id: int, item_id: int, body: LaborHourUpdate, db=Depends(get_db),
+    quotation_id: int, item_id: int, body: LaborHourUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
 ):
+    _check_permission(db, int(user_id), 'quotation.edit')
     item = _query_labor_item(db, quotation_id, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
@@ -97,7 +102,11 @@ def update_labor_hour(
 
 
 @router.delete("/quotations/{quotation_id}/labor-hours/{item_id}")
-def delete_labor_hour(quotation_id: int, item_id: int, db=Depends(get_db)):
+def delete_labor_hour(
+    quotation_id: int, item_id: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     item = _query_labor_item(db, quotation_id, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
