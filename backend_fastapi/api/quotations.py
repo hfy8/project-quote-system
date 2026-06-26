@@ -937,6 +937,31 @@ def get_my_assigned_modules(
     }, status_code=200)
 
 
+@router.get("/quotations/pending-archive-approvals")
+def list_pending_archive_approvals(
+    db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
+):
+    """部门领导查询待办归档审批"""
+    approvals = db.query(ArchiveApproval).filter(
+        ArchiveApproval.approver_id == int(user_id),
+        ArchiveApproval.status == 'pending'
+    ).order_by(ArchiveApproval.requested_at.desc()).all()
+
+    # 联表拼装完整信息 (报价单名/负责人/部门等)
+    result = []
+    for a in approvals:
+        q = db.query(Quotation).get(a.quotation_id)
+        u = db.query(User).get(a.requested_by)
+        result.append({
+            **a.to_dict(),
+            'quotation_name': q.name if q else None,
+            'quotation_code': q.code if q else None,
+            'requester_name': u.real_name or u.username if u else None,
+        })
+    return {'items': result, 'total': len(result)}
+
+
 @router.get("/quotations/{quotation_id}")
 def get_quotation(
     quotation_id: int,
@@ -1455,31 +1480,6 @@ def _execute_archive_core(db, quotation, user_id: int, remark: str = '', via: st
 
 
 # ============== 归档审批流路由 (必须在 /{quotation_id}/... 之前声明, 避免路径冲突) ==============
-
-@router.get("/quotations/pending-archive-approvals")
-def list_pending_archive_approvals(
-    db=Depends(get_db),
-    user_id: str = Depends(get_current_user_id),
-):
-    """部门领导查询待办归档审批"""
-    approvals = db.query(ArchiveApproval).filter(
-        ArchiveApproval.approver_id == int(user_id),
-        ArchiveApproval.status == 'pending'
-    ).order_by(ArchiveApproval.requested_at.desc()).all()
-
-    # 联表拼装完整信息 (报价单名/负责人/部门等)
-    result = []
-    for a in approvals:
-        q = db.query(Quotation).get(a.quotation_id)
-        u = db.query(User).get(a.requested_by)
-        result.append({
-            **a.to_dict(),
-            'quotation_name': q.name if q else None,
-            'quotation_code': q.code if q else None,
-            'requester_name': u.real_name or u.username if u else None,
-        })
-    return {'items': result, 'total': len(result)}
-
 
 @router.post("/quotations/{quotation_id}/approve-archive")
 def approve_archive(
