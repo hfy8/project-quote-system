@@ -17,6 +17,7 @@
         <el-select v-model="filters.status" placeholder="状态" clearable @change="fetchData">
           <el-option label="全部状态" value="" />
           <el-option label="草稿" value="draft" />
+          <el-option label="审批中" value="approved_pending" />
           <el-option label="已归档" value="approved" />
         </el-select>
         <el-select v-model="filters.type" placeholder="类型" clearable @change="fetchData">
@@ -37,6 +38,38 @@
         </el-input>
       </div>
       <button class="btn btn-secondary" @click="fetchData">搜索</button>
+    </div>
+
+    <!-- 待我审批的归档申请 (部门领导) -->
+    <div v-if="pendingApprovals.length > 0" class="pending-approval-bar card">
+      <div class="pending-header" @click="showPendingList = !showPendingList">
+        <span class="pending-icon">📋</span>
+        <span class="pending-title">
+          您有 <b class="pending-count">{{ pendingApprovals.length }}</b> 个报价单归档申请待审批
+        </span>
+        <el-button type="primary" size="small" @click.stop="showPendingList = !showPendingList">
+          {{ showPendingList ? '收起' : '展开' }}
+        </el-button>
+      </div>
+      <div v-if="showPendingList" class="pending-list">
+        <div v-for="approval in pendingApprovals" :key="approval.id" class="pending-item">
+          <div class="pending-info">
+            <div class="pending-quotation">
+              <b>{{ approval.quotation_name }}</b>
+              <span class="pending-code">{{ approval.quotation_code }}</span>
+            </div>
+            <div class="pending-meta">
+              申请人: {{ approval.requester_name }} ·
+              申请时间: {{ formatApprovalDate(approval.requested_at) }}
+              <span v-if="approval.remark"> · 备注: {{ approval.remark }}</span>
+            </div>
+          </div>
+          <div class="pending-actions">
+            <el-button type="success" size="small" @click="handleApproveArchive(approval)">同意</el-button>
+            <el-button type="danger" size="small" @click="handleRejectArchivePrompt(approval)">驳回</el-button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 数据表格 -->
@@ -99,6 +132,7 @@
             <div class="action-buttons">
               <button v-if="row.type === 'line'" class="action-btn add-child" @click="handleAddChild(row)">+子项</button>
               <button v-if="row.status === 'draft' && !row.parent_id" class="action-btn archive" @click="handleArchive(row)">归档</button>
+              <button v-if="row.status === 'approved_pending' && !row.parent_id && row.business_owner_id === currentUserId" class="action-btn cancel" @click="handleCancelArchive(row)">撤回申请</button>
               <button v-if="row.status === 'approved' && !row.parent_id" class="action-btn unarchive" :disabled="row.has_project" :title="row.has_project ? '该报价单已在项目管理系统落地, 不可撤销归档' : '撤销归档'" @click="handleUnarchive(row)">撤销归档</button>
               <button v-if="row.status === 'approved'" class="action-btn version" @click="handleViewVersions(row)">版本</button>
               <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row)">编辑</button>
@@ -201,6 +235,9 @@ import VersionCompare from './VersionCompare.vue'
 const router = useRouter()
 const authStore = useAuthStore()
 
+// 当前用户 ID (computed 跟随 authStore.userInfo 变化)
+const currentUserId = computed(() => authStore.userInfo?.id)
+
 // 是否有创建报价单权限
 const canCreate = computed(() => {
   return hasPermission('quotation.create')
@@ -208,8 +245,9 @@ const canCreate = computed(() => {
 
 // 是否有编辑报价单权限
 const canEdit = (row) => {
-  // 已归档的报价单不能编辑（但可以导出报表）
+  // 已归档或审批中的报价单不能编辑（但可以导出报表）
   if (row.status === 'approved') return false
+  if (row.status === 'approved_pending' && authStore.userInfo?.role !== 'admin') return false
   const userId = authStore.userInfo?.id
   if (authStore.userInfo?.role === 'admin' || hasPermission('quotation.edit')) {
     if (authStore.userInfo?.role === 'admin') return true
@@ -222,6 +260,10 @@ const canEdit = (row) => {
 const handleEdit = (row) => {
   if (row.status === 'approved') {
     ElMessage.warning('已归档的报价单无法编辑，如需修改请先撤销归档')
+    return
+  }
+  if (row.status === 'approved_pending' && authStore.userInfo?.role !== 'admin') {
+    ElMessage.warning('报价单正在审批中, 不能修改. 如需修改请先撤回审批申请')
     return
   }
   router.push(`/quotations/${row.id}`)
@@ -238,8 +280,9 @@ const handleAddChild = (row) => {
 
 // 是否有删除报价单权限
 const canDelete = (row) => {
-  // 已归档的报价单不能删除
+  // 已归档或审批中的报价单不能删除
   if (row.status === 'approved') return false
+  if (row.status === 'approved_pending' && authStore.userInfo?.role !== 'admin') return false
   if (authStore.userInfo?.role === 'admin' || hasPermission('quotation.delete')) {
     if (authStore.userInfo?.role === 'admin') return true
     return row.business_owner_id === authStore.userInfo?.id  // 看负责人
@@ -249,6 +292,77 @@ const canDelete = (row) => {
 
 const loading = ref(false)
 const tableData = ref([])
+
+// 待我审批的归档申请
+const pendingApprovals = ref([])
+const showPendingList = ref(false)
+
+// 加载待审批列表
+const fetchPendingApprovals = async () => {
+  try {
+    const res = await quotationsAPI.listPendingArchiveApprovals()
+    pendingApprovals.value = res?.items || []
+  } catch (error) {
+    // 静默失败, 用户可能不是部门领导
+    pendingApprovals.value = []
+  }
+}
+
+const formatApprovalDate = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+// 部门领导同意
+const handleApproveArchive = async (approval) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定同意报价单「${approval.quotation_name}」的归档申请吗？同意后系统将自动创建版本快照并归档.`,
+      '同意归档',
+      {
+        confirmButtonText: '同意',
+        cancelButtonText: '取消',
+        type: 'success'
+      }
+    )
+    const res = await quotationsAPI.approveArchive(approval.quotation_id)
+    ElMessage.success(res?.message || '已审批通过, 归档成功')
+    await fetchPendingApprovals()
+    fetchData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      const msg = error?.response?.data?.detail || error?.message || '操作失败'
+      ElMessage.error(msg)
+    }
+  }
+}
+
+// 部门领导驳回 (弹窗输入原因)
+const handleRejectArchivePrompt = async (approval) => {
+  try {
+    const { value: reason } = await ElMessageBox.prompt(
+      `请填写驳回报价单「${approval.quotation_name}」归档的原因 (至少 5 个字). 驳回后报价单回到草稿状态.`,
+      '驳回归档',
+      {
+        confirmButtonText: '驳回',
+        cancelButtonText: '取消',
+        inputPlaceholder: '例如: 报价单数据未完整, 请补充物料规格',
+        inputValidator: (val) => (val && val.trim().length >= 5) || '至少 5 个字',
+        inputErrorMessage: '至少 5 个字'
+      }
+    )
+    await quotationsAPI.rejectArchive(approval.quotation_id, reason)
+    ElMessage.success('已驳回, 报价单回到草稿状态')
+    await fetchPendingApprovals()
+    fetchData()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      const msg = error?.response?.data?.detail || error?.message || '操作失败'
+      ElMessage.error(msg)
+    }
+  }
+}
 
 const filters = reactive({
   status: '',
@@ -314,6 +428,7 @@ const formatStatus = (status) => {
     archived: '已归档',
     cancelled: '已取消',
     rejected: '已驳回',
+    approved_pending: '审批中',
   }
   return statuses[status] || status
 }
@@ -368,12 +483,49 @@ const handleArchive = async (row) => {
         type: 'warning'
       }
     )
-    await quotationsAPI.archive(row.id)
-    ElMessage.success('归档成功')
+    const res = await quotationsAPI.archive(row.id)
+    // 后端可能返回两种结果:
+    //   { message: '归档成功', quotation, version }       → admin 直接归档
+    //   { message: '归档申请已提交, 等待部门领导审批', approval_id, approver, status: 'pending' } → 走审批流
+    if (res.status === 'pending' && res.approver) {
+      ElMessageBox.alert(
+        `您的归档申请已提交, 等待 <b>${res.approver.real_name || res.approver.username}</b> 审批. 审批通过后将自动归档.`,
+        '已提交审批',
+        {
+          dangerouslyUseHTMLString: true,
+          confirmButtonText: '我知道了'
+        }
+      )
+    } else {
+      ElMessage.success('归档成功')
+    }
     fetchData()
   } catch (error) {
     if (error !== 'cancel') {
-      ElMessage.error('归档失败')
+      const msg = error?.response?.data?.detail || error?.message || '归档失败'
+      ElMessage.error(msg)
+    }
+  }
+}
+
+const handleCancelArchive = async (row) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要撤回报价单「${row.name}」的归档申请吗？撤回后状态回到草稿, 您可以修改后重新提交.`,
+      '撤回归档申请',
+      {
+        confirmButtonText: '撤回',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+    const res = await quotationsAPI.cancelArchive(row.id)
+    ElMessage.success(res?.message || '已撤回')
+    fetchData()
+  } catch (error) {
+    if (error !== 'cancel') {
+      const msg = error?.response?.data?.detail || error?.message || '撤回失败'
+      ElMessage.error(msg)
     }
   }
 }
@@ -430,6 +582,7 @@ const handleExportVersion = (row, cmd) => {
 
 onMounted(() => {
   fetchData()
+  fetchPendingApprovals()
 })
 </script>
 
@@ -520,6 +673,91 @@ onMounted(() => {
   align-items: center;
   padding: var(--spacing-md) var(--spacing-lg);
   margin-bottom: var(--spacing-md);
+}
+
+/* 待审批栏 */
+.pending-approval-bar {
+  margin-bottom: var(--spacing-md);
+  background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%);
+  border: 1px solid #FCD34D;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.pending-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.pending-icon {
+  font-size: 20px;
+}
+
+.pending-title {
+  flex: 1;
+  font-size: 14px;
+  color: #92400E;
+}
+
+.pending-count {
+  color: #DC2626;
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 4px;
+}
+
+.pending-list {
+  margin-top: 12px;
+  border-top: 1px solid #FDE68A;
+  padding-top: 12px;
+}
+
+.pending-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: white;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.pending-item:last-child {
+  margin-bottom: 0;
+}
+
+.pending-info {
+  flex: 1;
+}
+
+.pending-quotation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #1F2937;
+}
+
+.pending-code {
+  font-size: 12px;
+  color: #6B7280;
+  background: #F3F4F6;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.pending-meta {
+  font-size: 12px;
+  color: #6B7280;
+  margin-top: 4px;
+}
+
+.pending-actions {
+  display: flex;
+  gap: 8px;
 }
 
 .filter-group {
@@ -773,6 +1011,40 @@ onMounted(() => {
 
 .action-btn.archive:hover {
   background: #FDE68A;
+}
+
+/* 撤回归档申请按钮样式 */
+.action-btn.cancel {
+  background: #FEE2E2;
+  color: #DC2626;
+  border: none;
+  padding: 4px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.action-btn.cancel:hover {
+  background: #FECACA;
+}
+
+/* 审批中状态徽章 */
+.status-badge.approved_pending {
+  background: #FEF3C7;
+  color: #D97706;
+  font-weight: 500;
+}
+
+.status-badge.approved_pending .status-dot {
+  background: #D97706;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 /* 撤销归档按钮样式 */
