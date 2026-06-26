@@ -1412,8 +1412,6 @@ def _execute_archive_core(db, quotation, user_id: int, remark: str = '', via: st
     """
     if quotation.status == 'approved':
         raise HTTPException(status_code=400, detail='报价单已经归档')
-    if quotation.status == 'approved_pending':
-        raise HTTPException(status_code=400, detail='报价单正在审批中, 不能重复归档')
 
     version = _create_version_snapshot(db, quotation, user_id, 'archive', remark)
     db.commit()  # 必须先 commit，让 VersionSnapshot 在 DB 可见
