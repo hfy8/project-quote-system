@@ -26,7 +26,7 @@ from typing import Any, Optional
 logger = logging.getLogger('cache')
 
 # ============== 配置 ==============
-REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379/0')  # docker 网络里用 service name 'redis'
 CACHE_NAMESPACE = os.environ.get('CACHE_NAMESPACE', 'pqs')
 CACHE_DEFAULT_TTL = int(os.environ.get('CACHE_DEFAULT_TTL', '30'))
 CACHE_DISABLED = os.environ.get('CACHE_DISABLED', 'false').lower() == 'true'
