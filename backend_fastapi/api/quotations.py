@@ -672,6 +672,7 @@ def get_quotation_trends(
     start = (now - relativedelta(months=months - 1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
     # 1) 月度聚合
+    # 关键: 只统计父报价单 (parent_id IS NULL), 子报价单的金额/工时已合并到父的 version_snapshot 里
     # 关键：profit_rate = 利润/成本（对外利润率），gross_margin = profit_rate/(1+profit_rate)（实际毛利率）
     # 用户业务视角是 gross_margin，所以先在 SQL 里算好
     monthly_rows = db.query(
@@ -682,7 +683,8 @@ def get_quotation_trends(
         func.avg(Quotation.profit_rate).label('avg_profit'),
         func.avg(Quotation.profit_rate / (1 + Quotation.profit_rate)).label('avg_gross'),
     ).filter(
-        Quotation.created_at >= start
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),  # 只算父报价单, 避免子项重复
     ).group_by('period').order_by('period').all()
 
     monthly = []
@@ -700,13 +702,19 @@ def get_quotation_trends(
     # 2) 状态分布
     status_rows = db.query(
         Quotation.status, func.count(Quotation.id)
-    ).filter(Quotation.created_at >= start).group_by(Quotation.status).all()
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),  # 只算父报价单
+    ).group_by(Quotation.status).all()
     by_status = [{"status": s, "count": int(c)} for s, c in status_rows]
 
     # 3) 类型分布
     type_rows = db.query(
         Quotation.type, func.count(Quotation.id)
-    ).filter(Quotation.created_at >= start).group_by(Quotation.type).all()
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),  # 只算父报价单
+    ).group_by(Quotation.type).all()
     by_type = [{"type": t, "count": int(c)} for t, c in type_rows]
 
     # 4) 利润率散点（每个报价单一个点）
@@ -716,6 +724,7 @@ def get_quotation_trends(
     ).filter(
         Quotation.created_at >= start,
         Quotation.profit_rate.isnot(None),
+        Quotation.parent_id.is_(None),  # 只算父报价单
     ).all()
     scatter = [
         {
@@ -742,6 +751,7 @@ def get_quotation_trends(
         Quotation.created_at >= start,
         Quotation.profit_rate.isnot(None),
         Quotation.profit_rate > 0,  # 避免除 0
+        Quotation.parent_id.is_(None),  # 只算父报价单
     ).all()
     profit_list = [float(r[0]) for r in raw_profits]
     avg_profit_overall = sum(profit_list) / len(profit_list) if profit_list else 0
