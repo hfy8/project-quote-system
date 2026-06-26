@@ -19,6 +19,7 @@ from sqlalchemy import or_, text
 
 from core.schemas import ModuleCreate, ModuleUpdate, ModuleMaterialAdd, ModuleMaterialUpdate
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 
 def error_response(message: str, status_code: int):
@@ -56,6 +57,7 @@ def create_module(
     - 有 module.create 权限的可以建
     - 否则必须是该报价单的参与人
     """
+    _check_permission(db, int(user_id), 'module.create')
     from core.models import Module, User, QuotationParticipant
     from utils.permissions import has_permission
 
@@ -103,6 +105,7 @@ def update_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.edit')
     from core.models import Module
     module = db.query(Module).get(module_id)
     if not module:
@@ -121,6 +124,7 @@ def delete_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.delete')
     from core.models import Module
     module = db.query(Module).get(module_id)
     if not module:
@@ -158,6 +162,7 @@ def add_material_to_module(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.edit')
     """添加物料到模块 (1:1 复刻 Flask 的 '其他' 物料特殊逻辑)
 
     - 查 materials 表 name='其他' 的物料
@@ -202,6 +207,7 @@ def update_module_material(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.edit')
     from core.models import ModuleMaterial
     mm = db.query(ModuleMaterial).get(id)
     if not mm:
@@ -223,6 +229,7 @@ def remove_module_material(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.edit')
     from core.models import ModuleMaterial
     mm = db.query(ModuleMaterial).get(id)
     if not mm:
@@ -298,6 +305,7 @@ def copy_modules_from_quotation(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
+    _check_permission(db, int(user_id), 'module.create')
     """
     从指定源报价单复制模块到当前报价单（事务内一次性完成）。
 

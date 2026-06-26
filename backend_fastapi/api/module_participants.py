@@ -13,8 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List
+from sqlalchemy.orm import Session
 
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter(prefix='/api/modules')
 
@@ -45,9 +47,10 @@ def add_module_participants(
     module_id: int,
     body: ParticipantAddRequest,
     user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """添加模块参与人员（1:1 复刻 Flask 逻辑，含消息通知）"""
+    _check_permission(db, int(user_id), 'module.edit')
     from core.models.module import ModuleParticipant, Module
     from core.services.message_service import MessageService
 
@@ -92,9 +95,10 @@ def remove_module_participant(
     module_id: int,
     participant_id: int,
     user_id: str = Depends(get_current_user_id),
-    db=Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """移除模块参与人员"""
+    _check_permission(db, int(user_id), 'module.edit')
     from core.models.module import ModuleParticipant
 
     p = db.query(ModuleParticipant).filter_by(
