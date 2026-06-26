@@ -9,6 +9,7 @@ from sqlalchemy import or_
 
 from core.schemas import MaterialCreate, MaterialUpdate
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 
 router = APIRouter()
@@ -80,6 +81,7 @@ def create_material(
     db: Session = Depends(get_db),
 ):
     """创建物料(行为 1:1)"""
+    _check_permission(db, int(user_id), 'material.create')
     from core.models import Material
 
     material = Material(
@@ -104,6 +106,7 @@ def update_material(
     db: Session = Depends(get_db),
 ):
     """更新物料(行为 1:1)"""
+    _check_permission(db, int(user_id), 'material.edit')
     from core.models import Material
 
     material = db.query(Material).get(material_id)
@@ -126,6 +129,7 @@ def delete_material(
     db: Session = Depends(get_db),
 ):
     """删除物料(行为 1:1:先删 module_materials 关联记录,再删物料)"""
+    _check_permission(db, int(user_id), 'material.delete')
     from core.models import Material, ModuleMaterial
 
     material = db.query(Material).get(material_id)
@@ -147,6 +151,7 @@ def toggle_material(
     db: Session = Depends(get_db),
 ):
     """切换 active/inactive 状态"""
+    _check_permission(db, int(user_id), 'material.edit')
     from core.models import Material
 
     material = db.query(Material).get(material_id)
@@ -168,6 +173,7 @@ def import_materials(
 
     兼容 Flask 版本的请求格式:{"materials": [...]} 或直接传 list
     """
+    _check_permission(db, int(user_id), 'material.create')
     from core.models import Material
 
     # 兼容两种入参:dict 或 list
