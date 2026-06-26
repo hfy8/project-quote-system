@@ -956,7 +956,6 @@ def list_pending_archive_approvals(
         result.append({
             **a.to_dict(),
             'quotation_name': q.name if q else None,
-            'quotation_code': q.code if q else None,
             'requester_name': u.real_name or u.username if u else None,
         })
     return {'items': result, 'total': len(result)}
