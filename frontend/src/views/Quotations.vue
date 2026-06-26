@@ -76,6 +76,17 @@
             </span>
           </template>
         </el-table-column>
+        <el-table-column label="项目落地" width="120" align="center">
+          <template #default="{ row }">
+            <el-tooltip v-if="row.has_project" :content="`方案号 ${row.scheme_no} 已在项目管理系统落地, 不可撤销归档`" placement="top">
+              <span class="project-badge landed">
+                <span class="project-dot"></span>
+                已落地
+              </span>
+            </el-tooltip>
+            <span v-else class="project-badge not-landed">未落地</span>
+          </template>
+        </el-table-column>
         <el-table-column prop="creator_name" label="创建人" min-width="150" />
         <el-table-column prop="business_owner_name" label="负责人" min-width="150" />
         <el-table-column prop="created_at" label="创建时间" min-width="150">
@@ -88,7 +99,7 @@
             <div class="action-buttons">
               <button v-if="row.type === 'line'" class="action-btn add-child" @click="handleAddChild(row)">+子项</button>
               <button v-if="row.status === 'draft' && !row.parent_id" class="action-btn archive" @click="handleArchive(row)">归档</button>
-              <button v-if="row.status === 'approved' && !row.parent_id && !row.has_project" class="action-btn unarchive" @click="handleUnarchive(row)">撤销归档</button>
+              <button v-if="row.status === 'approved' && !row.parent_id" class="action-btn unarchive" :disabled="row.has_project" :title="row.has_project ? '该报价单已在项目管理系统落地, 不可撤销归档' : '撤销归档'" @click="handleUnarchive(row)">撤销归档</button>
               <button v-if="row.status === 'approved'" class="action-btn version" @click="handleViewVersions(row)">版本</button>
               <button class="action-btn edit" :disabled="!canEdit(row)" @click="handleEdit(row)">编辑</button>
               <button class="action-btn delete" :disabled="!canDelete(row)" @click="handleDelete(row)">删除</button>
@@ -637,6 +648,37 @@ onMounted(() => {
 
 .status-badge.rejected .status-dot {
   background: var(--color-danger);
+}
+
+/* 项目落地状态徽章 */
+.project-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.project-badge.landed {
+  background: #FEF3C7;
+  color: #92400E;
+}
+
+.project-badge.landed .project-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #D97706;
+  box-shadow: 0 0 0 2px rgba(217, 119, 6, 0.2);
+}
+
+.project-badge.not-landed {
+  background: #F3F4F6;
+  color: #6B7280;
+  font-weight: 400;
 }
 
 .creator-name,
