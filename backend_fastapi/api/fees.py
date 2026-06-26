@@ -4,8 +4,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from core.models.fee import OtherFee, FeeType
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter()
 
@@ -49,7 +51,11 @@ def get_fees(quotation_id: int, db=Depends(get_db)):
 
 
 @router.post("/quotations/{quotation_id}/fees", status_code=201)
-def create_fee(quotation_id: int, body: FeeCreate, db=Depends(get_db)):
+def create_fee(
+    quotation_id: int, body: FeeCreate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     fee = OtherFee(
         quotation_id=quotation_id,
         module_id=body.module_id,
@@ -64,7 +70,11 @@ def create_fee(quotation_id: int, body: FeeCreate, db=Depends(get_db)):
 
 
 @router.put("/fees/{fee_id}")
-def update_fee(fee_id: int, body: FeeUpdate, db=Depends(get_db)):
+def update_fee(
+    fee_id: int, body: FeeUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     fee = db.query(OtherFee).get(fee_id)
     if not fee:
         raise HTTPException(status_code=404, detail="费用不存在")
@@ -77,7 +87,11 @@ def update_fee(fee_id: int, body: FeeUpdate, db=Depends(get_db)):
 
 
 @router.delete("/fees/{fee_id}")
-def delete_fee(fee_id: int, db=Depends(get_db)):
+def delete_fee(
+    fee_id: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     fee = db.query(OtherFee).get(fee_id)
     if not fee:
         raise HTTPException(status_code=404, detail="费用不存在")
@@ -95,7 +109,11 @@ def get_fee_types(db=Depends(get_db)):
 
 
 @router.post("/fee-types", status_code=201)
-def create_fee_type(body: FeeTypeCreate, db=Depends(get_db)):
+def create_fee_type(
+    body: FeeTypeCreate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'fee_type.create')
     ft = FeeType(name=body.name, name_en=body.name_en, location=body.location, is_active=True)
     db.add(ft)
     db.commit()
@@ -103,7 +121,11 @@ def create_fee_type(body: FeeTypeCreate, db=Depends(get_db)):
 
 
 @router.put("/fee-types/{fee_type_id}")
-def update_fee_type(fee_type_id: int, body: FeeTypeUpdate, db=Depends(get_db)):
+def update_fee_type(
+    fee_type_id: int, body: FeeTypeUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'fee_type.edit')
     ft = db.query(FeeType).get(fee_type_id)
     if not ft:
         raise HTTPException(status_code=404, detail="费用类型不存在")
@@ -116,7 +138,11 @@ def update_fee_type(fee_type_id: int, body: FeeTypeUpdate, db=Depends(get_db)):
 
 
 @router.delete("/fee-types/{fee_type_id}")
-def delete_fee_type(fee_type_id: int, db=Depends(get_db)):
+def delete_fee_type(
+    fee_type_id: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'fee_type.delete')
     ft = db.query(FeeType).get(fee_type_id)
     if not ft:
         raise HTTPException(status_code=404, detail="费用类型不存在")

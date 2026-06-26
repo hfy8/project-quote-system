@@ -4,9 +4,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from core.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
 from core.models.travel import TravelPersonTripFee, TravelCategory
 from core.auth import get_db, get_current_user_id
+from api.quotations import _check_permission
 
 router = APIRouter()
 
@@ -34,7 +36,11 @@ def get_packing_entries(quotation_id: int = Query(...), db=Depends(get_db)):
 
 
 @router.post("/packing-entries")
-def upsert_packing_entry(body: PackingEntryUpsert, db=Depends(get_db)):
+def upsert_packing_entry(
+    body: PackingEntryUpsert,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(PackingEntry).filter_by(
         quotation_id=body.quotation_id, packing_type_id=body.packing_type_id
     ).first()
@@ -56,7 +62,11 @@ def upsert_packing_entry(body: PackingEntryUpsert, db=Depends(get_db)):
 
 
 @router.put("/packing-entries/{eid}")
-def update_packing_entry(eid: int, body: PackingEntryUpdate, db=Depends(get_db)):
+def update_packing_entry(
+    eid: int, body: PackingEntryUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(PackingEntry).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="包装条目不存在")
@@ -69,7 +79,11 @@ def update_packing_entry(eid: int, body: PackingEntryUpdate, db=Depends(get_db))
 
 
 @router.delete("/packing-entries/{eid}")
-def delete_packing_entry(eid: int, db=Depends(get_db)):
+def delete_packing_entry(
+    eid: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(PackingEntry).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="包装条目不存在")
@@ -101,7 +115,11 @@ def get_travel_person_days(quotation_id: int = Query(...), db=Depends(get_db)):
 
 
 @router.post("/travel-person-days")
-def upsert_travel_person_days(body: PersonDaysUpsert, db=Depends(get_db)):
+def upsert_travel_person_days(
+    body: PersonDaysUpsert,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(TravelPersonDays).filter_by(
         quotation_id=body.quotation_id, travel_category_id=body.travel_category_id
     ).first()
@@ -123,7 +141,11 @@ def upsert_travel_person_days(body: PersonDaysUpsert, db=Depends(get_db)):
 
 
 @router.put("/travel-person-days/{eid}")
-def update_travel_person_days(eid: int, body: PersonDaysUpdate, db=Depends(get_db)):
+def update_travel_person_days(
+    eid: int, body: PersonDaysUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(TravelPersonDays).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="差旅人天条目不存在")
@@ -136,7 +158,11 @@ def update_travel_person_days(eid: int, body: PersonDaysUpdate, db=Depends(get_d
 
 
 @router.delete("/travel-person-days/{eid}")
-def delete_travel_person_days(eid: int, db=Depends(get_db)):
+def delete_travel_person_days(
+    eid: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     entry = db.query(TravelPersonDays).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="差旅人天条目不存在")
@@ -187,7 +213,11 @@ def get_travel_person_trips(quotation_id: int = Query(...), db=Depends(get_db)):
 
 
 @router.post("/travel-person-trips")
-def upsert_travel_person_trip(body: PersonTripUpsert, db=Depends(get_db)):
+def upsert_travel_person_trip(
+    body: PersonTripUpsert,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     trip = db.query(TravelPersonTrip).filter_by(
         quotation_id=body.quotation_id,
         travel_category_id=body.travel_category_id,
@@ -214,7 +244,11 @@ def upsert_travel_person_trip(body: PersonTripUpsert, db=Depends(get_db)):
 
 
 @router.put("/travel-person-trips/{tid}")
-def update_travel_person_trip(tid: int, body: PersonTripUpdate, db=Depends(get_db)):
+def update_travel_person_trip(
+    tid: int, body: PersonTripUpdate,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     trip = db.query(TravelPersonTrip).get(tid)
     if not trip:
         raise HTTPException(status_code=404, detail="差旅人次条目不存在")
@@ -227,7 +261,11 @@ def update_travel_person_trip(tid: int, body: PersonTripUpdate, db=Depends(get_d
 
 
 @router.delete("/travel-person-trips/{tid}")
-def delete_travel_person_trip(tid: int, db=Depends(get_db)):
+def delete_travel_person_trip(
+    tid: int,
+    db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
+):
+    _check_permission(db, int(user_id), 'quotation.edit')
     trip = db.query(TravelPersonTrip).get(tid)
     if not trip:
         raise HTTPException(status_code=404, detail="差旅人次条目不存在")
