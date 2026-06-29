@@ -113,18 +113,18 @@
           </div>
         </div>
       </div>
-      <div v-else class="stat-card stat-team">
-        <div class="stat-icon-wrap"><span>👥</span></div>
+      <div v-else class="stat-card stat-msg">
+        <div class="stat-icon-wrap"><span>🔔</span></div>
         <div class="stat-info">
-          <span class="stat-value">{{ stats.quotations.monthly_new }}</span>
-          <span class="stat-label">本月公司新增</span>
+          <span class="stat-value">{{ stats.my_tasks.unread_messages }}</span>
+          <span class="stat-label">未读消息</span>
         </div>
       </div>
       <div class="stat-card stat-trend">
         <div class="stat-icon-wrap"><span>📈</span></div>
         <div class="stat-info">
           <span class="stat-value">{{ stats.quotations.monthly_new }}</span>
-          <span class="stat-label">本月新增报价单</span>
+          <span class="stat-label">本月公司新增</span>
         </div>
       </div>
     </section>
@@ -607,6 +607,7 @@ onUnmounted(() => {
 .stat-info .stat-icon-wrap { background: var(--color-info-bg); }
 .stat-material .stat-icon-wrap { background: #FEF3C7; }
 .stat-team .stat-icon-wrap { background: #FCE7F3; }
+.stat-msg .stat-icon-wrap { background: var(--color-warning-bg); }
 .stat-trend .stat-icon-wrap { background: #F3E8FF; }
 
 /* ========== 中部 3 列 (趋势 + 快捷 + 消息) ========== */
