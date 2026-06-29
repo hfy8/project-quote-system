@@ -29,7 +29,16 @@ def _is_leader(db, user_id):
         return False
     if user.role == 'admin':
         return True
-    pos = user.position_name or ''
+    # 通过 position_id 关联 Position 表拿到 position.name
+    try:
+        from core.models.position import Position
+        if user.position_id:
+            pos_obj = db.query(Position).filter_by(id=user.position_id).first()
+            pos = pos_obj.name if pos_obj else ''
+        else:
+            pos = ''
+    except Exception:
+        pos = ''
     import re as _re
     return bool(_re.search(r'副总|经理|总监|部长|主管|总工|主任', pos))
 
