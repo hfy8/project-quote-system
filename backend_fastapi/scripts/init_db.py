@@ -13,7 +13,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db import _make_engine, db_session_factory, ModuleBase
-from core.config import Config
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
@@ -33,12 +32,12 @@ def init_extensions(engine):
 def init_tables(engine):
     """建所有表"""
     print("📋 建表 (db.create_all)...")
-    # 导入所有 model 让 metadata 注册
+    # 导入所有 model 让 metadata 注册 (knowledge 跳过, 它需要 pgvector 扩展, 启动时按需安装)
     from core.models import (
         user, role, permission, role_permission, user_role,
         quotation, module, material, module_participant, quotation_participant,
         labor_hour, travel, travel_entry, packing, fee, fee_rate, exchange_rate,
-        version, message, knowledge, change_request, participant_type_permission,
+        version, message, change_request, participant_type_permission,
     )
     ModuleBase.metadata.create_all(engine)
     print("   ✅ 表已建")
