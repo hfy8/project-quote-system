@@ -369,13 +369,24 @@ const handleRejectArchivePrompt = async (approval) => {
 const handlePendingExportPDF = async (approval) => {
   try {
     ElMessage.info(`正在生成「${approval.quotation_name}」PDF, 请稍候...`)
-    const response = await quotationsAPI.export(approval.quotation_id, 'pdf')
-    // 从 response headers 拿文件名 (后端 Content-Disposition 有 filename)
-    const disposition = response.headers['content-disposition'] || ''
+    // 用 fetch + 手动拿 headers (request 拦截器已剥掉 headers, Blob 错误也要手动解析)
+    const token = localStorage.getItem('token')
+    const res = await fetch(`/api/quotations/${approval.quotation_id}/export/pdf`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    if (!res.ok) {
+      // 错误响应, 读 JSON 拿 detail
+      const errJson = await res.json().catch(() => ({}))
+      ElMessage.error(errJson.detail || errJson.error || `导出失败 (HTTP ${res.status})`)
+      return
+    }
+    // 成功: 从 headers 拿文件名
+    const disposition = res.headers.get('content-disposition') || ''
     const match = disposition.match(/filename="?([^"]+)"?/)
     const filename = match ? match[1] : `quotation_${approval.quotation_id}.pdf`
     // 创建下载链接
-    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const blob = await res.blob()
+    const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
     link.setAttribute('download', filename)
@@ -385,18 +396,7 @@ const handlePendingExportPDF = async (approval) => {
     window.URL.revokeObjectURL(url)
     ElMessage.success('PDF 已下载')
   } catch (error) {
-    // blob 错误时, 解析错误信息
-    let msg = '导出失败'
-    if (error?.response?.data instanceof Blob) {
-      try {
-        const text = await error.response.data.text()
-        const json = JSON.parse(text)
-        msg = json.detail || msg
-      } catch { /* ignore */ }
-    } else {
-      msg = error?.response?.data?.detail || error?.message || msg
-    }
-    ElMessage.error(msg)
+    ElMessage.error(error?.message || '导出失败')
   }
 }
 
