@@ -270,6 +270,7 @@ from api.roles import router as roles_router
 from api.participant_type_permissions import router as participant_type_permissions_router
 from api.users import router as users_router
 from api.versions import router as versions_router
+from api.dashboard import router as dashboard_router
 from api.exports import router as exports_router
 fastapi_app.include_router(auth_router, prefix="/api/auth", tags=["认证"])
 fastapi_app.include_router(materials_router, prefix="/api/materials", tags=["物料库"])
@@ -294,6 +295,7 @@ fastapi_app.include_router(participant_type_permissions_router, tags=["参与者
 fastapi_app.include_router(users_router, tags=["用户管理"])
 fastapi_app.include_router(versions_router, tags=["版本快照"])
 fastapi_app.include_router(exports_router, tags=["导出"])
+fastapi_app.include_router(dashboard_router, tags=["首页"])
 # AI Agent 路由（prefix 已在 router 里 = /api/ai）
 from api.ai import router as ai_router
 fastapi_app.include_router(ai_router)
