@@ -22,6 +22,18 @@ def _is_admin(db, user_id):
     return user and user.role == 'admin'
 
 
+def _is_leader(db, user_id):
+    """Leader = admin + 任何领导职位 (副总经理/经理/总监/部长/主管/总工/主任)"""
+    user = db.query(User).filter_by(id=user_id).first()
+    if not user:
+        return False
+    if user.role == 'admin':
+        return True
+    pos = user.position_name or ''
+    import re as _re
+    return bool(_re.search(r'副总|经理|总监|部长|主管|总工|主任', pos))
+
+
 @router.get("/stats")
 def get_dashboard_stats(
     db=Depends(get_db),
@@ -43,6 +55,7 @@ def get_dashboard_stats(
     seven_days_ago = now - timedelta(days=7)
 
     is_admin = _is_admin(db, uid)
+    is_leader = _is_leader(db, uid)
 
     # ===== 1. 报价单统计 =====
     total = db.query(Quotation).filter(Quotation.parent_id.is_(None)).count()
@@ -78,8 +91,8 @@ def get_dashboard_stats(
     pending_archives = db.query(ArchiveApproval).filter_by(
         approver_id=uid, status='pending'
     ).count()
-    # 待审变更申请 - admin 看全部,其他人看自己参与或自己提交的
-    if is_admin:
+    # 待审变更申请 - leader 看全部,其他人看自己参与或自己提交的
+    if is_leader:
         pending_changes = db.query(ChangeRequest).filter_by(status='pending').count()
     else:
         # 我参与的报价单的变更
@@ -119,8 +132,8 @@ def get_dashboard_stats(
             'approved': daily_approved.get(d, 0),
         })
 
-    # ===== 5. Top 5 客户 (admin 全局, 其他人 自己参与的) =====
-    if is_admin:
+    # ===== 5. Top 5 客户 (leader 全局, 其他人 自己参与的) =====
+    if is_leader:
         # 从 quotation.name 提取客户名 (按项目名分组)
         # 由于没有 customer 表, 用项目名前缀模拟客户
         # 实际: 我们用项目名作为客户标识, name 通常包含客户名
@@ -195,9 +208,9 @@ def get_dashboard_stats(
             'sender_name': m.sender.real_name if m.sender else '系统',
         })
 
-    # ===== 7. 本周业绩 (admin) / 部门分布 =====
+    # ===== 7. 本周业绩 (leader) / 部门分布 =====
     weekly_summary = {}
-    if is_admin:
+    if is_leader:
         weekly_summary['new'] = weekly_new
         weekly_summary['approved'] = db.query(Quotation).filter(
             Quotation.parent_id.is_(None),
@@ -225,5 +238,5 @@ def get_dashboard_stats(
         'top_clients': top_clients,
         'recent_messages': recent_messages,
         'weekly_summary': weekly_summary,
-        'user_role': 'admin' if is_admin else 'business',
+        'user_role': 'admin' if is_admin else ('leader' if is_leader else 'business'),
     }

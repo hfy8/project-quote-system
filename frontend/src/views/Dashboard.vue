@@ -23,8 +23,8 @@
         </div>
       </div>
 
-      <!-- 本周业绩卡 (admin 全局, 其他用户 我的业绩) -->
-      <div v-if="isAdmin" class="summary-card summary-admin">
+      <!-- 本周业绩卡 (leader 全局, 其他用户 我的业绩) -->
+      <div v-if="isLeader" class="summary-card summary-admin">
         <div class="summary-head">
           <span class="summary-icon">📊</span>
           <span class="summary-title">本周业绩</span>
@@ -101,7 +101,7 @@
           <span class="stat-label">已通过/已归档</span>
         </div>
       </div>
-      <div v-if="isAdmin" class="stat-card stat-material">
+      <div v-if="isLeader" class="stat-card stat-material">
         <div class="stat-icon-wrap"><span>📦</span></div>
         <div class="stat-info">
           <span class="stat-value">{{ stats.materials.total }}</span>
@@ -266,10 +266,10 @@
       <div class="panel clients-panel">
         <div class="panel-head">
           <h3 class="panel-title">
-            <span v-if="isAdmin">🏢 热门客户</span>
+            <span v-if="isLeader">🏢 热门客户</span>
             <span v-else>📊 我的项目</span>
           </h3>
-          <span class="panel-sub">{{ isAdmin ? '本月 Top 5' : '近况' }}</span>
+          <span class="panel-sub">{{ isLeader ? '本月 Top 5' : '近况' }}</span>
         </div>
         <div class="clients-list">
           <div
@@ -289,7 +289,7 @@
           </div>
           <div v-if="stats.top_clients.length === 0" class="empty">
             <span class="empty-icon">📊</span>
-            <p>{{ isAdmin ? '暂无客户数据' : '暂无项目数据' }}</p>
+            <p>{{ isLeader ? '暂无客户数据' : '暂无项目数据' }}</p>
           </div>
         </div>
       </div>
@@ -336,11 +336,22 @@ const authStore = useAuthStore()
 
 const username = computed(() => authStore.userInfo?.real_name || authStore.userInfo?.username || '用户')
 const userRole = computed(() => authStore.userInfo?.role || 'business')
+const userPosition = computed(() => authStore.userInfo?.position_name || '')
 const roleLabel = computed(() => {
+  // 优先用 position_name (更精确: 副总经理/经理/总监/业务员...)
+  if (userPosition.value) return userPosition.value
   const map = { admin: '管理员', business: '业务员', purchaser: '采购员', viewer: '只读' }
   return map[userRole.value] || '用户'
 })
+const permissions = computed(() => authStore.userInfo?.permissions || [])
 const isAdmin = computed(() => userRole.value === 'admin')
+// Leader 判定: admin + 任何领导职位 (副总经理/经理/总监/部长/主管)
+const isLeader = computed(() => {
+  if (isAdmin.value) return true
+  const pos = userPosition.value
+  return /副总|经理|总监|部长|主管|总工|主任/i.test(pos)
+})
+const isGlobalView = isLeader
 
 // 当前时间 (实时)
 const currentTime = ref('')
@@ -351,7 +362,6 @@ const updateTime = () => {
   currentTime.value = `${d.getMonth() + 1}月${d.getDate()}日 ${week[d.getDay()]}`
 }
 
-const permissions = computed(() => authStore.userInfo?.permissions || [])
 const hasPerm = (p) => permissions.value.includes('*') || permissions.value.includes(p)
 
 const stats = ref({
