@@ -1032,6 +1032,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
+import { openDownload } from '../utils/download'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI, quotationsAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 import changeRequestsAPI from '../api/changeRequests'
@@ -2497,13 +2498,13 @@ function viewVersion(version) {
 function exportVersion(version, cmd) {
   // cmd: 'pdf_zh' | 'pdf_en'
   const [fmt, lang] = cmd.split('_')
-  window.open(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${fmt}?lang=${lang}`, '_blank')
+  openDownload(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${fmt}?lang=${lang}`)
 }
 
 // 导出文件
 function exportFile(format, lang = 'zh') {
   const langParam = (format === 'pdf' && lang) ? `&lang=${lang}` : ''
-  window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}${langParam}`, '_blank')
+  openDownload(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}${langParam}`)
 }
 
 // 导出汇总 tab 内容为 PDF（按网页显示样式截图）

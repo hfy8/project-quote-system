@@ -7,7 +7,7 @@
 """
 from typing import Optional
 from datetime import datetime, timedelta
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import jwt, JWTError
 
@@ -52,12 +52,24 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 
 async def get_current_user_id(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> str:
-    """从 Authorization Header 解出 user_id"""
-    if not credentials or not credentials.credentials:
+    """从 Authorization Header 或 ?token=xxx 查询参数解出 user_id
+
+    优先用 Authorization header (API 调用场景)
+    fallback 到 ?token=xxx (window.open/链接下载场景, 浏览器不会带 header)
+    """
+    token = None
+    if credentials and credentials.credentials:
+        token = credentials.credentials
+    else:
+        # 从查询参数拿 (链接下载场景)
+        token = request.query_params.get('token')
+
+    if not token:
         raise HTTPException(status_code=401, detail="缺少认证信息")
-    user_id = decode_access_token(credentials.credentials)
+    user_id = decode_access_token(token)
     if not user_id:
         raise HTTPException(status_code=401, detail="Token 无效或已过期")
     return user_id

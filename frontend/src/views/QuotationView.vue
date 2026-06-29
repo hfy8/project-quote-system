@@ -1044,6 +1044,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
+import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
@@ -2373,13 +2374,13 @@ function viewVersion(version) {
 
 // 导出特定版本
 function exportVersion(version, format) {
-  window.open(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${format}`, '_blank')
+  openDownload(`/api/quotations/${quotationId.value}/versions/${version.version_no}/export/${format}`)
 }
 
 // 导出文件
 function exportFile(format) {
   // 始终传递当前选中的币种参数
-  window.open(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}`, '_blank')
+  openDownload(`/api/quotations/${quotationId.value}/export/${format}?currency=${selectedCurrency.value}`)
 }
 
 // 汇总 tab DOM 引用（用于导出 PDF 截图）

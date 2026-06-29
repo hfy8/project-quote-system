@@ -229,6 +229,7 @@ import { useRouter } from 'vue-router'
 import { hasPermission } from '../router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { quotationsAPI } from '../api/quotations'
+import { openDownload } from '../utils/download'
 import { useAuthStore } from '../stores/auth'
 import { usePermission } from '../composables/usePermission'
 import VersionCompare from './VersionCompare.vue'
@@ -613,7 +614,7 @@ const handleViewVersionDetail = async (row) => {
 // 导出版本报价单
 const handleExportVersion = (row, cmd) => {
   const [fmt, lang] = cmd.split('_')
-  window.open(`/api/quotations/${currentQuotationId.value}/versions/${row.version_no}/export/${fmt}?lang=${lang}`, '_blank')
+  openDownload(`/api/quotations/${currentQuotationId.value}/versions/${row.version_no}/export/${fmt}?lang=${lang}`)
 }
 
 onMounted(() => {

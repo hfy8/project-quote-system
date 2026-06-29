@@ -437,6 +437,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowDown } from '@element-plus/icons-vue'
 import request from '../utils/request'
+import { openDownload } from '../utils/download'
 
 const props = defineProps({
   versions: { type: Array, default: () => [] },
@@ -540,7 +541,7 @@ function handleExport(format) {
     ElMessage.warning('请选择要导出的版本')
     return
   }
-  window.open(`/api/quotations/${effectiveQuotationId.value}/versions/${selectedVersionNo.value}/export/${format}`, '_blank')
+  openDownload(`/api/quotations/${effectiveQuotationId.value}/versions/${selectedVersionNo.value}/export/${format}`)
 }
 
 // 工具函数
