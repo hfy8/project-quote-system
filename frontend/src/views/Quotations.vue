@@ -65,6 +65,7 @@
             </div>
           </div>
           <div class="pending-actions">
+            <el-button type="info" size="small" @click="handlePendingExportPDF(approval)">导出 PDF</el-button>
             <el-button type="success" size="small" @click="handleApproveArchive(approval)">同意</el-button>
             <el-button type="danger" size="small" @click="handleRejectArchivePrompt(approval)">驳回</el-button>
           </div>
@@ -361,6 +362,41 @@ const handleRejectArchivePrompt = async (approval) => {
       const msg = error?.response?.data?.detail || error?.message || '操作失败'
       ElMessage.error(msg)
     }
+  }
+}
+
+// 审批人导出 PDF (待审批时也能看, 不需先进报价单详情)
+const handlePendingExportPDF = async (approval) => {
+  try {
+    ElMessage.info(`正在生成「${approval.quotation_name}」PDF, 请稍候...`)
+    const response = await quotationsAPI.export(approval.quotation_id, 'pdf')
+    // 从 response headers 拿文件名 (后端 Content-Disposition 有 filename)
+    const disposition = response.headers['content-disposition'] || ''
+    const match = disposition.match(/filename="?([^"]+)"?/)
+    const filename = match ? match[1] : `quotation_${approval.quotation_id}.pdf`
+    // 创建下载链接
+    const url = window.URL.createObjectURL(new Blob([response.data]))
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', filename)
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('PDF 已下载')
+  } catch (error) {
+    // blob 错误时, 解析错误信息
+    let msg = '导出失败'
+    if (error?.response?.data instanceof Blob) {
+      try {
+        const text = await error.response.data.text()
+        const json = JSON.parse(text)
+        msg = json.detail || msg
+      } catch { /* ignore */ }
+    } else {
+      msg = error?.response?.data?.detail || error?.message || msg
+    }
+    ElMessage.error(msg)
   }
 }
 

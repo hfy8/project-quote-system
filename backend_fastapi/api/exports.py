@@ -9,7 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
-from core.models.quotation import Quotation
+from core.models.quotation import Quotation, QuotationParticipant
+from core.models.archive_approval import ArchiveApproval
 from core.models.module import Module
 from core.models.material import ModuleMaterial, Material
 from core.models.fee import OtherFee, FeeType
@@ -19,7 +20,42 @@ from core.models.user import User
 from core.models.labor_hour import LaborHour
 from core.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
 from core.models.travel import TravelPersonTripFee
-from core.auth import get_db
+from core.auth import get_db, get_current_user_id
+
+
+def _check_export_permission(db, quotation, user_id: int) -> bool:
+    """检查用户是否有导出报价单的权限
+    允许:
+    1. admin
+    2. 报价单 business_owner_id
+    3. 报价单参与人 QuotationParticipant
+    4. 待审批的审批人 (ArchiveApproval.status='pending' AND approver_id=user_id)
+    """
+    user = db.query(User).get(user_id)
+    if not user:
+        return False
+    # 1. admin 直接放行
+    if user.role == 'admin':
+        return True
+    # 2. 报价单负责人
+    if quotation.business_owner_id == user_id:
+        return True
+    # 3. 报价单参与人
+    participant = db.query(QuotationParticipant).filter_by(
+        quotation_id=quotation.id,
+        user_id=user_id
+    ).first()
+    if participant:
+        return True
+    # 4. 待审批的审批人 (该用户有 pending 状态的 approval)
+    pending_approval = db.query(ArchiveApproval).filter_by(
+        quotation_id=quotation.id,
+        approver_id=user_id,
+        status='pending'
+    ).first()
+    if pending_approval:
+        return True
+    return False
 
 # Word 导出
 from docx import Document
@@ -203,11 +239,15 @@ def export_word(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
     db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """导出报价单 Word 格式"""
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
+    # 权限检查: 参与人/审批人/管理员才能导出
+    if not _check_export_permission(db, quotation, int(user_id)):
+        raise HTTPException(status_code=403, detail='没有导出权限')
 
     # 线体：聚合所有子报价单数据
     if quotation.type == 'line':
@@ -393,11 +433,15 @@ def export_excel(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
     db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """导出报价单 Excel 格式"""
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
+    # 权限检查: 参与人/审批人/管理员才能导出
+    if not _check_export_permission(db, quotation, int(user_id)):
+        raise HTTPException(status_code=403, detail='没有导出权限')
 
     # 线体：聚合所有子报价单数据
     if quotation.type == 'line':
@@ -985,11 +1029,15 @@ def export_pdf(
     quotation_id: int,
     lang: str = Query('zh', description='语言: zh/en'),
     db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """导出报价单 PDF 格式，支持中英文 ?lang=en"""
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
         raise HTTPException(status_code=404, detail='Quotation not found')
+    # 权限检查: 参与人/审批人/管理员才能导出
+    if not _check_export_permission(db, quotation, int(user_id)):
+        raise HTTPException(status_code=403, detail='没有导出权限')
 
     # 线体：聚合所有子报价单数据；普通：只查自己（与 Flask 一致）
     if quotation.type == 'line':
