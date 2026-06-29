@@ -493,10 +493,10 @@ onMounted(() => {
   flex-shrink: 0;
   line-height: 1;
 }
-.stat-info { display: flex; flex-direction: column; min-width: 0; }
+.stat-info { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
 .stat-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
-.stat-label { font-size: 11px; color: var(--color-text-secondary); }
-.stat-subtags { margin-top: 2px; display: flex; flex-wrap: wrap; gap: 3px; }
+.stat-label { font-size: 11px; color: var(--color-text-secondary); line-height: 1.2; }
+.stat-subtags { margin-top: 2px; display: flex; flex-wrap: wrap; gap: 2px; line-height: 1.4; }
 .subtag {
   font-size: 10px;
   padding: 1px 4px;
@@ -513,6 +513,11 @@ onMounted(() => {
 .stat-info .stat-icon { background: var(--color-info-bg); color: var(--color-info); }
 .stat-material .stat-icon { background: #FEF3C7; color: #D97706; }
 .stat-trend .stat-icon { background: #F3E8FF; color: #7C3AED; }
+
+/* 数字长文本(如 "已通过 / 已归档") 不换行, 必要时缩字 */
+.stat-card:nth-child(4) .stat-label {
+  white-space: nowrap;
+}
 
 /* ============== 主体三列 - 撑满剩余高度 ============== */
 .dashboard-main-grid {
