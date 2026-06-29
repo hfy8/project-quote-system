@@ -1779,31 +1779,7 @@ def archive_quotation(
 
 
 # ============== 辅助函数 ==============
-
-def _get_department_leader(db, user_id: int):
-    """根据用户部门, 找部门领导
-    返回 dict {id, real_name, position_name} 或 None
-    """
-    user = db.query(User).get(user_id)
-    if not user or not user.dept_id:
-        return None
-    dept = db.query(Department).get(user.dept_id)
-    if not dept or not dept.header_id:
-        return None
-    leader = db.query(User).get(dept.header_id)
-    if not leader or not leader.is_active:
-        return None
-    position_name = None
-    if leader.position_id:
-        pos = db.query(Position).get(leader.position_id)
-        if pos:
-            position_name = pos.name
-    return {
-            'id': leader.id,
-            'real_name': leader.real_name or leader.username,
-            'username': leader.username,
-            'position_name': position_name,
-        }
+# _get_department_leader 已统一在上方 archive 路由之前定义, 避免重复定义被覆盖
 
 
 @router.post("/quotations/{quotation_id}/unarchive")
