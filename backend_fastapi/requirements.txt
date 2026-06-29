@@ -9,6 +9,7 @@ pydantic>=2.5
 # 数据库
 sqlalchemy>=2.0
 psycopg2-binary>=2.9  # PostgreSQL 驱动
+pgvector>=0.2.4  # pgvector SQLAlchemy 向量扩展 (knowledge 表用)
 
 # JWT 认证（替代 flask-jwt-extended）
 python-jose[cryptography]>=3.3
