@@ -21,7 +21,68 @@
       </div>
     </section>
 
-    <!-- 统计卡片 - 我的待办 (高优先级) -->
+    <!-- 统计卡片 + 我的待办 + 物料分类 - 一行内混合布局 -->
+    <section class="stats-row">
+      <!-- 6 张统计卡 -->
+      <div class="stats-grid">
+        <div class="stat-card stat-primary">
+          <div class="stat-icon">📋</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.quotations.total }}</span>
+            <span class="stat-label">报价单总数</span>
+          </div>
+        </div>
+        <div class="stat-card stat-warning">
+          <div class="stat-icon">⏳</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.quotations.by_status.approved_pending }}</span>
+            <span class="stat-label">归档审批中</span>
+          </div>
+        </div>
+        <div class="stat-card stat-info">
+          <div class="stat-icon">📝</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.quotations.by_status.draft }}</span>
+            <span class="stat-label">草稿</span>
+          </div>
+        </div>
+        <div class="stat-card stat-success">
+          <div class="stat-icon">✅</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.quotations.by_status.approved + stats.quotations.by_status.archived }}</span>
+            <span class="stat-label">已通过 / 已归档</span>
+          </div>
+        </div>
+        <div v-if="isAdmin" class="stat-card stat-material">
+          <div class="stat-icon">📦</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.materials.total }}</span>
+            <span class="stat-label">物料总数</span>
+            <div class="stat-subtags">
+              <span class="subtag subtag-large">大件 {{ stats.materials.by_category.large }}</span>
+              <span class="subtag subtag-std">核心 {{ stats.materials.by_category.standard }}</span>
+              <span class="subtag subtag-other">其他 {{ stats.materials.by_category.other }}</span>
+            </div>
+          </div>
+        </div>
+        <div v-else class="stat-card stat-task">
+          <div class="stat-icon">📌</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.my_tasks.pending_archives + stats.my_tasks.pending_changes }}</span>
+            <span class="stat-label">我的待办</span>
+          </div>
+        </div>
+        <div class="stat-card stat-trend">
+          <div class="stat-icon">📈</div>
+          <div class="stat-info">
+            <span class="stat-value">{{ stats.quotations.monthly_new }}</span>
+            <span class="stat-label">本月新增</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 我的待办 (独立块, 仅当有内容时显示) -->
     <section v-if="hasAnyTask" class="my-tasks card">
       <div class="section-header">
         <h3 class="section-title">📋 我的待办</h3>
@@ -44,7 +105,7 @@
           <div class="task-icon">📤</div>
           <div class="task-info">
             <span class="task-count">{{ stats.my_tasks.pending_changes }}</span>
-            <span class="task-label">待审变更</span>
+            <span class="task-label">待审变更申请</span>
           </div>
           <div class="task-arrow">→</div>
         </div>
@@ -61,61 +122,10 @@
       </div>
     </section>
 
-    <!-- 统计卡片 - 核心指标 -->
-    <section class="stats-grid">
-      <div class="stat-card stat-primary">
-        <div class="stat-icon">📋</div>
-        <div class="stat-info">
-          <span class="stat-value">{{ stats.quotations.total }}</span>
-          <span class="stat-label">报价单总数</span>
-        </div>
-      </div>
-      <div class="stat-card stat-warning">
-        <div class="stat-icon">⏳</div>
-        <div class="stat-info">
-          <span class="stat-value">{{ stats.quotations.by_status.approved_pending }}</span>
-          <span class="stat-label">归档审批中</span>
-        </div>
-      </div>
-      <div class="stat-card stat-info">
-        <div class="stat-icon">📝</div>
-        <div class="task-info">
-          <span class="stat-value">{{ stats.quotations.by_status.draft }}</span>
-          <span class="stat-label">草稿</span>
-        </div>
-      </div>
-      <div class="stat-card stat-success">
-        <div class="stat-icon">✅</div>
-        <div class="stat-info">
-          <span class="stat-value">{{ stats.quotations.by_status.approved + stats.quotations.by_status.archived }}</span>
-          <span class="stat-label">已通过 / 已归档</span>
-        </div>
-      </div>
-      <div v-if="isAdmin" class="stat-card stat-material">
-        <div class="stat-icon">📦</div>
-        <div class="stat-info">
-          <span class="stat-value">{{ stats.materials.total }}</span>
-          <span class="stat-label">物料总数</span>
-          <div class="stat-subtags">
-            <span class="subtag subtag-large">大件 {{ stats.materials.by_category.large }}</span>
-            <span class="subtag subtag-std">核心部件 {{ stats.materials.by_category.standard }}</span>
-            <span class="subtag subtag-other">其他件 {{ stats.materials.by_category.other }}</span>
-          </div>
-        </div>
-      </div>
-      <div class="stat-card stat-trend">
-        <div class="stat-icon">📈</div>
-        <div class="stat-info">
-          <span class="stat-value">{{ stats.quotations.monthly_new }}</span>
-          <span class="stat-label">本月新增报价单</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- 趋势 + 快捷操作 + 最近报价 (三列布局) -->
+    <!-- 趋势图 + 快捷操作 + 最近报价单 (三列等高) -->
     <div class="dashboard-main-grid">
       <!-- 最近 7 天趋势 -->
-      <section v-if="isAdmin" class="trend-section card">
+      <section class="trend-section card">
         <div class="section-header">
           <h3 class="section-title">📊 最近 7 天趋势</h3>
         </div>
@@ -179,7 +189,7 @@
         </div>
       </section>
 
-      <!-- 最近报价单 -->
+      <!-- 最近报价单 (重要信息加大列宽) -->
       <section class="recent-quotations card">
         <div class="section-header">
           <h3 class="section-title">📄 最近报价单</h3>
@@ -243,7 +253,7 @@ const updateTime = () => {
 const permissions = computed(() => authStore.userInfo?.permissions || [])
 const hasPerm = (p) => permissions.value.includes('*') || permissions.value.includes(p)
 
-// 统计数据 (默认)
+// 统计数据
 const stats = ref({
   quotations: { total: 0, by_status: {}, monthly_new: 0 },
   materials: { total: 0, by_category: {} },
@@ -302,7 +312,7 @@ const fetchStats = async () => {
 const fetchRecent = async () => {
   loading.value = true
   try {
-    const res = await quotationsAPI.getList({ page: 1, pageSize: 5 })
+    const res = await quotationsAPI.getList({ page: 1, pageSize: 8 })
     recentQuotations.value = res.items || res || []
   } catch (e) {
     console.error('Failed to load recent quotations:', e)
@@ -312,7 +322,6 @@ const fetchRecent = async () => {
 }
 
 const openMessages = () => {
-  // 触发侧边栏的铃铛点击 (Layout.vue 暴露的事件)
   const bell = document.querySelector('.message-bell')
   if (bell) bell.click()
 }
@@ -325,25 +334,24 @@ onMounted(() => {
 </script>
 
 <style scoped>
-/* ============== 占满空白 + 不滚动 ============== */
+/* ============== 占满空白 + 自然高度 不滚动 ============== */
 .dashboard {
-  padding: 12px;
-  height: 100%;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
   box-sizing: border-box;
   overflow: hidden;
 }
 
-/* ============== 欢迎区域 - 紧凑 ============== */
+/* ============== 欢迎区域 ============== */
 .welcome-section {
   position: relative;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
+  padding: 14px 24px;
   background: linear-gradient(135deg, var(--color-primary) 0%, #0F766E 100%);
   border-radius: 10px;
   color: white;
@@ -360,8 +368,8 @@ onMounted(() => {
   pointer-events: none;
 }
 .welcome-content { position: relative; z-index: 1; }
-.welcome-title { font-size: 18px; font-weight: 600; margin-bottom: 2px; }
-.welcome-subtitle { font-size: 12px; opacity: 0.92; }
+.welcome-title { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+.welcome-subtitle { font-size: 13px; opacity: 0.92; }
 .welcome-time { opacity: 0.7; }
 
 .welcome-actions {
@@ -374,7 +382,7 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 14px;
+  padding: 7px 16px;
   border: none;
   border-radius: 6px;
   font-size: 13px;
@@ -396,96 +404,34 @@ onMounted(() => {
 }
 .btn-ghost:hover { background: rgba(255,255,255,0.3); }
 
-/* ============== 我的待办 - 紧凑 ============== */
-.my-tasks {
-  padding: 10px 14px;
-  background: var(--color-bg-card);
-  border-radius: 8px;
-  border: 1px solid var(--color-border-light);
-  flex-shrink: 0;
-}
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 6px;
-}
-.section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary);
-  margin: 0;
-}
-.section-subtitle {
-  font-size: 11px;
-  color: var(--color-text-secondary);
-}
-.tasks-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
-}
-.task-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 14px;
-  background: var(--color-bg-page);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  border: 1px solid var(--color-border-light);
-  border-left: 4px solid;
-}
-.task-item:hover {
-  transform: translateX(2px);
-  box-shadow: var(--shadow-sm);
-}
-.task-icon { font-size: 20px; }
-.task-info { display: flex; flex-direction: column; flex: 1; }
-.task-count { font-size: 18px; font-weight: 700; line-height: 1.1; }
-.task-label { font-size: 11px; color: var(--color-text-secondary); }
-.task-arrow {
-  font-size: 14px;
-  opacity: 0.4;
-  transition: all var(--transition-fast);
-}
-.task-item:hover .task-arrow { opacity: 1; transform: translateX(2px); }
-
-.task-warning { border-left-color: var(--color-warning); }
-.task-warning .task-count { color: var(--color-warning); }
-.task-info { border-left-color: var(--color-info); }
-.task-info .task-count { color: var(--color-info); }
-.task-primary { border-left-color: var(--color-primary); }
-.task-primary .task-count { color: var(--color-primary); }
-
-/* ============== 6 张统计卡 - 横排占满 ============== */
+/* ============== 统计卡区 (混合样式) ============== */
+.stats-row { flex-shrink: 0; }
 .stats-grid {
   display: grid;
+  /* 7 列布局: 即使普通用户也是 6 张卡 (我的待办 替换 物料) */
   grid-template-columns: repeat(6, 1fr);
   gap: 10px;
-  flex-shrink: 0;
 }
 .stat-card {
   background: var(--color-bg-card);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   border: 1px solid var(--color-border-light);
   transition: all var(--transition-fast);
   overflow: hidden;
-  min-height: 80px;
+  min-height: 90px;
 }
 .stat-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
 .stat-icon {
-  font-size: 22px;
-  width: 40px;
-  height: 40px;
+  font-size: 24px;
+  width: 44px;
+  height: 44px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -494,12 +440,12 @@ onMounted(() => {
   line-height: 1;
 }
 .stat-info { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-.stat-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
-.stat-label { font-size: 11px; color: var(--color-text-secondary); line-height: 1.2; }
-.stat-subtags { margin-top: 2px; display: flex; flex-wrap: wrap; gap: 2px; line-height: 1.4; }
+.stat-value { font-size: 26px; font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
+.stat-label { font-size: 12px; color: var(--color-text-secondary); line-height: 1.2; }
+.stat-subtags { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 3px; line-height: 1.4; }
 .subtag {
-  font-size: 10px;
-  padding: 1px 4px;
+  font-size: 11px;
+  padding: 2px 5px;
   border-radius: 3px;
   font-weight: 500;
 }
@@ -512,28 +458,88 @@ onMounted(() => {
 .stat-warning .stat-icon { background: var(--color-warning-bg); color: var(--color-warning); }
 .stat-info .stat-icon { background: var(--color-info-bg); color: var(--color-info); }
 .stat-material .stat-icon { background: #FEF3C7; color: #D97706; }
+.stat-task .stat-icon { background: #FCE7F3; color: #DB2777; }
 .stat-trend .stat-icon { background: #F3E8FF; color: #7C3AED; }
 
-/* 数字长文本(如 "已通过 / 已归档") 不换行, 必要时缩字 */
-.stat-card:nth-child(4) .stat-label {
-  white-space: nowrap;
-}
+/* 数字长文本不换行 */
+.stat-card:nth-child(4) .stat-label,
+.stat-card:nth-child(5) .stat-label { white-space: nowrap; }
 
-/* ============== 主体三列 - 撑满剩余高度 ============== */
-.dashboard-main-grid {
-  display: grid;
-  grid-template-columns: 0.8fr 0.6fr 1.2fr;
-  gap: 10px;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-.dashboard-main-grid > section {
-  padding: 10px 14px;
+/* ============== 我的待办 (独立块, 仅待办时显示) ============== */
+.my-tasks {
+  padding: 12px 16px;
   background: var(--color-bg-card);
   border-radius: 8px;
   border: 1px solid var(--color-border-light);
-  overflow: hidden;
+  flex-shrink: 0;
+}
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 8px;
+}
+.section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.section-subtitle {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+.tasks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+.task-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--color-bg-page);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: 1px solid var(--color-border-light);
+  border-left: 4px solid;
+}
+.task-item:hover {
+  transform: translateX(2px);
+  box-shadow: var(--shadow-sm);
+}
+.task-icon { font-size: 22px; }
+.task-info { display: flex; flex-direction: column; flex: 1; }
+.task-count { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.task-label { font-size: 12px; color: var(--color-text-secondary); }
+.task-arrow {
+  font-size: 16px;
+  opacity: 0.4;
+  transition: all var(--transition-fast);
+}
+.task-item:hover .task-arrow { opacity: 1; transform: translateX(2px); }
+
+.task-warning { border-left-color: var(--color-warning); }
+.task-warning .task-count { color: var(--color-warning); }
+.task-info { border-left-color: var(--color-info); }
+.task-info .task-count { color: var(--color-info); }
+.task-primary { border-left-color: var(--color-primary); }
+.task-primary .task-count { color: var(--color-primary); }
+
+/* ============== 主体三列 (趋势/快捷/最近) - 自然高度 ============== */
+.dashboard-main-grid {
+  display: grid;
+  grid-template-columns: 0.7fr 0.5fr 1.2fr;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.dashboard-main-grid > section {
+  padding: 14px 18px;
+  background: var(--color-bg-card);
+  border-radius: 8px;
+  border: 1px solid var(--color-border-light);
   display: flex;
   flex-direction: column;
 }
@@ -542,55 +548,54 @@ onMounted(() => {
 }
 
 /* ============== 趋势图 ============== */
-.trend-section { display: flex; flex-direction: column; }
 .trend-chart {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   align-items: flex-end;
-  height: 100px;
-  padding: 8px 0;
+  height: 120px;
+  padding: 10px 0;
   border-bottom: 1px dashed var(--color-border-light);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  margin-top: 4px;
 }
-.trend-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.trend-bar-group { display: flex; gap: 2px; align-items: flex-end; height: 70px; }
+.trend-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.trend-bar-group { display: flex; gap: 2px; align-items: flex-end; height: 80px; }
 .trend-bar {
-  width: 8px;
-  border-radius: 3px 3px 0 0;
+  width: 10px;
+  border-radius: 4px 4px 0 0;
   transition: all var(--transition-fast);
-  min-height: 3px;
+  min-height: 4px;
 }
 .trend-new { background: var(--color-primary); }
 .trend-approved { background: var(--color-success); }
-.trend-bar-label { font-size: 10px; color: var(--color-text-secondary); }
+.trend-bar-label { font-size: 11px; color: var(--color-text-secondary); }
 .trend-legend {
   display: flex;
-  gap: 12px;
-  font-size: 11px;
+  gap: 14px;
+  font-size: 12px;
   color: var(--color-text-secondary);
 }
 .legend-item { display: flex; align-items: center; gap: 4px; }
 .legend-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
 }
 .legend-new { background: var(--color-primary); }
 .legend-approved { background: var(--color-success); }
 
-/* ============== 快捷操作 4 列 ============== */
-.quick-actions { display: flex; flex-direction: column; }
+/* ============== 快捷操作 ============== */
 .actions-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-  flex: 1;
+  gap: 8px;
+  margin-top: 4px;
 }
 .action-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 10px;
+  padding: 10px 12px;
   background: var(--color-bg-page);
   border-radius: 6px;
   cursor: pointer;
@@ -601,13 +606,13 @@ onMounted(() => {
   transform: translateX(2px);
 }
 .action-icon {
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 15px;
   flex-shrink: 0;
 }
 .bg-primary { background: var(--color-primary-light); }
@@ -618,24 +623,22 @@ onMounted(() => {
 .bg-amber { background: #FEF3C7; }
 .bg-pink { background: #FCE7F3; }
 .bg-teal { background: #CCFBF1; }
-.action-label { font-size: 12px; font-weight: 500; }
+.action-label { font-size: 13px; font-weight: 500; }
 
 /* ============== 最近报价单 ============== */
-.recent-quotations { display: flex; flex-direction: column; }
 .quotations-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  overflow-y: auto;
+  gap: 6px;
+  margin-top: 4px;
 }
 .quotation-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 10px 14px;
   background: var(--color-bg-page);
-  border-radius: 5px;
+  border-radius: 6px;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -643,13 +646,13 @@ onMounted(() => {
   background: var(--color-primary-light);
   transform: translateX(2px);
 }
-.quotation-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.quotation-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .quotation-name { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quotation-type { font-size: 11px; color: var(--color-text-secondary); }
-.quotation-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+.quotation-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
 .quotation-status {
-  font-size: 10px;
-  padding: 1px 6px;
+  font-size: 11px;
+  padding: 2px 7px;
   border-radius: 3px;
   font-weight: 500;
 }
@@ -659,15 +662,15 @@ onMounted(() => {
 .quotation-status.archived { background: #E0E7FF; color: #4338CA; }
 .quotation-status.rejected { background: var(--color-danger-bg); color: var(--color-danger); }
 .quotation-status.submitted { background: var(--color-warning-bg); color: var(--color-warning); }
-.quotation-date { font-size: 10px; color: var(--color-text-secondary); }
+.quotation-date { font-size: 11px; color: var(--color-text-secondary); }
 
 .empty-state {
   text-align: center;
-  padding: 20px 0;
+  padding: 24px 0;
   color: var(--color-text-secondary);
 }
-.empty-icon { font-size: 40px; opacity: 0.5; display: block; margin-bottom: 6px; }
-.empty-text { margin-bottom: 8px; }
+.empty-icon { font-size: 40px; opacity: 0.5; display: block; margin-bottom: 8px; }
+.empty-text { margin-bottom: 10px; }
 
 .card {
   background: var(--color-bg-card);
