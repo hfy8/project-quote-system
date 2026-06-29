@@ -20,6 +20,7 @@ redis>=5.0
 hiredis>=2.3.0   # 加速解析
 
 # PDF / Word 导出
+fpdf2>=2.7  # fpdf2 (替代 fpdf) 支持中文 + reportlab 用于复杂排版
 reportlab>=4.0
 python-docx>=1.0
 openpyxl>=3.1  # 测试工具
