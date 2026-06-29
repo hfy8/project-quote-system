@@ -9,7 +9,8 @@
 import sys
 import os
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# 把 /app 加到 sys.path (而不是 scripts 目录), 这样才能 import db.py (单文件模块)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from db import _make_engine, db_session_factory, ModuleBase
 from core.config import Config
