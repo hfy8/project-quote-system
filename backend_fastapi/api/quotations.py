@@ -1621,6 +1621,11 @@ def cancel_archive(
 def _get_department_leader(db, user_id: int):
     """根据用户部门, 找部门领导
     返回 dict {id, real_name, position_name} 或 None
+
+    查找链:
+    1. 发起人 → 发起人部门
+    2. 部门 → header_id (存的是 employee_id, 对应员工在 HR 系统的 EID)
+    3. employee_id → users.employee_id → 找到部门领导的用户账号
     """
     user = db.query(User).get(user_id)
     if not user or not user.dept_id:
@@ -1628,8 +1633,17 @@ def _get_department_leader(db, user_id: int):
     dept = db.query(Department).get(user.dept_id)
     if not dept or not dept.header_id:
         return None
-    leader = db.query(User).get(dept.header_id)
-    if not leader or not leader.is_active:
+    # departments.header_id 对应 SQL Server HR 系统的 EID,
+    # 而 users 表有 employee_id 字段保存这个 EID (FK 到 employees.id)
+    # 所以直接查 users.employee_id = dept.header_id 就能拿到领导账号
+    leader = db.query(User).filter_by(
+        employee_id=dept.header_id,
+        is_active=True
+    ).first()
+    if not leader:
+        return None
+    # 兜底: 防止领导自己给自己审批
+    if leader.id == int(user_id):
         return None
     position_name = None
     if leader.position_id:
