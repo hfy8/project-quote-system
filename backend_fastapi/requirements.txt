@@ -28,5 +28,10 @@ openpyxl>=3.1  # 测试工具
 # 定时任务
 apscheduler>=3.10
 
+# AI / LangGraph Agent
+langgraph>=0.2
+langchain>=0.3
+langchain-openai>=0.2
+
 # werkzeug 保留（密码哈希 scrypt 格式兼容）
 werkzeug>=3.0
