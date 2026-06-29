@@ -25,9 +25,12 @@
 """
 
 import json
+import logging
 from typing import Optional
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
+
+logger = logging.getLogger("api.quotations")
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_, func as sa_func, text
@@ -1633,6 +1636,9 @@ def _get_department_leader(db, user_id: int):
     dept = db.query(Department).get(user.dept_id)
     if not dept or not dept.header_id:
         return None
+    # DEBUG START
+    logger.info(f"[LEADER DEBUG] user_id={user_id} dept_id={user.dept_id} dept.header_id={dept.header_id}")
+    # DEBUG END
     # departments.header_id 对应 SQL Server HR 系统的 EID,
     # 而 users 表有 employee_id 字段保存这个 EID (FK 到 employees.id)
     # 所以直接查 users.employee_id = dept.header_id 就能拿到领导账号
@@ -1640,6 +1646,22 @@ def _get_department_leader(db, user_id: int):
         employee_id=dept.header_id,
         is_active=True
     ).first()
+    # DEBUG START
+    if not leader:
+        logger.info(f"[LEADER DEBUG] ❌ 没找到 leader for employee_id={dept.header_id}")
+        # Try without is_active filter
+        any_leader = db.query(User).filter_by(employee_id=dept.header_id).first()
+        if any_leader:
+            logger.info(f"[LEADER DEBUG] 但找到一个: id={any_leader.id} is_active={any_leader.is_active}")
+        else:
+            logger.info(f"[LEADER DEBUG] 真没有, users.employee_id != {dept.header_id}")
+            # Try by raw query
+            from sqlalchemy import text
+            raw = db.execute(text(f"SELECT id, username, employee_id, is_active FROM users WHERE employee_id={dept.header_id}")).fetchall()
+            logger.info(f"[LEADER DEBUG] raw query result: {raw}")
+    else:
+        logger.info(f"[LEADER DEBUG] ✅ leader: id={leader.id} username={leader.username}")
+    # DEBUG END
     if not leader:
         return None
     # 兜底: 防止领导自己给自己审批
@@ -1703,11 +1725,14 @@ def archive_quotation(
         }
 
     # 非 admin: 必须是报价单负责人
+    logger.info(f"[ARCHIVE DEBUG] after admin-check, business_owner_id={quotation.business_owner_id} user_id={user_id}")
     if quotation.business_owner_id != int(user_id):
         raise HTTPException(status_code=403, detail='只有报价单负责人或管理员可以发起归档')
+    logger.info(f"[ARCHIVE DEBUG] passed business_owner check, calling _get_department_leader")
 
     # 找部门领导
     leader = _get_department_leader(db, int(user_id))
+    logger.info(f"[ARCHIVE DEBUG] leader result: {leader}")
     if not leader:
         raise HTTPException(status_code=400, detail='所在部门未配置领导, 请联系管理员')
     if leader['id'] == int(user_id):
