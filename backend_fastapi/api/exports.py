@@ -558,7 +558,7 @@ def export_excel(
 
     rate_info = [
         ('大件系数', f"{totals['fee_rates'].get('large', 1.0)}x"),
-        ('普通件系数', f"{totals['fee_rates'].get('standard', 1.0)}x"),
+        ('核心部件系数', f"{totals['fee_rates'].get('standard', 1.0)}x"),
         ('其他件系数', f"{totals['fee_rates'].get('other', 1.0)}x")
     ]
     for key, value in rate_info:

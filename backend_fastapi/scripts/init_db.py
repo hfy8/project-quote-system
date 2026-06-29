@@ -118,7 +118,7 @@ def init_data(session):
 
     # 费用分类费率
     from core.models.fee_rate import FeeRate
-    for cat, rate in [('大件', 1.2), ('普通件', 1.0), ('其他件', 1.1)]:
+    for cat, rate in [('大件', 1.2), ('核心部件', 1.0), ('其他件', 1.1)]:
         if not session.query(FeeRate).filter_by(category=cat).first():
             session.add(FeeRate(category=cat, rate=rate))
     session.commit()

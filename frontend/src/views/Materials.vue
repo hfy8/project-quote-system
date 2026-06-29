@@ -164,7 +164,7 @@
         <el-form-item label="分类" prop="category">
           <el-select v-model="form.category" placeholder="请选择分类" style="width: 100%;">
             <el-option label="大件" value="large" />
-            <el-option label="普通件" value="standard" />
+            <el-option label="核心部件" value="standard" />
             <el-option label="其他件" value="other" />
           </el-select>
         </el-form-item>
@@ -237,7 +237,7 @@ const formRef = ref(null)
 const categories = [
   { label: '全部', value: 'all', icon: '📋' },
   { label: '大件', value: 'large', icon: '📦' },
-  { label: '普通件', value: 'standard', icon: '📚' },
+  { label: '核心部件', value: 'standard', icon: '📚' },
   { label: '其他件', value: 'other', icon: '📎' }
 ]
 
@@ -267,7 +267,7 @@ const getCategoryCount = (cat) => {
 }
 
 const getCategoryLabel = (cat) => {
-  const map = { large: '大件', standard: '普通件', other: '其他件' }
+  const map = { large: '大件', standard: '核心部件', other: '其他件' }
   return map[cat] || cat || '-'
 }
 

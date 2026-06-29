@@ -67,7 +67,7 @@ _reg("materials", "物料库（基础数据）", """
   brand           String(50)      品牌
   unit            String(20)      单位
   unit_price      Numeric(10,2)   单价
-  category        String(20)      分类: 大件/普通件/其他件, 默认普通件
+  category        String(20)      分类: 大件/核心部件/其他件, 默认核心部件
   param1          String(100)     关键参数01
   param2          String(100)     关键参数02
   param3          String(100)     关键参数03
@@ -251,7 +251,7 @@ _reg("fee_types", "费用类型配置", """
 
 _reg("fee_rates", "费用系数配置", """
   id              Integer         PK
-  category        String(50)      物料分类: 大件/普通件/其他件
+  category        String(50)      物料分类: 大件/核心部件/其他件
   rate            Float           系数, 默认1.0
   description     String(200)
 """)

@@ -7,7 +7,7 @@ class FeeRate(db.Model):
     __tablename__ = 'fee_rates'
 
     id = db.Column(db.Integer, primary_key=True)
-    category = db.Column(db.String(50), nullable=False, comment='物料分类：大件/普通件/其他件')
+    category = db.Column(db.String(50), nullable=False, comment='物料分类：大件/核心部件/其他件')
     rate = db.Column(db.Float, nullable=False, default=1.0, comment='费用系数')
     description = db.Column(db.String(200), comment='描述')
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

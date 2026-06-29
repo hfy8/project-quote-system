@@ -179,7 +179,7 @@
               </td>
             </tr>
             <tr>
-              <td>普通件系数</td>
+              <td>核心部件系数</td>
               <td>{{ data1?.quotation?.coefficients?.standard ?? '-' }}</td>
               <td>{{ data2?.quotation?.coefficients?.standard ?? '-' }}</td>
               <td :class="getCellClass(data1?.quotation?.coefficients?.standard, data2?.quotation?.coefficients?.standard)">

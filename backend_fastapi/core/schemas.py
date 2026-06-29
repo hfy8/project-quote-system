@@ -179,7 +179,7 @@ class MaterialCreate(BaseModel):
     brand: Optional[str] = None
     unit: Optional[str] = None
     unit_price: float = Field(..., ge=0)
-    category: str = Field("standard", pattern="^(large|standard|other|大件|普通件|其他件)$")
+    category: str = Field("standard", pattern="^(large|standard|other|大件|核心部件|其他件)$")
     param1: Optional[str] = None
     param2: Optional[str] = None
     param3: Optional[str] = None

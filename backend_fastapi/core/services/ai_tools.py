@@ -477,7 +477,7 @@ def audit_materials_price(category: str = "") -> str:
     """审计物料库中所有异常价格的物料（按类别筛选）
 
     Args:
-        category: 可选类别（'大件'/'普通件'/'其他件'），空字符串审计全部
+        category: 可选类别（'大件'/'核心部件'/'其他件'），空字符串审计全部
 
     Returns:
         JSON 字符串：{"outliers": [...], "summary": "..."}
@@ -1886,7 +1886,7 @@ TOOLS = [
                 "properties": {
                     "category": {
                         "type": "string",
-                        "description": "可选物料类别（大件/普通件/其他件），空字符串审计全部"
+                        "description": "可选物料类别（大件/核心部件/其他件），空字符串审计全部"
                     }
                 },
                 "required": []

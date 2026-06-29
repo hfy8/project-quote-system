@@ -40,7 +40,7 @@ DEFAULT_TABS = [
     # project 类型（全部 Tab）
     {'participant_type': 'project', 'tab_name': 'modules', 'tab_label': '模块管理', 'type_name': '项目', 'description': '添加、编辑、删除模块', 'sort_order': 1},
     {'participant_type': 'project', 'tab_name': 'participants', 'tab_label': '参与人员', 'type_name': '项目', 'description': '管理报价单参与人员', 'sort_order': 2},
-    {'participant_type': 'project', 'tab_name': 'coefficients', 'tab_label': '费用系数', 'type_name': '项目', 'description': '调整大件/普通件/其他件系数', 'sort_order': 3},
+    {'participant_type': 'project', 'tab_name': 'coefficients', 'tab_label': '费用系数', 'type_name': '项目', 'description': '调整大件/核心部件/其他件系数', 'sort_order': 3},
     {'participant_type': 'project', 'tab_name': 'materials', 'tab_label': '物料清单', 'type_name': '项目', 'description': '物料选择与报价', 'sort_order': 4},
     {'participant_type': 'project', 'tab_name': 'fees', 'tab_label': '费用', 'type_name': '项目', 'description': '附加费用配置', 'sort_order': 5},
     {'participant_type': 'project', 'tab_name': 'labor', 'tab_label': '人力工时', 'type_name': '项目', 'description': '人力工时统计', 'sort_order': 6},

@@ -2,7 +2,7 @@
   <div class="fee-rates-container">
     <div class="page-header">
       <h2>费用系数配置</h2>
-      <p class="subtitle">配置大件、普通件、其他件的费用系数</p>
+      <p class="subtitle">配置大件、核心部件、其他件的费用系数</p>
     </div>
 
     <div class="card">
@@ -47,7 +47,7 @@
         <el-form-item label="物料分类" required>
           <el-select v-model="form.category" placeholder="请选择分类" :disabled="isEdit">
             <el-option label="大件" value="large" />
-            <el-option label="普通件" value="standard" />
+            <el-option label="核心部件" value="standard" />
             <el-option label="其他件" value="other" />
           </el-select>
         </el-form-item>
@@ -91,7 +91,7 @@ const getCategoryType = (category) => {
 }
 
 const getCategoryLabel = (cat) => {
-  const map = { large: '大件', standard: '普通件', other: '其他件' }
+  const map = { large: '大件', standard: '核心部件', other: '其他件' }
   return map[cat] || cat || '-'
 }
 

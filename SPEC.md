@@ -105,7 +105,7 @@
 | 规范 | 说明 |
 |-----|------|
 | 费用位置 | `internal` = 厂内, `external` = 厂外 |
-| 物料分类 | `large` = 大件, `normal` = 普通件, `other` = 其他件 |
+| 物料分类 | `large` = 大件, `normal` = 核心部件, `other` = 其他件 |
 | 状态流转 | `draft` → `in_progress` → `approved` → `archived` |
 
 ---
@@ -237,7 +237,7 @@
 | /materials | 原材料库 | material.view | 物料管理 |
 | /fee-types | 费用类型 | fee_type.view | 费用类型配置 |
 | /fees | 费用管理 | fee.view | 费用配置 |
-| /fee-rates | 费用系数 | fee_rate.view | 大件/普通件/其他件系数 |
+| /fee-rates | 费用系数 | fee_rate.view | 大件/核心部件/其他件系数 |
 | /exchange-rates | 汇率配置 | exchange_rate.view | 货币汇率 |
 | /users | 用户管理 | user.view | 用户管理 |
 | /roles | 角色管理 | role.view | 角色权限配置 |
@@ -330,7 +330,7 @@
 | 物料分类 | 说明 | 默认系数 |
 |---------|------|---------|
 | large | 大件 | 1.0 |
-| normal | 普通件 | 1.0 |
+| normal | 核心部件 | 1.0 |
 | other | 其他件 | 1.0 |
 
 ### 7.2 税率选项

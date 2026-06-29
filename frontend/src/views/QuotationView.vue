@@ -247,7 +247,7 @@
               </div>
             </div>
             <div class="coefficient-desc">
-              费用系数用于调整大件、普通件、其他件的成本计算系数，仅影响当前报价单
+              费用系数用于调整大件、核心部件、其他件的成本计算系数，仅影响当前报价单
             </div>
             <div class="coefficient-items">
               <div class="coefficient-item">
@@ -261,7 +261,7 @@
               <div class="coefficient-item">
                 <div class="coefficient-item-icon standard"><span>通</span></div>
                 <div class="coefficient-item-content">
-                  <div class="coefficient-item-label">普通件系数</div>
+                  <div class="coefficient-item-label">核心部件系数</div>
                   <div class="coefficient-item-tip">标准常规材料成本系数</div>
                 </div>
                 <el-input-number v-model="quotation.coefficients.standard" :min="0" :max="10" :precision="2" style="width: 140px;" />
@@ -384,7 +384,7 @@
               <el-input v-model="materialFilter.keyword" placeholder="搜索品名" clearable style="width: 140px;" />
               <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 110px;">
                 <el-option label="大件" value="large" />
-                <el-option label="普通件" value="standard" />
+                <el-option label="核心部件" value="standard" />
                 <el-option label="其他件" value="other" />
               </el-select>
               <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 110px;">
@@ -1145,7 +1145,7 @@ function convertCurrency(amount, fromCurrency = 'CNY') {
 }
 
 const getCategoryLabel = (cat) => {
-  const map = { large: '大件', standard: '普通件', other: '其他件' }
+  const map = { large: '大件', standard: '核心部件', other: '其他件' }
   return map[cat] || cat || '-'
 }
 

@@ -12,7 +12,7 @@ class Material(db.Model):
     brand = db.Column(db.String(50), nullable=True, index=True)
     unit = db.Column(db.String(20), nullable=True)
     unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0)
-    category = db.Column(db.String(20), nullable=False, default='普通件', index=True)  # 大件/普通件/其他件
+    category = db.Column(db.String(20), nullable=False, default='核心部件', index=True)  # 大件/核心部件/其他件
     # 三项关键参数（灵活字段，机构/电控选料参考）
     param1 = db.Column(db.String(100), nullable=True)   # 关键参数01
     param2 = db.Column(db.String(100), nullable=True)  # 关键参数02
