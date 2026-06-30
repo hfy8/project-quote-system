@@ -76,12 +76,6 @@
         <v-chart class="chart" :option="typeChartOption" autoresize />
       </section>
 
-      <!-- 部门业绩排行 -->
-      <section class="chart-card card">
-        <h3 class="section-title">🏢 部门业绩 Top 8</h3>
-        <v-chart class="chart" :option="deptChartOption" autoresize />
-      </section>
-
       <!-- 毛利率散点 (宽) -->
       <section class="chart-card card chart-card-wide">
         <h3 class="section-title">🎯 毛利率散点 (颜色=状态, 大小=数量, 点击跳转详情)</h3>
@@ -213,7 +207,6 @@ const monthly = ref([])
 const byStatus = ref([])
 const byType = ref([])
 const scatter = ref([])
-const byDept = ref([])
 const topClients = ref([])
 const topCreators = ref([])
 const topProfitQuotations = ref([])
@@ -344,46 +337,6 @@ const typeChartOption = computed(() => {
   }
 })
 
-const deptChartOption = computed(() => {
-  const data = byDept.value
-  return {
-    tooltip: {
-      trigger: 'axis',
-      axisPointer: { type: 'shadow' },
-      formatter: (p) => {
-        const item = data[p[0].dataIndex]
-        return `<b>${item.department}</b><br/>数量: ${item.count} 单<br/>毛利率: ${formatPercent(item.avg_gross_margin)}`
-      },
-    },
-    grid: { top: 20, right: 80, bottom: 30, left: 130 },
-    xAxis: { type: 'value', name: '数量' },
-    yAxis: {
-      type: 'category', data: data.map(d => d.department).reverse(),
-      axisLabel: {
-        fontSize: 12,
-        formatter: (val) => val.length > 10 ? val.slice(0, 9) + '…' : val,
-      },
-    },
-    series: [{
-      name: '数量', type: 'bar',
-      data: data.map(d => ({
-        value: d.count,
-        itemStyle: {
-          color: {
-            type: 'linear', x: 0, y: 0, x2: 1, y2: 0,
-            colorStops: [
-              { offset: 0, color: '#60a5fa' },
-              { offset: 1, color: '#3b82f6' },
-            ],
-          },
-          borderRadius: [0, 4, 4, 0],
-        },
-      })).reverse(),
-      label: { show: true, position: 'right', formatter: '{c} 单' },
-    }],
-  }
-})
-
 const scatterChartOption = computed(() => {
   const groups = {}
   const monthSet = new Set()
@@ -440,7 +393,6 @@ const loadData = async () => {
     byStatus.value = d.by_status || []
     byType.value = d.by_type || []
     scatter.value = d.scatter || []
-    byDept.value = d.by_dept || []
     topClients.value = d.top_clients || []
     topCreators.value = d.top_creators || []
     topProfitQuotations.value = d.top_profit_quotations || []

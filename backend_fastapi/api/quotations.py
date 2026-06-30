@@ -773,21 +773,7 @@ def get_quotation_trends(
         for r in client_rows
     ]
 
-    # ===== 新增: 按部门分布 =====
-    dept_rows = db.query(
-        Department.name, func.count(Quotation.id).label('cnt'),
-        func.avg(Quotation.profit_rate).label('avg_profit')
-    ).join(User, User.id == Quotation.business_owner_id).join(Department, Department.id == User.dept_id).filter(
-        Quotation.created_at >= start,
-        Quotation.parent_id.is_(None),
-        User.dept_id.isnot(None),
-    ).group_by(Department.name).order_by(func.count(Quotation.id).desc()).limit(8).all()
-    by_dept = [
-        {"department": r.name, "count": int(r.cnt), "avg_gross_margin": round(float(r.avg_profit or 0) / (1 + float(r.avg_profit or 0.001)), 4)}
-        for r in dept_rows
-    ]
-
-    # ===== 新增: Top 5 创建人 (按业务负责人) =====
+    # ===== Top 5 创建人 (按业务负责人) =====
     creator_rows = db.query(
         User.real_name, User.username, func.count(Quotation.id).label('cnt'),
         func.avg(Quotation.profit_rate).label('avg_profit')
@@ -884,7 +870,6 @@ def get_quotation_trends(
         "scatter": scatter,
         "insights": insights,
         "top_clients": top_clients,
-        "by_dept": by_dept,
         "top_creators": top_creators,
         "top_profit_quotations": top_profit_quotations,
         "bottom_profit_quotations": bottom_profit_quotations,
