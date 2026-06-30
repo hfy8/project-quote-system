@@ -10,6 +10,7 @@ pydantic>=2.5
 sqlalchemy>=2.0
 psycopg2-binary>=2.9  # PostgreSQL 驱动
 pgvector>=0.2.4  # pgvector SQLAlchemy 向量扩展 (knowledge 表用)
+python-dateutil>=2.8  # relativedelta (months - 1) 用于 trends API
 
 # JWT 认证（替代 flask-jwt-extended）
 python-jose[cryptography]>=3.3
