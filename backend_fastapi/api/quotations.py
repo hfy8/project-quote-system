@@ -38,6 +38,7 @@ from sqlalchemy import or_, func as sa_func, text
 from core.models.quotation import Quotation
 from core.models.quotation import QuotationParticipant
 from core.models.user import User
+from core.models.department import Department
 from core.models.module import Module, ModuleParticipant
 from core.models.material import ModuleMaterial, Material
 from core.models.fee import OtherFee
@@ -754,6 +755,77 @@ def get_quotation_trends(
     current_month = now.strftime('%Y-%m')
     current_month_count = next((m['count'] for m in monthly if m['period'] == current_month), 0)
 
+    # 上月数据 (用于环比)
+    prev_month = (now.replace(day=1) - relativedelta(months=1)).strftime('%Y-%m')
+    prev_month_count = next((m['count'] for m in monthly if m['period'] == prev_month), 0)
+    month_over_month = current_month_count - prev_month_count if prev_month_count else 0
+
+    # ===== 新增: Top 5 客户 (按项目名分组, 用报价单数量) =====
+    client_rows = db.query(
+        Quotation.name, func.count(Quotation.id).label('cnt'),
+        func.avg(Quotation.profit_rate).label('avg_profit')
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),
+    ).group_by(Quotation.name).order_by(func.count(Quotation.id).desc()).limit(5).all()
+    top_clients = [
+        {"name": r.name, "count": int(r.cnt), "avg_gross_margin": round(float(r.avg_profit or 0) / (1 + float(r.avg_profit or 0.001)), 4)}
+        for r in client_rows
+    ]
+
+    # ===== 新增: 按部门分布 =====
+    dept_rows = db.query(
+        Department.name, func.count(Quotation.id).label('cnt'),
+        func.avg(Quotation.profit_rate).label('avg_profit')
+    ).join(User, User.id == Quotation.created_by).join(Department, Department.id == User.dept_id).filter(
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),
+        User.dept_id.isnot(None),
+    ).group_by(Department.name).order_by(func.count(Quotation.id).desc()).limit(8).all()
+    by_dept = [
+        {"department": r.name, "count": int(r.cnt), "avg_gross_margin": round(float(r.avg_profit or 0) / (1 + float(r.avg_profit or 0.001)), 4)}
+        for r in dept_rows
+    ]
+
+    # ===== 新增: Top 5 创建人 =====
+    creator_rows = db.query(
+        User.real_name, User.username, func.count(Quotation.id).label('cnt'),
+        func.avg(Quotation.profit_rate).label('avg_profit')
+    ).join(Quotation, Quotation.created_by == User.id).filter(
+        Quotation.created_at >= start,
+        Quotation.parent_id.is_(None),
+    ).group_by(User.id, User.real_name, User.username).order_by(func.count(Quotation.id).desc()).limit(5).all()
+    top_creators = [
+        {"name": r.real_name or r.username, "count": int(r.cnt), "avg_gross_margin": round(float(r.avg_profit or 0) / (1 + float(r.avg_profit or 0.001)), 4)}
+        for r in creator_rows
+    ]
+
+    # ===== 新增: 利润率最高 / 最低 Top 5 =====
+    top_profit_rows = db.query(
+        Quotation.id, Quotation.name, Quotation.profit_rate, Quotation.status
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.profit_rate.isnot(None),
+        Quotation.parent_id.is_(None),
+    ).order_by(Quotation.profit_rate.desc()).limit(5).all()
+    top_profit_quotations = [
+        {"id": r.id, "name": r.name, "gross_margin": round(float(r.profit_rate) / (1 + float(r.profit_rate)), 4), "status": r.status}
+        for r in top_profit_rows
+    ]
+
+    bottom_profit_rows = db.query(
+        Quotation.id, Quotation.name, Quotation.profit_rate, Quotation.status
+    ).filter(
+        Quotation.created_at >= start,
+        Quotation.profit_rate.isnot(None),
+        Quotation.profit_rate > 0,
+        Quotation.parent_id.is_(None),
+    ).order_by(Quotation.profit_rate.asc()).limit(5).all()
+    bottom_profit_quotations = [
+        {"id": r.id, "name": r.name, "gross_margin": round(float(r.profit_rate) / (1 + float(r.profit_rate)), 4), "status": r.status}
+        for r in bottom_profit_rows
+    ]
+
     # 平均利润率（对外）+ 平均毛利率（实际）
     # 两种算法：①纯字段平均（已对外），②先算毛利率再平均（更精确）
     # 这里采用"算毛利率再平均"，与 ai_tools.py 的 get_quotation_gross_margin 保持一致
@@ -803,12 +875,19 @@ def get_quotation_trends(
             "avg_gross_margin": round(float(avg_gross_overall), 4),  # 实际毛利率（业务视角）
             "avg_profit_rate": round(float(avg_profit_overall), 4),  # 对外利润率（审计视角）
             "current_month_count": current_month_count,
+            "prev_month_count": prev_month_count,
+            "month_over_month": month_over_month,
         },
         "monthly": monthly,
         "by_status": by_status,
         "by_type": by_type,
         "scatter": scatter,
         "insights": insights,
+        "top_clients": top_clients,
+        "by_dept": by_dept,
+        "top_creators": top_creators,
+        "top_profit_quotations": top_profit_quotations,
+        "bottom_profit_quotations": bottom_profit_quotations,
         "params": {"months": months, "start_period": start.strftime('%Y-%m')},
     }
 
