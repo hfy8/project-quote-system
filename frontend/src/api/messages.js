@@ -17,7 +17,7 @@ export const getUnreadCount = () => {
   })
 }
 
-// 标记单条消息为已读
+// 标记单条消息为已读 (PUT /messages/{id}/read, Layout.vue 用)
 export const markAsRead = (messageId) => {
   return request({
     url: `/messages/${messageId}/read`,
@@ -25,15 +25,18 @@ export const markAsRead = (messageId) => {
   })
 }
 
-// 标记所有消息为已读
-export const markAllRead = () => {
+// 标记所有消息为已读 (PUT /messages/read-all)
+export const markAllAsRead = () => {
   return request({
     url: '/messages/read-all',
     method: 'put'
   })
 }
 
-// 单条已读
+// 标记所有消息为已读 (别名, Messages.vue 用)
+export const markAllRead = () => markAllAsRead()
+
+// 批量标记指定消息为已读 (POST /messages/read, Messages.vue 用)
 export const markRead = (messageId) => {
   return request({
     url: '/messages/read',
@@ -47,8 +50,8 @@ const messagesAPI = {
   getUnreadCount,
   markRead,
   markAllRead,
-  markAllAsRead,  // 别名
-  markAsRead,     // 别名
+  markAsRead,
+  markAllAsRead,
 }
 
 export default messagesAPI
