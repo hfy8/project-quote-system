@@ -522,10 +522,16 @@
                 <span v-else>{{ row.name }}</span>
               </template>
             </el-table-column>
-            <el-table-column prop="hours" label="工时" width="120">
+            <el-table-column prop="hours" label="工时 (h)" width="120">
               <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._hours" :min="0" :precision="1" size="small" controls-position="right" style="width: 100px;" />
+                <el-input-number v-if="row._editing" v-model="row._hours" :min="0" :precision="1" size="small" controls-position="right" style="width: 100px;" @change="onRowHoursChange(row)" />
                 <span v-else>{{ row.hours }} h</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="person_days" label="人天" width="120">
+              <template #default="{ row }">
+                <el-input-number v-if="row._editing" v-model="row._person_days" :min="0" :precision="2" size="small" controls-position="right" style="width: 100px;" @change="onRowPersonDaysChange(row)" />
+                <span v-else>{{ formatPersonDays(row.hours) }} 人天</span>
               </template>
             </el-table-column>
             <el-table-column v-if="!isViewMode" prop="unit_price" label="单价 (元/h)" width="140">
@@ -553,22 +559,31 @@
 
           <div v-if="laborHours.length > 0 && !isViewMode" class="labor-total">
             人力费用合计：<strong>{{ laborTotal.toFixed(2) }} 元</strong>
+            <span class="labor-total-days">（{{ formatPersonDays(laborHours.reduce((s, i) => s + (i.hours || 0), 0)) }} 人天）</span>
+          </div>
+          <div v-else-if="laborHours.length > 0 && isViewMode" class="labor-total">
+            合计：<strong>{{ formatPersonDays(laborHours.reduce((s, i) => s + (i.hours || 0), 0)) }} 人天</strong>
           </div>
 
           <!-- 添加工时弹窗 -->
-          <el-dialog v-model="laborDialogVisible" title="添加人力工时" width="450px">
+          <el-dialog v-model="laborDialogVisible" title="添加人力工时" width="500px">
             <el-form :model="laborForm" label-width="100px">
               <el-form-item label="名称">
                 <el-input v-model="laborForm.name" placeholder="如：电气设计、现场调试" />
               </el-form-item>
-              <el-form-item label="工时">
-                <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" />
+              <el-form-item label="工时 (h)">
+                <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" @change="onHoursChange" />
+              </el-form-item>
+              <el-form-item label="人天">
+                <el-input-number v-model="laborForm.person_days" :min="0" :precision="2" style="width: 100%;" @change="onPersonDaysChange" />
+                <span class="form-hint">{{ HOURS_PER_DAY }} h = 1 人天</span>
               </el-form-item>
               <el-form-item label="单价 (元/h)" v-if="!isMyAssignments">
                 <el-input-number v-model="laborForm.unit_price" :min="0" :precision="2" style="width: 100%;" />
               </el-form-item>
               <el-form-item label="合计" v-if="!isMyAssignments">
                 <span>{{ (laborForm.hours * laborForm.unit_price).toFixed(2) }} 元</span>
+                <span class="form-hint">（{{ laborForm.hours }} h = {{ formatPersonDays(laborForm.hours) }} 人天）</span>
               </el-form-item>
             </el-form>
             <template #footer>
@@ -1449,11 +1464,40 @@ async function resetCoefficientsToDefault() {
 
 // 人力工时
 const laborDialogVisible = ref(false)
-const laborForm = reactive({ name: '', hours: 0, unit_price: 0 })
+// 8 工时 = 1 人天 (标准 1 天 8 小时)
+const HOURS_PER_DAY = 8
+const laborForm = reactive({
+  name: '',
+  hours: 0,         // 工时 (实际存储)
+  person_days: 0,   // 人天 (前端展示,双向换算)
+  unit_price: 0,
+})
 
 const laborTotal = computed(() => {
   return laborHours.value.reduce((sum, item) => sum + (item.hours || 0) * (item.unit_price || 0), 0)
 })
+
+// 人天 ↔ 工时 双向换算
+function formatPersonDays(hours) {
+  if (!hours) return '0.00'
+  return (hours / HOURS_PER_DAY).toFixed(2)
+}
+function onHoursChange(val) {
+  if (val == null) val = 0
+  laborForm.person_days = +(val / HOURS_PER_DAY).toFixed(2)
+}
+function onPersonDaysChange(val) {
+  if (val == null) val = 0
+  laborForm.hours = +(val * HOURS_PER_DAY).toFixed(1)
+}
+function onRowHoursChange(row) {
+  if (row._hours == null) row._hours = 0
+  row._person_days = +(row._hours / HOURS_PER_DAY).toFixed(2)
+}
+function onRowPersonDaysChange(row) {
+  if (row._person_days == null) row._person_days = 0
+  row._hours = +(row._person_days * HOURS_PER_DAY).toFixed(1)
+}
 
 // ===== 运输包装 =====
 const packingDialogVisible = ref(false)
@@ -1668,6 +1712,7 @@ async function loadLaborHours() {
 function showAddLabor() {
   laborForm.name = ''
   laborForm.hours = 0
+  laborForm.person_days = 0
   laborForm.unit_price = 0
   laborDialogVisible.value = true
 }
@@ -1691,6 +1736,7 @@ function editLaborRow(row) {
   row._editing = true
   row._name = row.name
   row._hours = row.hours
+  row._person_days = +(row.hours / HOURS_PER_DAY).toFixed(2)
   row._unit_price = row.unit_price
 }
 
@@ -3263,6 +3309,16 @@ onMounted(async () => {
   border-radius: 8px;
   color: #166534;
   font-size: 14px;
+}
+.labor-total-days {
+  margin-left: 8px;
+  color: #15803d;
+  font-weight: 500;
+}
+.form-hint {
+  margin-left: 12px;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 /* 占比卡片组（5个：硬件/人力/差旅/利润/税） */
