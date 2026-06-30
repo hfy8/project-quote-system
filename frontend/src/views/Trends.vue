@@ -359,7 +359,10 @@ const deptChartOption = computed(() => {
     xAxis: { type: 'value', name: '数量' },
     yAxis: {
       type: 'category', data: data.map(d => d.department).reverse(),
-      axisLabel: { width: 90, overflow: 'truncate' },
+      axisLabel: {
+        fontSize: 12,
+        formatter: (val) => val.length > 10 ? val.slice(0, 9) + '…' : val,
+      },
     },
     series: [{
       name: '数量', type: 'bar',
@@ -383,13 +386,16 @@ const deptChartOption = computed(() => {
 
 const scatterChartOption = computed(() => {
   const groups = {}
+  const monthSet = new Set()
   scatter.value.forEach(s => {
+    monthSet.add(s.month)
     if (!groups[s.status]) groups[s.status] = []
     groups[s.status].push({
       name: s.name,
       value: [s.month, Number((s.gross_margin * 100).toFixed(1)), s.id, s.status],
     })
   })
+  const sortedMonths = Array.from(monthSet).sort()
   const series = Object.entries(groups).map(([status, data]) => ({
     name: STATUS_LABEL[status] || status,
     type: 'scatter',
@@ -408,7 +414,7 @@ const scatterChartOption = computed(() => {
     },
     legend: { bottom: 0, type: 'scroll' },
     grid: { top: 30, right: 30, bottom: 50, left: 60 },
-    xAxis: { type: 'category', name: '月份' },
+    xAxis: { type: 'category', data: sortedMonths, name: '月份', nameLocation: 'middle', nameGap: 28 },
     yAxis: { type: 'value', name: '毛利率(%)', axisLabel: { formatter: '{value}%' } },
     series,
   }
