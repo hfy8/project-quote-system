@@ -318,6 +318,12 @@
             <span class="todo-num">{{ stats.my_tasks.unread_messages }}</span>
             <span class="todo-lbl">未读消息</span>
           </div>
+          <div v-if="stats.my_tasks.unread_messages > 0"
+               class="todo-item todo-action"
+               @click="handleMarkAllRead">
+            <span class="todo-icon">✅</span>
+            <span class="todo-lbl">全部已读</span>
+          </div>
         </div>
       </div>
     </div>
@@ -329,7 +335,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { quotationsAPI } from '../api'
+import messagesAPI from '../api/messages'
 import request from '../utils/request'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -433,6 +441,28 @@ const goMessage = (msg) => {
     else router.push('/messages')
   } else {
     router.push('/messages')
+  }
+}
+
+const handleMarkAllRead = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确认将全部 ${stats.value.my_tasks.unread_messages} 条未读消息标记为已读?`,
+      '批量已读',
+      { confirmButtonText: '全部已读', cancelButtonText: '取消', type: 'info' }
+    )
+    await messagesAPI.markAllRead()
+    ElMessage.success('已全部标记为已读')
+    stats.value.my_tasks.unread_messages = 0
+    // 同步更新浮层中的消息列表
+    if (stats.value.recent_messages) {
+      stats.value.recent_messages = stats.value.recent_messages.map(m => ({ ...m, is_read: true }))
+    }
+    await fetchStats()
+  } catch (e) {
+    if (e !== 'cancel' && e?.message) {
+      ElMessage.error('操作失败: ' + e.message)
+    }
   }
 }
 
@@ -661,24 +691,26 @@ onUnmounted(() => {
   display: flex;
   gap: 6px;
   align-items: flex-end;
-  height: 90px;
-  padding: 6px 0;
+  height: 200px;
+  padding: 8px 0 0;
   border-bottom: 1px dashed var(--color-border-light);
-  margin-bottom: 6px;
-  margin-top: 4px;
+  margin-bottom: 8px;
+  margin-top: 6px;
 }
-.trend-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.trend-bar-group { display: flex; gap: 2px; align-items: flex-end; height: 76px; }
+.trend-bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.trend-bar-group { display: flex; gap: 3px; align-items: flex-end; height: 168px; width: 100%; justify-content: center; }
 .trend-bar {
-  width: 9px;
-  border-radius: 3px 3px 0 0;
+  width: 14px;
+  border-radius: 4px 4px 0 0;
   min-height: 2px;
   position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: center;
+  transition: opacity 0.2s;
 }
-.bar-num { font-size: 9px; color: white; padding-top: 1px; font-weight: 600; }
+.trend-bar:hover { opacity: 0.8; }
+.bar-num { font-size: 10px; color: white; padding-top: 2px; font-weight: 600; }
 .trend-new { background: var(--color-primary); }
 .trend-approved { background: var(--color-success); }
 .trend-bar-label { font-size: 10.5px; color: var(--color-text-secondary); }
@@ -883,6 +915,9 @@ onUnmounted(() => {
 .todo-warn { border-left-color: var(--color-warning); }
 .todo-info { border-left-color: var(--color-info); }
 .todo-pri { border-left-color: var(--color-primary); }
+.todo-action { border-left-color: var(--color-success); cursor: pointer; background: #f0fdf4; }
+.todo-action:hover { background: #dcfce7; }
+.todo-icon { font-size: 16px; line-height: 1; }
 .todo-num { font-size: 18px; font-weight: 700; line-height: 1; }
 .todo-lbl { font-size: 11px; color: var(--color-text-secondary); }
 </style>

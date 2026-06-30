@@ -1,299 +1,402 @@
 <template>
   <div class="messages-page">
-    <!-- 页面标题栏 -->
-    <div class="page-header-bar">
+    <div class="page-header">
       <div class="header-left">
-        <h1 class="page-title">消息通知</h1>
-        <span class="page-desc">查看您的所有消息通知</span>
+        <h2 class="page-title">📬 我的消息</h2>
+        <span class="page-sub">{{ pagination.total }} 条消息 · {{ unreadCount }} 条未读</span>
       </div>
       <div class="header-right">
-        <el-button v-if="unreadCount > 0" @click="markAllRead">全部已读</el-button>
+        <el-radio-group v-model="filterRead" size="default" @change="loadMessages">
+          <el-radio-button label="all">全部</el-radio-button>
+          <el-radio-button label="unread">未读</el-radio-button>
+          <el-radio-button label="read">已读</el-radio-button>
+        </el-radio-group>
+        <el-button
+          type="primary"
+          :disabled="unreadCount === 0"
+          @click="handleMarkAllRead"
+        >
+          <el-icon><CircleCheck /></el-icon>
+          全部标为已读
+        </el-button>
       </div>
     </div>
 
-    <!-- 消息筛选 -->
-    <div class="filter-bar">
-      <el-select v-model="filterRead" placeholder="消息状态" clearable style="width: 150px;" @change="fetchMessages">
-        <el-option label="全部" value="" />
-        <el-option label="未读" value="false" />
-        <el-option label="已读" value="true" />
-      </el-select>
-    </div>
+    <div class="messages-list" v-loading="loading">
+      <div v-if="messages.length === 0 && !loading" class="empty-state">
+        <div class="empty-icon">📭</div>
+        <p class="empty-text">{{ filterRead === 'unread' ? '没有未读消息' : '暂无消息' }}</p>
+      </div>
 
-    <!-- 消息列表 -->
-    <div class="content-card table-container">
-      <el-table 
-        :data="messages" 
-        v-loading="loading"
-        stripe
-        class="messages-table"
-        height="calc(-200px + 100vh)"
+      <div
+        v-for="msg in messages"
+        :key="msg.id"
+        class="message-item"
+        :class="{ 'is-unread': !msg.is_read }"
+        @click="handleClickMessage(msg)"
       >
-        <el-table-column prop="type" label="类型" width="100">
-          <template #default="{ row }">
-            <div class="type-badge" :class="row.type">
-              {{ getTypeLabel(row.type) }}
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="title" label="标题" min-width="180">
-          <template #default="{ row }">
-            <span class="message-title" :class="{ unread: !row.is_read }">{{ row.title }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="content" label="内容" min-width="300">
-          <template #default="{ row }">
-            <span class="message-content">{{ row.content }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_at" label="时间" width="160">
-          <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
-          <template #default="{ row }">
-            <el-button v-if="!row.is_read" size="small" @click="handleMarkRead(row)">标记已读</el-button>
-            <span v-else class="read-text">已读</span>
-          </template>
-        </el-table-column>
-      </el-table>
+        <div class="msg-icon" :class="iconClass(msg.message_type)">
+          <span>{{ iconEmoji(msg.message_type) }}</span>
+          <span v-if="!msg.is_read" class="unread-dot"></span>
+        </div>
+        <div class="msg-body">
+          <div class="msg-header">
+            <span class="msg-title">{{ msg.title || defaultTitle(msg.message_type) }}</span>
+            <span class="msg-time">{{ formatTime(msg.created_at) }}</span>
+          </div>
+          <div class="msg-content">{{ msg.content }}</div>
+          <div v-if="msg.sender_name" class="msg-sender">来自: {{ msg.sender_name }}</div>
+        </div>
+        <div class="msg-actions">
+          <el-button
+            v-if="!msg.is_read"
+            size="small"
+            type="primary"
+            text
+            @click.stop="handleMarkRead(msg)"
+          >
+            标为已读
+          </el-button>
+          <el-icon v-else class="read-icon"><Check /></el-icon>
+        </div>
+      </div>
     </div>
 
-    <!-- 分页 -->
-    <div class="pagination-wrapper">
+    <div v-if="pagination.total > pagination.pageSize" class="pagination">
       <el-pagination
         v-model:current-page="pagination.page"
         v-model:page-size="pagination.pageSize"
         :total="pagination.total"
         :page-sizes="[10, 20, 50]"
-        layout="total, sizes, prev, pager, next"
-        @size-change="fetchMessages"
-        @current-change="fetchMessages"
+        layout="total, sizes, prev, pager, next, jumper"
+        @current-change="loadMessages"
+        @size-change="loadMessages"
       />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import messagesAPI from '../api/messages'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Check, CircleCheck } from '@element-plus/icons-vue'
+import messagesAPI from '@/api/messages'
 
 const router = useRouter()
 
 const loading = ref(false)
 const messages = ref([])
+const filterRead = ref('all')
 const unreadCount = ref(0)
-const filterRead = ref('')
-const pagination = ref({
+
+const pagination = reactive({
   page: 1,
   pageSize: 20,
-  total: 0
+  total: 0,
 })
 
-const fetchMessages = async () => {
+const defaultTitle = (type) => {
+  const map = {
+    system: '系统通知',
+    archive_approval: '归档审批',
+    change_request: '变更审核',
+    quotation: '报价单通知',
+  }
+  return map[type] || '消息通知'
+}
+
+const iconEmoji = (type) => {
+  const map = {
+    system: '🔔',
+    archive_approval: '📦',
+    change_request: '📝',
+    quotation: '📋',
+  }
+  return map[type] || '💬'
+}
+
+const iconClass = (type) => `msg-icon-${type || 'system'}`
+
+const formatTime = (t) => {
+  if (!t) return ''
+  const d = new Date(t)
+  const now = new Date()
+  const diff = (now - d) / 1000
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`
+  if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`
+  if (diff < 604800) return `${Math.floor(diff / 86400)} 天前`
+  return `${d.getMonth() + 1}-${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+const loadMessages = async () => {
   loading.value = true
   try {
     const params = {
-      page: pagination.value.page,
-      page_size: pagination.value.pageSize
+      page: pagination.page,
+      pageSize: pagination.pageSize,
     }
-    if (filterRead.value !== '') {
-      params.is_read = filterRead.value
+    if (filterRead.value !== 'all') {
+      params.is_read = filterRead.value === 'read' ? 'true' : 'false'
     }
     const res = await messagesAPI.getMessages(params)
     messages.value = res.items || []
-    pagination.value.total = res.total || 0
+    pagination.total = res.total || 0
+    await loadUnreadCount()
   } catch (e) {
-    console.error('获取消息失败', e)
+    console.error('加载消息失败', e)
+    ElMessage.error('加载消息失败: ' + (e.message || ''))
   } finally {
     loading.value = false
   }
 }
 
-const fetchUnreadCount = async () => {
+const loadUnreadCount = async () => {
   try {
     const res = await messagesAPI.getUnreadCount()
-    unreadCount.value = res.unread_count || 0
+    unreadCount.value = res.count || 0
   } catch (e) {
-    console.error('获取未读数失败', e)
+    console.error('加载未读数失败', e)
   }
 }
 
 const handleMarkRead = async (msg) => {
   try {
-    await messagesAPI.markAsRead(msg.id)
+    await messagesAPI.markRead(msg.id)
     msg.is_read = true
-    unreadCount.value = Math.max(0, unreadCount.value - 1)
+    ElMessage.success('已标记为已读')
+    await loadUnreadCount()
   } catch (e) {
-    console.error('标记已读失败', e)
+    ElMessage.error('操作失败: ' + (e.message || ''))
   }
 }
 
-const markAllRead = async () => {
+const handleMarkAllRead = async () => {
   try {
-    await messagesAPI.markAllAsRead()
-    messages.value.forEach(m => m.is_read = true)
-    unreadCount.value = 0
+    await ElMessageBox.confirm(`确认将全部 ${unreadCount.value} 条消息标记为已读?`, '批量操作', {
+      confirmButtonText: '全部已读',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
+    await messagesAPI.markAllRead()
     ElMessage.success('已全部标记为已读')
+    await loadMessages()
   } catch (e) {
-    console.error('标记全部已读失败', e)
+    if (e !== 'cancel' && e?.message) {
+      ElMessage.error('操作失败: ' + e.message)
+    }
   }
 }
 
-const getTypeLabel = (type) => {
-  const labelMap = {
-    'module_member_added': '成员加入',
-    'change_request_submitted': '变更申请',
-    'change_request_approved': '申请通过',
-    'change_request_rejected': '申请拒绝',
-    'version_updated': '版本更新'
+const handleClickMessage = async (msg) => {
+  if (!msg.is_read) {
+    try {
+      await messagesAPI.markRead(msg.id)
+      msg.is_read = true
+      await loadUnreadCount()
+    } catch (e) {
+      console.error('自动标记已读失败', e)
+    }
   }
-  return labelMap[type] || type
-}
-
-const formatDate = (date) => {
-  if (!date) return ''
-  return new Date(date).toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  // 跳转到相关页面 (如果有 link_url)
+  if (msg.link_url) {
+    router.push(msg.link_url)
+  } else if (msg.quotation_id) {
+    router.push(`/quotations/${msg.quotation_id}`)
+  }
 }
 
 onMounted(() => {
-  fetchMessages()
-  fetchUnreadCount()
+  loadMessages()
 })
 </script>
 
 <style scoped>
 .messages-page {
-  padding: var(--spacing-lg);
-  height: 100vh;
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  height: 100%;
+  padding: 16px;
+  gap: 12px;
 }
 
-.page-header-bar {
+.page-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--spacing-lg);
+  background: white;
+  padding: 14px 20px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .header-left {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 14px;
 }
 
 .page-title {
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--color-text-primary);
   margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text-primary, #303133);
 }
 
-.page-desc {
-  font-size: 14px;
-  color: var(--color-text-secondary);
+.page-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary, #909399);
 }
 
 .header-right {
   display: flex;
-  gap: 8px;
-}
-
-.filter-bar {
-  display: flex;
   gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
 }
 
-/* 内容卡片 */
-.content-card {
-  background: var(--color-bg-card);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border-light);
-  overflow: hidden;
+.messages-list {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow-y: auto;
   min-height: 0;
 }
 
-.table-container {
-  flex: 1;
-  overflow: hidden;
-}
-
-.table-container :deep(.el-table) {
-  max-height: 100%;
-}
-
-.table-container :deep(.el-table__body-wrapper) {
-  overflow-y: auto;
-}
-
-.type-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  background-color: #e8f5e9;
-  color: #0D9488;
-}
-
-.type-badge.change_request_submitted {
-  background-color: #fff3e0;
-  color: #ff9800;
-}
-
-.type-badge.change_request_rejected {
-  background-color: #ffebee;
-  color: #f44336;
-}
-
-.type-badge.module_member_added {
-  background-color: #e3f2fd;
-  color: #2196f3;
-}
-
-.type-badge.version_updated {
-  background-color: #f3e8ff;
-  color: #9333ea;
-}
-
-.message-title {
-  font-weight: 500;
-  color: var(--color-text-primary);
-}
-
-.message-title.unread {
-  font-weight: 600;
-}
-
-.message-content {
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.read-text {
-  color: #909399;
-  font-size: 13px;
-}
-
-.pagination-wrapper {
-  margin-top: 16px;
+.empty-state {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  color: var(--color-text-secondary, #909399);
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-text {
+  margin: 0;
+  font-size: 14px;
+}
+
+.message-item {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.message-item:last-child {
+  border-bottom: none;
+}
+
+.message-item:hover {
+  background: #f8fafc;
+}
+
+.message-item.is-unread {
+  background: #f0f7ff;
+}
+
+.message-item.is-unread:hover {
+  background: #e6f0fd;
+}
+
+.msg-icon {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.msg-icon-system { background: #f0f9ff; }
+.msg-icon-archive_approval { background: #fef3c7; }
+.msg-icon-change_request { background: #ede9fe; }
+.msg-icon-quotation { background: #dcfce7; }
+
+.unread-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid white;
+}
+
+.msg-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.msg-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.msg-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #303133);
+}
+
+.is-unread .msg-title {
+  color: #1e40af;
+}
+
+.msg-time {
+  font-size: 12px;
+  color: var(--color-text-secondary, #909399);
+}
+
+.msg-content {
+  font-size: 13px;
+  color: #4b5563;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.msg-sender {
+  font-size: 12px;
+  color: var(--color-text-secondary, #909399);
+}
+
+.msg-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.read-icon {
+  color: #10b981;
+  font-size: 18px;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 </style>

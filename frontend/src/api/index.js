@@ -1,4 +1,5 @@
 export { authAPI } from './auth'
+export { messagesAPI } from './messages'
 export { quotationsAPI } from './quotations'
 export { modulesAPI } from './modules'
 export { moduleParticipantsAPI } from './module_participants'

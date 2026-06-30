@@ -26,18 +26,29 @@ export const markAsRead = (messageId) => {
 }
 
 // 标记所有消息为已读
-export const markAllAsRead = () => {
+export const markAllRead = () => {
   return request({
     url: '/messages/read-all',
     method: 'put'
   })
 }
 
+// 单条已读
+export const markRead = (messageId) => {
+  return request({
+    url: '/messages/read',
+    method: 'post',
+    data: { message_ids: [messageId] }
+  })
+}
+
 const messagesAPI = {
   getMessages,
   getUnreadCount,
-  markAsRead,
-  markAllAsRead
+  markRead,
+  markAllRead,
+  markAllAsRead,  // 别名
+  markAsRead,     // 别名
 }
 
 export default messagesAPI

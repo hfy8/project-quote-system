@@ -20,6 +20,7 @@ import Layout from '../components/Layout.vue'
 import VersionCompare from '../views/VersionCompare.vue'
 import AIChat from '../views/AIChat.vue'
 import Trends from '../views/Trends.vue'
+import Messages from '../views/Messages.vue'
 
 // 路由权限映射 - 与后端权限码一致
 const routePermissionMap = {
@@ -177,6 +178,12 @@ const routes = [
         path: 'trends',
         name: 'Trends',
         component: Trends
+      },
+      {
+        path: 'messages',
+        name: 'Messages',
+        component: Messages,
+        meta: { title: '我的消息' }
       },
 
     ]

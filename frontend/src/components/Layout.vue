@@ -292,6 +292,7 @@ const hasPermission = (permission) => {
 const menuItems = computed(() => {
   const items = [
     { path: '/dashboard', label: '首页', icon: '🏠', permission: 'dashboard.view' },
+    { path: '/messages', label: '我的消息', icon: '📬', permission: null },
     { path: '/quotations', label: '报价单管理', icon: '📋', permission: 'quotation.view' },
     { path: '/trends', label: '报价趋势', icon: '📈', permission: 'quotation.view' },
     { path: '/my-assignments', label: '我的分配', icon: '📌', permission: 'module_assignment.view' },
