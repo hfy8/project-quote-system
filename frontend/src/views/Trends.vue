@@ -274,7 +274,7 @@ const monthlyChartOption = computed(() => {
     },
     legend: { data: ['报价单数', '已通过', '通过率(%)', '毛利率(%)'], bottom: 0 },
     grid: { top: 50, right: 60, bottom: 60, left: 50 },
-    xAxis: [{ type: 'category', data: periods, axisPointer: { type: 'shadow' } }],
+    xAxis: [{ type: 'category', data: periods, axisPointer: { type: 'shadow' }, axisLabel: { interval: 0 } }],
     yAxis: [
       { type: 'value', name: '数量', position: 'left' },
       { type: 'value', name: '比率(%)', position: 'right', max: 100, axisLabel: { formatter: '{value}%' } },
@@ -355,7 +355,7 @@ const deptChartOption = computed(() => {
         return `<b>${item.department}</b><br/>数量: ${item.count} 单<br/>毛利率: ${formatPercent(item.avg_gross_margin)}`
       },
     },
-    grid: { top: 20, right: 80, bottom: 30, left: 100 },
+    grid: { top: 20, right: 80, bottom: 30, left: 130 },
     xAxis: { type: 'value', name: '数量' },
     yAxis: {
       type: 'category', data: data.map(d => d.department).reverse(),
