@@ -777,7 +777,7 @@ def get_quotation_trends(
     dept_rows = db.query(
         Department.name, func.count(Quotation.id).label('cnt'),
         func.avg(Quotation.profit_rate).label('avg_profit')
-    ).join(User, User.id == Quotation.created_by).join(Department, Department.id == User.dept_id).filter(
+    ).join(User, User.id == Quotation.business_owner_id).join(Department, Department.id == User.dept_id).filter(
         Quotation.created_at >= start,
         Quotation.parent_id.is_(None),
         User.dept_id.isnot(None),
@@ -787,11 +787,11 @@ def get_quotation_trends(
         for r in dept_rows
     ]
 
-    # ===== 新增: Top 5 创建人 =====
+    # ===== 新增: Top 5 创建人 (按业务负责人) =====
     creator_rows = db.query(
         User.real_name, User.username, func.count(Quotation.id).label('cnt'),
         func.avg(Quotation.profit_rate).label('avg_profit')
-    ).join(Quotation, Quotation.created_by == User.id).filter(
+    ).join(Quotation, Quotation.business_owner_id == User.id).filter(
         Quotation.created_at >= start,
         Quotation.parent_id.is_(None),
     ).group_by(User.id, User.real_name, User.username).order_by(func.count(Quotation.id).desc()).limit(5).all()
