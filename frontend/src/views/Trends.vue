@@ -695,7 +695,7 @@ onMounted(() => {
 }
 
 /* ============ 响应式 ============ */
-@media (max-width: 1280px) {
+@media (max-width: 1100px) {
   .stats-grid { grid-template-columns: repeat(2, 1fr); }
   .rank-grid { grid-template-columns: 1fr; }
   .charts-grid { grid-template-columns: 1fr; }
