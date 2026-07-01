@@ -72,6 +72,7 @@ class ModuleCreate(BaseModel):
     name_en: Optional[str] = Field(None, max_length=100)
     code: Optional[str] = Field(None, max_length=50)
     description: Optional[str] = None
+    module_type: Optional[str] = Field(None, description="模块类型: mechanical=机构, electrical=电气, other=其他")
 
 
 class ModuleUpdate(BaseModel):
@@ -79,6 +80,7 @@ class ModuleUpdate(BaseModel):
     name_en: Optional[str] = None
     code: Optional[str] = None
     description: Optional[str] = None
+    module_type: Optional[str] = Field(None, description="模块类型: mechanical/electrical/other")
 
 
 class ModuleMaterialAdd(BaseModel):

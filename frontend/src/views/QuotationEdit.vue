@@ -113,6 +113,17 @@
             <el-table-column prop="name" label="模块名称" />
             <el-table-column prop="name_en" label="英文名称" />
             <el-table-column prop="description" label="描述" />
+            <el-table-column label="模块类型" width="120">
+              <template #default="{ row }">
+                <el-tag
+                  :type="row.module_type === 'mechanical' ? 'primary' : row.module_type === 'electrical' ? 'warning' : 'info'"
+                  effect="light"
+                  disable-transitions
+                >
+                  {{ row.module_type_label || '其他' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="180">
               <template #default="{ row }">
                 <el-button size="small" @click="editModule(row)">编辑</el-button>
@@ -132,6 +143,30 @@
               </el-form-item>
               <el-form-item label="描述">
                 <el-input v-model="moduleForm.description" type="textarea" rows="3" placeholder="请输入描述" />
+              </el-form-item>
+              <el-form-item label="模块类型">
+                <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
+                  <el-radio-group v-model="moduleForm.module_type" style="flex: 1;">
+                    <el-radio-button
+                      v-for="t in MODULE_TYPES"
+                      :key="t.value"
+                      :value="t.value"
+                    >
+                      <span :style="{ color: t.color, fontWeight: 600 }">{{ t.label }}</span>
+                    </el-radio-button>
+                  </el-radio-group>
+                  <el-button
+                    v-if="currentParticipants.length > 0"
+                    size="small"
+                    @click="inferModuleType"
+                    :title="`根据已选 ${currentParticipants.length} 个参与人员岗位自动推断`"
+                  >
+                    ✨ 自动推断
+                  </el-button>
+                </div>
+                <div class="form-hint">
+                  机构: 机械/装配/焊工/CNC/钳工等; 电气: 电气/电控/电工等; 其他: 混合或无明确技术方向
+                </div>
               </el-form-item>
             </el-form>
             <template #footer>
@@ -1376,11 +1411,17 @@ const formRules = {
 // 模块弹窗
 const moduleDialogVisible = ref(false)
 const moduleDialogTitle = ref('添加模块')
+const MODULE_TYPES = [
+  { value: 'mechanical', label: '机构', color: '#3b82f6' },
+  { value: 'electrical', label: '电气', color: '#f59e0b' },
+  { value: 'other', label: '其他', color: '#94a3b8' },
+]
 const moduleForm = reactive({
   id: null,
   name: '',
   name_en: '',
-  description: ''
+  description: '',
+  module_type: 'other',
 })
 
 // 物料弹窗
@@ -2169,6 +2210,7 @@ function showAddModule() {
   moduleForm.name = ''
   moduleForm.name_en = ''
   moduleForm.description = ''
+  moduleForm.module_type = 'other'
   moduleDialogVisible.value = true
 }
 
@@ -2176,28 +2218,69 @@ function showAddModule() {
 function editModule(module) {
   moduleDialogTitle.value = '编辑模块'
   moduleForm.id = module.id
-  moduleForm.name = module.name
+  moduleForm.name = module.name || ''
   moduleForm.name_en = module.name_en || ''
   moduleForm.description = module.description || ''
-  moduleDialogVisible.value = true
+  moduleForm.module_type = module.module_type || 'other'
+  // 先关闭再打开, 强制 el-input 重新渲染 (避免 reactive 属性赋值后 input.value 不更新)
+  moduleDialogVisible.value = false
+  nextTick(() => {
+    moduleDialogVisible.value = true
+  })
+}
+
+// 自动推断模块类型 (根据当前已选参与人员的参与类型 participant_type)
+// 规则 (与后端 infer_module_type_from_participant_types 一致):
+//   - 全部 agency → mechanical (机构)
+//   - 全部 electrical → electrical (电气)
+//   - 混合 / project / 空 → other (其他)
+function inferModuleType() {
+  if (currentParticipants.value.length === 0) {
+    ElMessage.warning('请先在"参与人员"tab 中添加参与人员')
+    return
+  }
+  const types = new Set(
+    currentParticipants.value
+      .map(p => p.participant_type)
+      .filter(t => t)
+  )
+  if (types.size === 0) {
+    moduleForm.module_type = 'other'
+    ElMessage.info('参与人员未设置参与类型, 默认"其他"')
+    return
+  }
+  if (types.size === 1) {
+    const only = [...types][0]
+    if (only === 'agency') {
+      moduleForm.module_type = 'mechanical'
+      ElMessage.success('已根据参与人员类型推断为: 机构')
+      return
+    }
+    if (only === 'electrical') {
+      moduleForm.module_type = 'electrical'
+      ElMessage.success('已根据参与人员类型推断为: 电气')
+      return
+    }
+  }
+  // 混合 / 含 project → 其他
+  moduleForm.module_type = 'other'
+  ElMessage.info('参与人员类型混合或为"项目", 默认为: 其他')
 }
 
 // 保存模块
 async function saveModule() {
   try {
+    const payload = {
+      name: moduleForm.name,
+      name_en: moduleForm.name_en,
+      description: moduleForm.description,
+      module_type: moduleForm.module_type,
+    }
     if (moduleForm.id) {
-      await api.put(`/modules/${moduleForm.id}`, {
-        name: moduleForm.name,
-        name_en: moduleForm.name_en,
-        description: moduleForm.description
-      })
+      await api.put(`/modules/${moduleForm.id}`, payload)
       ElMessage.success('更新成功')
     } else {
-      await api.post(`/quotations/${quotationId.value}/modules`, {
-        name: moduleForm.name,
-        name_en: moduleForm.name_en,
-        description: moduleForm.description
-      })
+      await api.post(`/quotations/${quotationId.value}/modules`, payload)
       ElMessage.success('添加成功')
     }
     moduleDialogVisible.value = false

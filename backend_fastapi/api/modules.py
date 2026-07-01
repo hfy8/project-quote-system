@@ -32,6 +32,69 @@ router = APIRouter()
 
 # ============== 端点 ==============
 
+@router.post("/modules/infer-type", summary="根据参与人员类型推断模块类型")
+def infer_module_type(
+    body: dict,
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """
+    前端传入以下任一参数:
+    - user_ids: 用户 ID 列表 (后端会查 quotation_participants 表)
+    - participant_types: 直接传参与类型列表 (前端已知类型时直接传, 不需后端再查)
+    - quotation_id: 直接用报价单 ID, 查所有参与人员的类型
+
+    推断规则 (使用 QuotationParticipant.participant_type):
+    - 全部 agency → mechanical (机构)
+    - 全部 electrical → electrical (电气)
+    - 混合 / project / 空 → other (其他)
+    """
+    from core.models.module import (
+        infer_module_type_from_participant_types,
+        infer_module_type_from_user_ids,
+        MODULE_TYPE_LABELS,
+    )
+
+    # 优先级: participant_types > quotation_id > user_ids
+    if body.get('participant_types') is not None:
+        types = body['participant_types'] or []
+        inferred = infer_module_type_from_participant_types(types)
+        return {
+            "module_type": inferred,
+            "module_type_label": MODULE_TYPE_LABELS.get(inferred, '其他'),
+            "user_count": len(types),
+            "source": "participant_types",
+        }
+    if body.get('quotation_id'):
+        from core.models.quotation import QuotationParticipant
+        rows = db.query(QuotationParticipant.participant_type)\
+            .filter(QuotationParticipant.quotation_id == body['quotation_id'])\
+            .all()
+        types = [r[0] for r in rows]
+        inferred = infer_module_type_from_participant_types(types)
+        return {
+            "module_type": inferred,
+            "module_type_label": MODULE_TYPE_LABELS.get(inferred, '其他'),
+            "user_count": len(types),
+            "source": "quotation_id",
+        }
+    if body.get('user_ids'):
+        inferred = infer_module_type_from_user_ids(db, body['user_ids'])
+        return {
+            "module_type": inferred,
+            "module_type_label": MODULE_TYPE_LABELS.get(inferred, '其他'),
+            "user_count": len(body['user_ids']),
+            "source": "user_ids",
+        }
+    # 兜底
+    return {
+        "module_type": "other",
+        "module_type_label": "其他",
+        "user_count": 0,
+        "source": "empty",
+    }
+
+
 @router.get("/quotations/{quotation_id}/modules", summary="获取报价单的模块列表")
 def get_modules(
     quotation_id: int,
@@ -59,6 +122,9 @@ def create_module(
     """
     _check_permission(db, int(user_id), 'module.create')
     from core.models import Module, User, QuotationParticipant
+    from core.models.module import (
+        MODULE_TYPE_OTHER, MODULE_TYPE_CHOICES, infer_module_type_from_user_ids,
+    )
     from utils.permissions import has_permission
 
     user = db.query(User).get(user_id)
@@ -73,12 +139,18 @@ def create_module(
         if not participant:
             raise HTTPException(status_code=403, detail="没有权限")
 
+    # module_type 处理: 优先用请求 body 显式值, 否则默认 other
+    module_type = (body.module_type or MODULE_TYPE_OTHER).lower() if hasattr(body, 'module_type') else MODULE_TYPE_OTHER
+    if module_type not in MODULE_TYPE_CHOICES:
+        module_type = MODULE_TYPE_OTHER
+
     module = Module(
         quotation_id=quotation_id,
         name=body.name,
         name_en=body.name_en,
         code=body.code,
         description=body.description,
+        module_type=module_type,
     )
     db.add(module)
     db.commit()
