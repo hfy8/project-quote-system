@@ -2002,8 +2002,12 @@ function showAddModule() {
   moduleForm.name = ''
   moduleForm.name_en = ''
   moduleForm.description = ''
-  moduleForm.module_type = 'other'
+  moduleForm.module_type = 'other'  // 先默认值, inferModuleType 异步覆盖
   moduleDialogVisible.value = true
+  // 打开弹窗自动静默推断 (无需用户点按钮)
+  nextTick(() => {
+    inferModuleType(true)  // silent=true, 不弹 ElMessage
+  })
 }
 
 // 编辑模块
@@ -2026,12 +2030,16 @@ function editModule(module) {
 //   - agency → mechanical (机构)
 //   - electrical → electrical (电气)
 //   - project / 无参与记录 → other (其他)
-async function inferModuleType() {
+// 自动模式: 弹窗打开时静默调用, 不弹 ElMessage (避免噪音)
+// 手动模式: 用户点 ✨ 按钮时调用, 弹成功提示
+async function inferModuleType(silent = false) {
   try {
     const res = await request.post('/modules/infer-type', { quotation_id: quotation.value?.id })
     const myType = res.participant_type
     if (!myType || res.user_count === 0) {
-      ElMessage.info(res.message || '当前用户在此报价单无参与类型记录, 默认为"其他"')
+      if (!silent) {
+        ElMessage.info(res.message || '当前用户在此报价单无参与类型记录, 默认为"其他"')
+      }
       moduleForm.module_type = 'other'
       return
     }
@@ -2041,11 +2049,15 @@ async function inferModuleType() {
       project: 'other',
     }
     moduleForm.module_type = map[myType] || 'other'
-    const label = MODULE_TYPES.find(t => t.value === moduleForm.module_type)?.label || '其他'
-    ElMessage.success(`已根据您的参与类型 [${myType}] 推断为: ${label} (${res.user_count} 条记录)`)
+    if (!silent) {
+      const label = MODULE_TYPES.find(t => t.value === moduleForm.module_type)?.label || '其他'
+      ElMessage.success(`已根据您的参与类型 [${myType}] 推断为: ${label}`)
+    }
   } catch (e) {
     console.error('推断失败', e)
-    ElMessage.error('推断失败: ' + (e.message || e))
+    if (!silent) {
+      ElMessage.error('推断失败: ' + (e.message || e))
+    }
   }
 }
 
