@@ -126,6 +126,14 @@ class LaborHourCreate(BaseModel):
     name: str = Field(..., min_length=1)
     hours: float = Field(..., gt=0)
     unit_price: float = Field(..., ge=0)
+    labor_type: Optional[str] = 'design'  # design / debug / assembly
+
+
+class LaborHourUpdate(BaseModel):
+    name: Optional[str] = None
+    hours: Optional[float] = None
+    unit_price: Optional[float] = None
+    labor_type: Optional[str] = None  # design / debug / assembly
 
 
 # ============== Travel ==============
@@ -176,6 +184,7 @@ class TravelPersonTripUpdate(BaseModel):
 
 # ============== Material ==============
 class MaterialCreate(BaseModel):
+    item_no: Optional[str] = None  # 品号 (跨系统同步用, 允许为空)
     name: str = Field(..., min_length=1)
     spec: Optional[str] = None
     brand: Optional[str] = None
@@ -189,6 +198,7 @@ class MaterialCreate(BaseModel):
 
 
 class MaterialUpdate(BaseModel):
+    item_no: Optional[str] = None  # 品号 (跨系统同步用, 允许为空)
     name: Optional[str] = None
     spec: Optional[str] = None
     brand: Optional[str] = None

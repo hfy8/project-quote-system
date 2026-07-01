@@ -17,12 +17,14 @@ class LaborHourCreate(BaseModel):
     name: str = ""
     hours: float = 0
     unit_price: float = 0
+    labor_type: Optional[str] = 'design'  # design / debug / assembly
 
 
 class LaborHourUpdate(BaseModel):
     name: Optional[str] = None
     hours: Optional[float] = None
     unit_price: Optional[float] = None
+    labor_type: Optional[str] = None  # design / debug / assembly
 
 
 @router.get("/quotations/{quotation_id}/labor-hours")
@@ -54,12 +56,17 @@ def create_labor_hour(
 ):
     _check_permission(db, int(user_id), 'quotation.edit')
     total = body.hours * body.unit_price
+    # 校验 labor_type
+    labor_type = body.labor_type or 'design'
+    if labor_type not in LaborHour.LABOR_TYPE_CHOICES:
+        labor_type = 'design'
     item = LaborHour(
         quotation_id=quotation_id,
         name=body.name,
         hours=body.hours,
         unit_price=body.unit_price,
         total=total,
+        labor_type=labor_type,
         created_by=int(user_id),
     )
     db.add(item)
@@ -96,6 +103,8 @@ def update_labor_hour(
         item.hours = body.hours
     if body.unit_price is not None:
         item.unit_price = body.unit_price
+    if body.labor_type is not None and body.labor_type in LaborHour.LABOR_TYPE_CHOICES:
+        item.labor_type = body.labor_type
     item.total = item.hours * item.unit_price
     db.commit()
     return JSONResponse(content=item.to_dict())

@@ -7,6 +7,7 @@ class Material(db.Model):
     __tablename__ = 'materials'
 
     id = db.Column(db.Integer, primary_key=True)
+    item_no = db.Column(db.String(50), nullable=True, index=True)  # 品号 (跨系统同步用, 允许为空)
     name = db.Column(db.String(100), nullable=False, index=True)
     spec = db.Column(db.String(100), nullable=True, index=True)
     brand = db.Column(db.String(50), nullable=True, index=True)
@@ -23,6 +24,7 @@ class Material(db.Model):
     def to_dict(self):
         return {
             'id': self.id,
+            'item_no': self.item_no,
             'name': self.name,
             'spec': self.spec,
             'brand': self.brand,
@@ -71,6 +73,7 @@ class ModuleMaterial(db.Model):
             'created_at': self.created_at.isoformat() if self.created_at else None,
             # 扁平化物料字段
             'material_name': m.name if m else None,
+            'item_no': m.item_no if m else None,  # 品号 (跨系统同步用)
             'specification': m.spec if m else None,
             'brand': m.brand if m else None,
             'unit': m.unit if m else None,

@@ -73,6 +73,12 @@
               </div>
             </template>
           </el-table-column>
+          <el-table-column prop="item_no" label="品号" min-width="120">
+            <template #default="{ row }">
+              <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
+              <span v-else style="color: #c0c4cc;">-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="spec" label="规格" min-width="100">
             <template #default="{ row }">
               <span class="spec-text">{{ row.spec || '-' }}</span>
@@ -145,6 +151,9 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" class="dialog-form">
         <el-form-item label="品名" prop="name">
           <el-input v-model="form.name" placeholder="请输入物料品名" />
+        </el-form-item>
+        <el-form-item label="品号" prop="item_no">
+          <el-input v-model="form.item_no" placeholder="可留空, 跨系统同步用" maxlength="50" clearable />
         </el-form-item>
         <el-form-item label="规格" prop="spec">
           <el-input v-model="form.spec" placeholder="请输入规格" />
@@ -243,6 +252,7 @@ const categories = [
 
 const form = reactive({
   id: null,
+  item_no: '',  // 品号 (跨系统同步用, 允许为空)
   name: '',
   spec: '',
   brand: '',
@@ -310,7 +320,7 @@ const handlePageChange = (page) => {
 
 const handleAdd = () => {
   dialogTitle.value = '新增物料'
-  Object.assign(form, { id: null, name: '', spec: '', brand: '', category: 'standard', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
+  Object.assign(form, { id: null, item_no: '', name: '', spec: '', brand: '', category: 'standard', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
   dialogVisible.value = true
 }
 

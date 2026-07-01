@@ -265,6 +265,7 @@ def _create_version_snapshot(db, quotation, operator_id, operation_type, remark=
                 'id': mm.id,
                 'material_id': mm.material_id,
                 'name': mm.material.name if mm.material else None,
+                'item_no': mm.material.item_no if mm.material else None,  # 品号 (跨系统同步用)
                 'brand': mm.material.brand if mm.material else None,
                 'spec': mm.material.spec if mm.material else None,
                 'unit_price': float(mm.material.unit_price) if mm.material and mm.material.unit_price else 0,

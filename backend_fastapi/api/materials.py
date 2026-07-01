@@ -85,6 +85,7 @@ def create_material(
     from core.models import Material
 
     material = Material(
+        item_no=(body.item_no or '').strip() or None,  # 品号, 空字符串转 None
         name=body.name,
         spec=body.spec,
         brand=body.brand,
@@ -115,6 +116,9 @@ def update_material(
 
     # Pydantic 只返回用户提供的字段(exclude_unset=True)
     update_data = body.model_dump(exclude_unset=True)
+    # 品号空字符串归一为 None (允许没有品号)
+    if 'item_no' in update_data and update_data['item_no'] is not None:
+        update_data['item_no'] = (update_data['item_no'] or '').strip() or None
     for field, value in update_data.items():
         setattr(material, field, value)
 

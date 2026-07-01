@@ -351,6 +351,12 @@
               <el-table-column prop="material_name" label="物料名称" min-width="100">
                 <template #default="{ row }">{{ row.material_name || '-' }}</template>
               </el-table-column>
+              <el-table-column prop="item_no" label="品号" min-width="110">
+                <template #default="{ row }">
+                  <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
+                  <span v-else style="color: #c0c4cc;">-</span>
+                </template>
+              </el-table-column>
               <el-table-column prop="specification" label="规格" min-width="80">
                 <template #default="{ row }">{{ row.specification || '-' }}</template>
               </el-table-column>
@@ -439,6 +445,12 @@
             >
               <el-table-column type="selection" width="45"></el-table-column>
               <el-table-column prop="name" label="品名" min-width="120" />
+              <el-table-column prop="item_no" label="品号" min-width="110">
+                <template #default="{ row }">
+                  <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
+                  <span v-else style="color: #c0c4cc;">-</span>
+                </template>
+              </el-table-column>
               <el-table-column prop="spec" label="规格" min-width="100" />
               <el-table-column prop="brand" label="品牌" width="70" />
               <el-table-column v-if="materialHasKeyParams" prop="param1" label="关键参数01" width="140">
@@ -551,6 +563,21 @@
           </div>
 
           <el-table :data="laborHours" border style="width: 100%; margin-top: 16px;">
+            <el-table-column prop="labor_type" label="工时类型" width="110">
+              <template #default="{ row }">
+                <el-radio-group v-if="row._editing && !isViewMode" v-model="row._labor_type" size="small">
+                  <el-radio-button
+                    v-for="t in LABOR_TYPE_CHOICES"
+                    :key="t.value"
+                    :label="t.value"
+                    :title="t.label"
+                  >{{ t.label }}</el-radio-button>
+                </el-radio-group>
+                <el-tag v-else :color="LABOR_TYPE_CHOICES.find(t => t.value === row.labor_type)?.color" effect="dark" size="small" style="border: none; color: #fff;">
+                  {{ LABOR_TYPE_CHOICES.find(t => t.value === row.labor_type)?.label || '设计' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column prop="name" label="名称" min-width="120">
               <template #default="{ row }">
                 <el-input v-if="row._editing" v-model="row._name" size="small" placeholder="工时名称" />
@@ -605,6 +632,15 @@
             <el-form :model="laborForm" label-width="100px">
               <el-form-item label="名称">
                 <el-input v-model="laborForm.name" placeholder="如：电气设计、现场调试" />
+              </el-form-item>
+              <el-form-item label="工时类型">
+                <el-radio-group v-model="laborForm.labor_type">
+                  <el-radio-button
+                    v-for="t in LABOR_TYPE_CHOICES"
+                    :key="t.value"
+                    :label="t.value"
+                  >{{ t.label }}</el-radio-button>
+                </el-radio-group>
               </el-form-item>
               <el-form-item label="工时 (h)">
                 <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" @change="onHoursChange" />
@@ -1507,11 +1543,17 @@ async function resetCoefficientsToDefault() {
 const laborDialogVisible = ref(false)
 // 8 工时 = 1 人天 (标准 1 天 8 小时)
 const HOURS_PER_DAY = 8
+const LABOR_TYPE_CHOICES = [
+  { value: 'design', label: '设计', color: '#3b82f6' },
+  { value: 'debug', label: '调试', color: '#f59e0b' },
+  { value: 'assembly', label: '装配', color: '#10b981' },
+]
 const laborForm = reactive({
   name: '',
   hours: 0,         // 工时 (实际存储)
   person_days: 0,   // 人天 (前端展示,双向换算)
   unit_price: 0,
+  labor_type: 'design',  // 默认设计
 })
 
 const laborTotal = computed(() => {
@@ -1755,17 +1797,20 @@ function showAddLabor() {
   laborForm.hours = 0
   laborForm.person_days = 0
   laborForm.unit_price = 0
+  laborForm.labor_type = 'design'  // 默认设计
   laborDialogVisible.value = true
 }
 
 async function addLaborConfirm() {
   if (!laborForm.name) { ElMessage.warning('请填写名称'); return }
   if (laborForm.hours <= 0) { ElMessage.warning('工时必须大于0'); return }
+  if (!laborForm.labor_type) { ElMessage.warning('请选择工时类型'); return }
   try {
     await api.post(`/quotations/${quotationId.value}/labor-hours`, {
       name: laborForm.name,
       hours: laborForm.hours,
-      unit_price: laborForm.unit_price
+      unit_price: laborForm.unit_price,
+      labor_type: laborForm.labor_type,
     })
     ElMessage.success('添加成功')
     laborDialogVisible.value = false
@@ -1779,6 +1824,7 @@ function editLaborRow(row) {
   row._hours = row.hours
   row._person_days = +(row.hours / HOURS_PER_DAY).toFixed(2)
   row._unit_price = row.unit_price
+  row._labor_type = row.labor_type || 'design'
 }
 
 function cancelLaborEdit(row) {
@@ -1790,7 +1836,8 @@ async function saveLaborRow(row) {
     await api.put(`/quotations/${quotationId.value}/labor-hours/${row.id}`, {
       name: row._name,
       hours: row._hours,
-      unit_price: row._unit_price
+      unit_price: row._unit_price,
+      labor_type: row._labor_type,
     })
     ElMessage.success('保存成功')
     await loadLaborHours()
