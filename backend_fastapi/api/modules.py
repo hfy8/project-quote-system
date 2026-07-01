@@ -66,16 +66,34 @@ def infer_module_type(
             "source": "participant_types",
         }
     if body.get('quotation_id'):
+        # 推断的是"当前用户对该报价单的参与类型" (用于模块创建人场景)
+        # 不是该报价单全部参与人混合 (那样 agency+project+electrical 永远是 other)
         from core.models.quotation import QuotationParticipant
-        rows = db.query(QuotationParticipant.participant_type)\
-            .filter(QuotationParticipant.quotation_id == body['quotation_id'])\
+        my_rows = db.query(QuotationParticipant.participant_type)\
+            .filter(
+                QuotationParticipant.quotation_id == body['quotation_id'],
+                QuotationParticipant.user_id == int(user_id),
+            )\
             .all()
-        types = [r[0] for r in rows]
+        if not my_rows:
+            return {
+                "module_type": "other",
+                "module_type_label": "其他",
+                "user_count": 0,
+                "participant_type": None,
+                "source": "quotation_id",
+                "message": f"当前用户 (id={user_id}) 在该报价单无参与类型记录, 默认为: 其他",
+            }
+        # 一个 user 可能在该报价单有多种类型 (e.g. 同时是 agency + electrical)
+        # 取主类型 (单一 → 直接用, 混合 → 兜底 other)
+        types = [r[0] for r in my_rows]
         inferred = infer_module_type_from_participant_types(types)
+        primary = types[0] if len(set(types)) == 1 else None
         return {
             "module_type": inferred,
             "module_type_label": MODULE_TYPE_LABELS.get(inferred, '其他'),
             "user_count": len(types),
+            "participant_type": primary,
             "source": "quotation_id",
         }
     if body.get('user_ids'):

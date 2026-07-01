@@ -2021,42 +2021,32 @@ function editModule(module) {
   })
 }
 
-// 自动推断模块类型 (根据当前已选参与人员的参与类型 participant_type)
+// 自动推断模块类型 (根据当前登录用户对该报价单的参与类型 participant_type)
 // 规则 (与后端 infer_module_type_from_participant_types 一致):
-//   - 全部 agency → mechanical (机构)
-//   - 全部 electrical → electrical (电气)
-//   - 混合 / project / 空 → other (其他)
-function inferModuleType() {
-  if (currentParticipants.value.length === 0) {
-    ElMessage.warning('请先在"参与人员"tab 中添加参与人员')
-    return
-  }
-  const types = new Set(
-    currentParticipants.value
-      .map(p => p.participant_type)
-      .filter(t => t)
-  )
-  if (types.size === 0) {
-    moduleForm.module_type = 'other'
-    ElMessage.info('参与人员未设置参与类型, 默认"其他"')
-    return
-  }
-  if (types.size === 1) {
-    const only = [...types][0]
-    if (only === 'agency') {
-      moduleForm.module_type = 'mechanical'
-      ElMessage.success('已根据参与人员类型推断为: 机构')
+//   - agency → mechanical (机构)
+//   - electrical → electrical (电气)
+//   - project / 无参与记录 → other (其他)
+async function inferModuleType() {
+  try {
+    const res = await request.post('/modules/infer-type', { quotation_id: quotation.value?.id })
+    const myType = res.participant_type
+    if (!myType || res.user_count === 0) {
+      ElMessage.info(res.message || '当前用户在此报价单无参与类型记录, 默认为"其他"')
+      moduleForm.module_type = 'other'
       return
     }
-    if (only === 'electrical') {
-      moduleForm.module_type = 'electrical'
-      ElMessage.success('已根据参与人员类型推断为: 电气')
-      return
+    const map = {
+      agency: 'mechanical',
+      electrical: 'electrical',
+      project: 'other',
     }
+    moduleForm.module_type = map[myType] || 'other'
+    const label = MODULE_TYPES.find(t => t.value === moduleForm.module_type)?.label || '其他'
+    ElMessage.success(`已根据您的参与类型 [${myType}] 推断为: ${label} (${res.user_count} 条记录)`)
+  } catch (e) {
+    console.error('推断失败', e)
+    ElMessage.error('推断失败: ' + (e.message || e))
   }
-  // 混合 / 含 project → 其他
-  moduleForm.module_type = 'other'
-  ElMessage.info('参与人员类型混合或为"项目", 默认为: 其他')
 }
 
 // 保存模块
