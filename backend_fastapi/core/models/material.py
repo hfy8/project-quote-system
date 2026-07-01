@@ -20,6 +20,11 @@ class Material(db.Model):
     param3 = db.Column(db.String(100), nullable=True)   # 关键参数03
     status = db.Column(db.String(20), nullable=False, default='active', index=True)  # active/inactive
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    # 价格同步跟踪字段 (migration 012)
+    last_price_synced_at = db.Column(db.DateTime, nullable=True)
+    last_price_sync_status = db.Column(db.String(20), nullable=True)  # success/failed/skipped/pending
+    last_price_sync_error = db.Column(db.Text, nullable=True)
+    last_price_sync_source = db.Column(db.String(100), nullable=True)
 
     def to_dict(self):
         return {
@@ -36,6 +41,11 @@ class Material(db.Model):
             'param3': self.param3,
             'status': self.status,
             'created_at': self.created_at.isoformat() if self.created_at else None,
+            # 价格同步状态
+            'last_price_synced_at': self.last_price_synced_at.isoformat() if self.last_price_synced_at else None,
+            'last_price_sync_status': self.last_price_sync_status,
+            'last_price_sync_error': self.last_price_sync_error,
+            'last_price_sync_source': self.last_price_sync_source,
         }
 
 

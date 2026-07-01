@@ -104,8 +104,18 @@ async def lifespan(app: FastAPI):
                 replace_existing=True,
             )
 
+            # 原材料价格同步: 每天 02:00 通过品号同步外部价格
+            from core.tasks.material_price_sync import scheduled_sync_material_prices
+            _scheduler.add_job(
+                func=scheduled_sync_material_prices,
+                trigger=CronTrigger(hour=2, minute=0),
+                id='daily_material_price_sync',
+                name='每日原材料价格同步',
+                replace_existing=True,
+            )
+
             _scheduler.start()
-            logger.info("✅ 定时任务已启动：22:00 数据同步 / 03:00 清理过期消息 / 09:00 汇率同步")
+            logger.info("✅ 定时任务已启动：22:00 数据同步 / 03:00 清理过期消息 / 09:00 汇率同步 / 02:00 原材料价格同步")
         except Exception as e:
             logger.exception(f"⚠️ 定时任务启动失败: {e}")
 

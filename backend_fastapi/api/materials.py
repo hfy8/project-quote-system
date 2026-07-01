@@ -205,3 +205,81 @@ def import_materials(
         "created": len(created),
         "materials": [m.to_dict() for m in created],
     }
+
+
+# ============== 价格同步 (定时任务 + 手动触发) ==============
+
+@router.post("/sync-prices")
+def sync_prices_endpoint(
+    dry_run: bool = Query(False, description="只统计不写库"),
+    batch_size: int = Query(50, description="每批 commit 数量"),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """手动触发原材料价格同步 (通过品号查外部 API 更新 unit_price)
+
+    默认每日 02:00 自动执行, 此接口用于:
+      - 调试验证逻辑
+      - 紧急刷新 (新接入了一批物料, 等不到 02:00)
+      - 大批量价格变更后立即同步
+    """
+    import logging
+    logger = logging.getLogger("api-materials")
+
+    # 权限校验: 仅 admin 可触发
+    from core.auth import get_db
+    db = next(get_db())
+    try:
+        from core.models.user import User
+        user = db.query(User).filter_by(id=current_user_id).first()
+        if not user or user.role != "admin":
+            raise HTTPException(status_code=403, detail="仅管理员可触发价格同步")
+    finally:
+        db.close()
+
+    from core.tasks.material_price_sync import sync_material_prices
+    logger.info(f"Manual sync triggered by user_id={current_user_id}, dry_run={dry_run}")
+    result = sync_material_prices(batch_size=batch_size, dry_run=dry_run)
+    return result
+
+
+@router.get("/sync-prices/status")
+def sync_prices_status(current_user_id: int = Depends(get_current_user_id)):
+    """查看最近一次价格同步的状态 (任何登录用户可看)"""
+    from db import db_session_factory
+    from core.models.material import Material
+    from sqlalchemy import func
+
+    db = db_session_factory()
+    try:
+        # 统计各状态的物料数
+        status_counts = dict(
+            db.query(Material.last_price_sync_status, func.count(Material.id))
+            .group_by(Material.last_price_sync_status)
+            .all()
+        )
+
+        # 最近一次同步时间
+        latest = db.query(func.max(Material.last_price_synced_at)).scalar()
+
+        # 最近一次成功同步的物料
+        latest_success = db.query(Material).filter(
+            Material.last_price_sync_status == "success"
+        ).order_by(Material.last_price_synced_at.desc()).first()
+
+        return {
+            "total_materials_with_item_no": db.query(Material).filter(
+                Material.item_no.isnot(None),
+                Material.item_no != "",
+            ).count(),
+            "sync_status_counts": {k or "never_synced": v for k, v in status_counts.items()},
+            "latest_sync_at": latest.isoformat() + "Z" if latest else None,
+            "latest_success_material": {
+                "id": latest_success.id,
+                "name": latest_success.name,
+                "item_no": latest_success.item_no,
+                "unit_price": float(latest_success.unit_price),
+                "synced_at": latest_success.last_price_synced_at.isoformat() + "Z" if latest_success.last_price_synced_at else None,
+            } if latest_success else None,
+        }
+    finally:
+        db.close()
