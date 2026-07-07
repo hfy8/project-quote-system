@@ -536,6 +536,14 @@ def create_quotation(
         currency=body.currency,
         parent_id=body.parent_id
     )
+    # B2: 子报价单强制继承父单 coefficients (用户传了也忽略)
+    if body.parent_id is not None:
+        parent = db.query(Quotation).get(body.parent_id)
+        if not parent:
+            raise HTTPException(status_code=400, detail=f'父报价单 id={body.parent_id} 不存在')
+        quotation.coefficients = parent.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0}
+    elif body.coefficients is not None:
+        quotation.coefficients = body.coefficients
     db.add(quotation)
     db.commit()
 
@@ -1146,6 +1154,12 @@ def update_quotation(
     if 'currency' in data:
         quotation.currency = data['currency']
     if 'coefficients' in data:
+        # B2: 子报价单不允许单独修改 coefficients, 必须改父单
+        if quotation.parent_id is not None:
+            raise HTTPException(
+                status_code=400,
+                detail='子报价单不能修改费用系数, 请修改父报价单'
+            )
         quotation.coefficients = data['coefficients']
     if 'parent_id' in data:
         quotation.parent_id = data['parent_id']
@@ -2001,7 +2015,9 @@ def copy_quotation(
         scheme_no=original.scheme_no,
         status='draft',
         creator_id=uid,
-        business_owner_id=original.business_owner_id
+        business_owner_id=original.business_owner_id,
+        # B2: 复制报价单时继承原单的 coefficients
+        coefficients=original.coefficients or {'large': 1.0, 'standard': 1.0, 'other': 1.0},
     )
     db.add(new_quotation)
     db.flush()
@@ -2068,9 +2084,17 @@ def get_quotation_summary(
     else:
         all_ids = [quotation_id]
 
+    # B2: 汇总时若当前报价单是子单 (parent_id 存在), 强制用父单 coefficients
+    # 子单自己的 coefficients 字段被后端强制保持 = 父单, 但作为防御性兜底
+    effective_quotation = quotation
+    if quotation.parent_id is not None:
+        parent = db.query(Quotation).get(quotation.parent_id)
+        if parent:
+            effective_quotation = parent
+
     # 费用系数
-    if quotation.coefficients:
-        fee_rates = quotation.coefficients
+    if effective_quotation.coefficients:
+        fee_rates = effective_quotation.coefficients
         default_rate = 1.0
     else:
         all_rates = db.query(FeeRate).all()
