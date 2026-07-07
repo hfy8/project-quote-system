@@ -81,7 +81,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, CircleCheck } from '@element-plus/icons-vue'
-import messagesAPI from '@/api/messages'
+import { messagesAPI } from '@/api/messages'
 import { formatRelativeTime } from '@/utils/date'
 
 const router = useRouter()

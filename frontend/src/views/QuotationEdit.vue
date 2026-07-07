@@ -1282,7 +1282,7 @@ import request from '../api/request'
 import { openDownload } from '../utils/download'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI, quotationsAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
-import changeRequestsAPI from '../api/changeRequests'
+import { changeRequestsAPI } from '@/api/changeRequests'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 

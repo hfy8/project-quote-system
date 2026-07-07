@@ -8,8 +8,14 @@ from fastapi import APIRouter, HTTPException, Header
 from core.services.cache import cache_stats, _memory
 
 router = APIRouter(prefix="/api/_debug", tags=["debug"])
-# 优先从环境变量 DEBUG_TOKEN 读, 默认值 (生产请覆盖)
-TOKEN = os.environ.get("DEBUG_TOKEN", "hermes-debug-2024")
+# 优先从环境变量 DEBUG_TOKEN 读
+TOKEN = os.environ.get("DEBUG_TOKEN")
+if TOKEN is None:
+    # 生产环境必须设 DEBUG_TOKEN
+    _is_prod = not os.environ.get("FLASK_ENV") or os.environ.get("FLASK_ENV") == "production"
+    if _is_prod:
+        raise RuntimeError("Fatal: DEBUG_TOKEN not set in production!")
+    TOKEN = "hermes-debug-2024"
 
 
 def _redact(value):

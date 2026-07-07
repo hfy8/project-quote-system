@@ -30,7 +30,9 @@ class PackingEntryUpdate(BaseModel):
 
 
 @router.get("/packing-entries")
-def get_packing_entries(quotation_id: int = Query(...), db=Depends(get_db)):
+def get_packing_entries(quotation_id: Optional[int] = Query(None), db=Depends(get_db)):
+    if not quotation_id:
+        return JSONResponse(content=[])
     items = db.query(PackingEntry).filter_by(quotation_id=quotation_id).all()
     return JSONResponse(content=[e.to_dict() for e in items])
 
@@ -109,7 +111,9 @@ class PersonDaysUpdate(BaseModel):
 
 
 @router.get("/travel-person-days")
-def get_travel_person_days(quotation_id: int = Query(...), db=Depends(get_db)):
+def get_travel_person_days(quotation_id: Optional[int] = Query(None), db=Depends(get_db)):
+    if not quotation_id:
+        return JSONResponse(content=[])
     items = db.query(TravelPersonDays).filter_by(quotation_id=quotation_id).all()
     return JSONResponse(content=[e.to_dict() for e in items])
 
@@ -191,7 +195,9 @@ class PersonTripUpdate(BaseModel):
 
 
 @router.get("/travel-person-trips")
-def get_travel_person_trips(quotation_id: int = Query(...), db=Depends(get_db)):
+def get_travel_person_trips(quotation_id: Optional[int] = Query(None), db=Depends(get_db)):
+    if not quotation_id:
+        return JSONResponse(content=[])
     trips = db.query(TravelPersonTrip).filter_by(quotation_id=quotation_id).all()
     result = []
     for trip in trips:

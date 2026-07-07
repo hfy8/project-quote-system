@@ -17,4 +17,4 @@ const changeRequestsAPI = {
   reject: (id, remark) => request.post(`/change-requests/${id}/reject`, { remark })
 }
 
-export default changeRequestsAPI
+export { changeRequestsAPI }

@@ -2274,6 +2274,7 @@ def get_quotation_summary(
         'material_total': round(total_material, 2),
         'material_total_with_rates': round(total_with_rates, 2),
         'fees_total': round(fees_total, 2),
+        # fee_total = 所有 fee_rates 费用 (不含 labor/packing/trips)
         'fee_total': round(total_fees, 2),
         'labor_total': round(total_labor, 2),
         'labor_details': labor_details,
@@ -2282,11 +2283,11 @@ def get_quotation_summary(
         'packing_details': packing_details,
         'person_days_details': person_days_details,
         'person_trip_details': person_trip_details,
-        'total_packing': round(total_packing, 2),
-        'total_person_days': round(total_person_days, 2),
-        'total_person_trips': round(total_person_trips, 2),
+        # packing_total (alias: total_packing 已移除)
         'packing_total': round(total_packing, 2),
+        # travel_person_days_total (alias: total_person_days 已移除)
         'travel_person_days_total': round(total_person_days, 2),
+        # travel_person_trips_total (alias: total_person_trips 已移除)
         'travel_person_trips_total': round(total_person_trips, 2),
         'total_new_fees': round(total_new_fees, 2),
         'subtotal': round(subtotal, 2),

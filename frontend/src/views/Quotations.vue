@@ -332,7 +332,7 @@ const formatStatus = (status) => {
   const statuses = {
     draft: '草稿',
     submitted: '待审核',
-    approved: '已归档',
+    approved: '已审批',
     archived: '已归档',
     cancelled: '已取消',
     rejected: '已驳回',

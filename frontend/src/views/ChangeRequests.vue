@@ -149,7 +149,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import changeRequestsAPI from '../api/changeRequests'
+import { changeRequestsAPI } from '@/api/changeRequests'
 import { parseUtcDate } from '../utils/date'
 
 const loading = ref(false)

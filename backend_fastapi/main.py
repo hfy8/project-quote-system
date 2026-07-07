@@ -226,11 +226,11 @@ def _patched_dumps(obj, **kwargs):
 json.dumps = _patched_dumps
 
 async def http_exception_handler(request, exc):
-    """HTTPException -> {"error": detail}"""
+    """HTTPException -> {"error": detail} (同时保留 detail 兼容 FastAPI 默认)"""
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error": detail},
+        content={"error": detail, "detail": detail},
     )
 
 fastapi_app.add_exception_handler(StarletteHTTPException, http_exception_handler)

@@ -1312,7 +1312,7 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
-import changeRequestsAPI from '../api/changeRequests'
+import { changeRequestsAPI } from '@/api/changeRequests'
 
 const route = useRoute()
 const router = useRouter()

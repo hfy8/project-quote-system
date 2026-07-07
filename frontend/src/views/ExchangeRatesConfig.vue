@@ -161,14 +161,14 @@ const saveRate = async () => {
   }
   try {
     if (isEdit.value) {
-      await exchangeRatesAPI.updateExchangeRate(form.id, {
+      await exchangeRatesAPI.update(form.id, {
         rate: form.rate,
         is_base: form.is_base,
         description: form.description
       })
       ElMessage.success('更新成功')
     } else {
-      await exchangeRatesAPI.createExchangeRate({
+      await exchangeRatesAPI.create({
         currency: form.currency.toUpperCase(),
         rate: form.rate,
         is_base: form.is_base,

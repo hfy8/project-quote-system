@@ -79,12 +79,12 @@
       <!-- 毛利率散点 (宽) -->
       <section class="chart-card card chart-card-wide">
         <h3 class="section-title">🎯 毛利率散点 (颜色=状态, 大小=数量, 点击跳转详情)</h3>
-        <v-chart class="chart" :option="scatterChartOption" autoresize @click="onScatterClick" />
+        <v-chart v-if="lazyReady" class="chart" :option="scatterChartOption" autoresize @click="onScatterClick" />
       </section>
     </div>
 
     <!-- ============ 排行榜区 (3 列) ============ -->
-    <div class="rank-grid">
+    <div v-if="lazyReady" class="rank-grid">
       <!-- 客户 Top 5 -->
       <section class="rank-card card">
         <div class="rank-head">
@@ -198,6 +198,14 @@ use([
 const router = useRouter()
 
 const monthsRange = ref(6)
+const lazyReady = ref(false)  // 延迟挂载折叠下方图表
+
+onMounted(async () => {
+  loadData()
+  await nextTick()
+  // 等第一帧渲染完再挂载折叠下方图表（scatter + 排行榜）
+  setTimeout(() => { lazyReady.value = true }, 200)
+})
 const summary = ref({
   total_count: 0, total_approved: 0,
   avg_gross_margin: 0, avg_profit_rate: 0,

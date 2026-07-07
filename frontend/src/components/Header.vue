@@ -82,7 +82,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { ElMessageBox, ElMessage } from 'element-plus'
-import messagesAPI from '../api/messages'
+import { messagesAPI } from '../api/messages'
 import { formatRelativeTime } from '../utils/date'
 
 const router = useRouter()

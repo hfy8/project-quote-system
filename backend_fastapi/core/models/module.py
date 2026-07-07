@@ -1,4 +1,5 @@
 from datetime import datetime
+from sqlalchemy import select, func, case, Numeric
 from db import db
 
 # 模块类型枚举
@@ -116,11 +117,28 @@ class Module(db.Model):
     participants = db.relationship('ModuleParticipant', backref='module', cascade='all, delete-orphan')
     materials = db.relationship('ModuleMaterial', backref='module', cascade='all, delete-orphan')
 
-    def to_dict(self):
-        total = sum(
-            (float(m.unit_price_override) if m.is_other and m.unit_price_override else m.quantity * float(m.material.unit_price) if m.material and m.material.unit_price else 0)
-            for m in self.materials
+    # SQL 聚合: material_total = SUM(mm.quantity * m.unit_price, mm.unit_price_override)
+    material_total = db.column_property(
+        select(
+            func.coalesce(
+                func.sum(
+                    case(
+                        (ModuleMaterial.is_other & ModuleMaterial.unit_price_override.isnot(None),
+                         ModuleMaterial.unit_price_override.cast(Numeric)),
+                        else_=ModuleMaterial.quantity * func.coalesce(Material.unit_price, 0)
+                    )
+                ), 0
+            )
         )
+        .select_from(ModuleMaterial)
+        .join(Material, ModuleMaterial.material_id == Material.id)
+        .where(ModuleMaterial.module_id == Module.id)
+        .correlate_except(ModuleMaterial, Material)
+        .scalar_subquery(),
+        deferred=True
+    )
+
+    def to_dict(self):
         mt = self.module_type or MODULE_TYPE_OTHER
         return {
             'id': self.id,
@@ -132,7 +150,7 @@ class Module(db.Model):
             'module_type': mt,
             'module_type_label': MODULE_TYPE_LABELS.get(mt, '其他'),
             'module_type_color': MODULE_TYPE_COLORS.get(mt, '#94a3b8'),
-            'total': total,
+            'total': float(self.material_total or 0),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'participants': [{'id': p.id, 'user_id': p.user_id} for p in self.participants],
             'materials': [m.to_dict() for m in self.materials]
