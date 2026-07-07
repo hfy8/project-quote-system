@@ -9,6 +9,7 @@
 endpoint 函数内用 `with _flask_app.app_context():` 包裹，确保 import 时也在 context 内
 """
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from core.auth import get_db, create_access_token, get_current_user_id
 from core.schemas import LoginRequest, ChangePasswordRequest
@@ -64,11 +65,21 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         )
 
         token = create_access_token(identity=str(user.id))
-        return {
+        resp = JSONResponse({
             "code": 0,
             "access_token": token,
             "user": user.to_dict(),
-        }
+        })
+        resp.set_cookie(
+            key="access_token",
+            value=token,
+            max_age=86400,           # 24h, 同 JWT
+            httponly=True,
+            samesite="strict",
+            secure=False,            # 内网 HTTP 部署, 不上 HTTPS
+            path="/"
+        )
+        return resp
     except (AuthError, NotFoundError, BadRequestError) as e:
         raise HTTPException(status_code=e.code, detail=e.message)
 
@@ -91,7 +102,9 @@ def logout(user_id: str = Depends(get_current_user_id), db: Session = Depends(ge
                 resource_id=str(user.id),
                 detail=f'用户 "{user.username}" 登出',
             )
-        return {'message': '登出成功'}
+        resp = JSONResponse({'message': '登出成功'})
+        resp.delete_cookie(key="access_token", path="/")
+        return resp
     except (AuthError, NotFoundError, BadRequestError) as e:
         raise HTTPException(status_code=e.code, detail=e.message)
 

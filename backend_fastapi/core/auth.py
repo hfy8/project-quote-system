@@ -55,10 +55,11 @@ async def get_current_user_id(
     request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
 ) -> str:
-    """从 Authorization Header 或 ?token=xxx 查询参数解出 user_id
+    """从 Authorization Header / ?token=xxx / httpOnly cookie 解出 user_id
 
     优先用 Authorization header (API 调用场景)
-    fallback 到 ?token=xxx (window.open/链接下载场景, 浏览器不会带 header)
+    fallback 到 ?token=xxx (链接下载/证书验证场景)
+    fallback 到 access_token cookie (httpOnly, 防 XSS 截取)
     """
     token = None
     if credentials and credentials.credentials:
@@ -66,6 +67,10 @@ async def get_current_user_id(
     else:
         # 从查询参数拿 (链接下载场景)
         token = request.query_params.get('token')
+
+    if not token:
+        # 从 httpOnly cookie 拿 (浏览器请求, 防 XSS)
+        token = request.cookies.get('access_token')
 
     if not token:
         raise HTTPException(status_code=401, detail="缺少认证信息")
