@@ -158,6 +158,7 @@ import { usersAPI, rolesAPI } from '../api'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import { usePermission } from '../composables/usePermission'
+import { parseUtcDate } from '../utils/date'
 
 const authStore = useAuthStore()
 const { can: hasPermission } = usePermission()
@@ -243,7 +244,8 @@ const getAvatar = (username) => {
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
-  const date = new Date(dateStr)
+  const date = parseUtcDate(dateStr)
+  if (!date) return '-'
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 

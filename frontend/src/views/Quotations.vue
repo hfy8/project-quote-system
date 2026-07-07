@@ -40,39 +40,6 @@
       <button class="btn btn-secondary" @click="fetchData">搜索</button>
     </div>
 
-    <!-- 待我审批的归档申请 (部门领导) -->
-    <div v-if="pendingApprovals.length > 0" class="pending-approval-bar card">
-      <div class="pending-header" @click="showPendingList = !showPendingList">
-        <span class="pending-icon">📋</span>
-        <span class="pending-title">
-          您有 <b class="pending-count">{{ pendingApprovals.length }}</b> 个报价单归档申请待审批
-        </span>
-        <el-button type="primary" size="small" @click.stop="showPendingList = !showPendingList">
-          {{ showPendingList ? '收起' : '展开' }}
-        </el-button>
-      </div>
-      <div v-if="showPendingList" class="pending-list">
-        <div v-for="approval in pendingApprovals" :key="approval.id" class="pending-item">
-          <div class="pending-info">
-            <div class="pending-quotation">
-              <b>{{ approval.quotation_name }}</b>
-              <span class="pending-code">{{ approval.quotation_code }}</span>
-            </div>
-            <div class="pending-meta">
-              申请人: {{ approval.requester_name }} ·
-              申请时间: {{ formatApprovalDate(approval.requested_at) }}
-              <span v-if="approval.remark"> · 备注: {{ approval.remark }}</span>
-            </div>
-          </div>
-          <div class="pending-actions">
-            <el-button type="info" size="small" @click="handlePendingExportPDF(approval)">导出 PDF</el-button>
-            <el-button type="success" size="small" @click="handleApproveArchive(approval)">同意</el-button>
-            <el-button type="danger" size="small" @click="handleRejectArchivePrompt(approval)">驳回</el-button>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- 数据表格 -->
     <div class="table-container card" style="flex:1;overflow:hidden;display:flex;flex-direction:column;">
       <el-table
@@ -230,6 +197,7 @@ import { hasPermission } from '../router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { quotationsAPI } from '../api/quotations'
 import { openDownload } from '../utils/download'
+import { parseUtcDate } from '../utils/date'
 import { useAuthStore } from '../stores/auth'
 import { usePermission } from '../composables/usePermission'
 import VersionCompare from './VersionCompare.vue'
@@ -295,111 +263,14 @@ const canDelete = (row) => {
 const loading = ref(false)
 const tableData = ref([])
 
-// 待我审批的归档申请
-const pendingApprovals = ref([])
-const showPendingList = ref(false)
-
-// 加载待审批列表
-const fetchPendingApprovals = async () => {
-  try {
-    const res = await quotationsAPI.listPendingArchiveApprovals()
-    pendingApprovals.value = res?.items || []
-  } catch (error) {
-    // 静默失败, 用户可能不是部门领导
-    pendingApprovals.value = []
-  }
-}
-
 const formatApprovalDate = (iso) => {
   if (!iso) return ''
-  const d = new Date(iso)
+  const d = parseUtcDate(iso)
+  if (!d) return ''
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-// 部门领导同意
-const handleApproveArchive = async (approval) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定同意报价单「${approval.quotation_name}」的归档申请吗？同意后系统将自动创建版本快照并归档.`,
-      '同意归档',
-      {
-        confirmButtonText: '同意',
-        cancelButtonText: '取消',
-        type: 'success'
-      }
-    )
-    const res = await quotationsAPI.approveArchive(approval.quotation_id)
-    ElMessage.success(res?.message || '已审批通过, 归档成功')
-    await fetchPendingApprovals()
-    fetchData()
-  } catch (error) {
-    if (error !== 'cancel') {
-      const msg = error?.response?.data?.detail || error?.message || '操作失败'
-      ElMessage.error(msg)
-    }
-  }
-}
-
-// 部门领导驳回 (弹窗输入原因)
-const handleRejectArchivePrompt = async (approval) => {
-  try {
-    const { value: reason } = await ElMessageBox.prompt(
-      `请填写驳回报价单「${approval.quotation_name}」归档的原因 (至少 5 个字). 驳回后报价单回到草稿状态.`,
-      '驳回归档',
-      {
-        confirmButtonText: '驳回',
-        cancelButtonText: '取消',
-        inputPlaceholder: '例如: 报价单数据未完整, 请补充物料规格',
-        inputValidator: (val) => (val && val.trim().length >= 5) || '至少 5 个字',
-        inputErrorMessage: '至少 5 个字'
-      }
-    )
-    await quotationsAPI.rejectArchive(approval.quotation_id, reason)
-    ElMessage.success('已驳回, 报价单回到草稿状态')
-    await fetchPendingApprovals()
-    fetchData()
-  } catch (error) {
-    if (error !== 'cancel' && error !== 'close') {
-      const msg = error?.response?.data?.detail || error?.message || '操作失败'
-      ElMessage.error(msg)
-    }
-  }
-}
-
-// 审批人导出 PDF (待审批时也能看, 不需先进报价单详情)
-const handlePendingExportPDF = async (approval) => {
-  try {
-    ElMessage.info(`正在生成「${approval.quotation_name}」PDF, 请稍候...`)
-    // 用 fetch + 手动拿 headers (request 拦截器已剥掉 headers, Blob 错误也要手动解析)
-    const token = localStorage.getItem('token')
-    const res = await fetch(`/api/quotations/${approval.quotation_id}/export/pdf`, {
-      headers: { Authorization: `Bearer ${token}` }
-    })
-    if (!res.ok) {
-      // 错误响应, 读 JSON 拿 detail
-      const errJson = await res.json().catch(() => ({}))
-      ElMessage.error(errJson.detail || errJson.error || `导出失败 (HTTP ${res.status})`)
-      return
-    }
-    // 成功: 从 headers 拿文件名
-    const disposition = res.headers.get('content-disposition') || ''
-    const match = disposition.match(/filename="?([^"]+)"?/)
-    const filename = match ? match[1] : `quotation_${approval.quotation_id}.pdf`
-    // 创建下载链接
-    const blob = await res.blob()
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.setAttribute('download', filename)
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    window.URL.revokeObjectURL(url)
-    ElMessage.success('PDF 已下载')
-  } catch (error) {
-    ElMessage.error(error?.message || '导出失败')
-  }
-}
+// 待审批相关函数 (handleApproveArchive / handleRejectArchivePrompt / handlePendingExportPDF) 已迁至 views/PendingApprovals.vue
 
 const filters = reactive({
   status: '',
@@ -472,7 +343,8 @@ const formatStatus = (status) => {
 
 const formatDate = (dateStr) => {
   if (!dateStr) return '-'
-  const date = new Date(dateStr)
+  const date = parseUtcDate(dateStr)
+  if (!date) return '-'
   return date.toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
@@ -619,7 +491,6 @@ const handleExportVersion = (row, cmd) => {
 
 onMounted(() => {
   fetchData()
-  fetchPendingApprovals()
 })
 </script>
 
@@ -712,90 +583,7 @@ onMounted(() => {
   margin-bottom: var(--spacing-md);
 }
 
-/* 待审批栏 */
-.pending-approval-bar {
-  margin-bottom: var(--spacing-md);
-  background: linear-gradient(135deg, #FFF7ED 0%, #FEF3C7 100%);
-  border: 1px solid #FCD34D;
-  border-radius: 8px;
-  padding: 12px 16px;
-}
-
-.pending-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-}
-
-.pending-icon {
-  font-size: 20px;
-}
-
-.pending-title {
-  flex: 1;
-  font-size: 14px;
-  color: #92400E;
-}
-
-.pending-count {
-  color: #DC2626;
-  font-size: 18px;
-  font-weight: 700;
-  margin: 0 4px;
-}
-
-.pending-list {
-  margin-top: 12px;
-  border-top: 1px solid #FDE68A;
-  padding-top: 12px;
-}
-
-.pending-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px;
-  background: white;
-  border-radius: 6px;
-  margin-bottom: 8px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-}
-
-.pending-item:last-child {
-  margin-bottom: 0;
-}
-
-.pending-info {
-  flex: 1;
-}
-
-.pending-quotation {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #1F2937;
-}
-
-.pending-code {
-  font-size: 12px;
-  color: #6B7280;
-  background: #F3F4F6;
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
-.pending-meta {
-  font-size: 12px;
-  color: #6B7280;
-  margin-top: 4px;
-}
-
-.pending-actions {
-  display: flex;
-  gap: 8px;
-}
+/* 待审批栏相关 CSS 已迁至 views/PendingApprovals.vue */
 
 .filter-group {
   display: flex;

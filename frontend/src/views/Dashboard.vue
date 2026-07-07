@@ -337,6 +337,7 @@ import { useAuthStore } from '../stores/auth'
 import { quotationsAPI } from '../api'
 import messagesAPI from '../api/messages'
 import request from '../utils/request'
+import { parseUtcDate, formatRelativeTime } from '../utils/date'
 import { ElMessage, ElMessageBox } from 'element-plus'
 
 const router = useRouter()
@@ -412,19 +413,11 @@ const formatStatus = (s) => ({
 }[s] || s)
 const formatDate = (s) => {
   if (!s) return ''
-  const d = new Date(s)
+  const d = parseUtcDate(s)
+  if (!d) return ''
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
-const formatTime = (s) => {
-  if (!s) return ''
-  const d = new Date(s)
-  const now = new Date()
-  const diff = (now - d) / 1000
-  if (diff < 60) return '刚刚'
-  if (diff < 3600) return `${Math.floor(diff / 60)}分钟前`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}小时前`
-  return `${d.getMonth() + 1}/${d.getDate()}`
-}
+const formatTime = formatRelativeTime
 
 const msgTypeIcon = (type) => ({
   module_member_added: '👥',

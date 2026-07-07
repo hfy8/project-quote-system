@@ -1,0 +1,103 @@
+version: "3.8"
+
+# NFS volume driver (Docker Swarm 原生支持)
+# NFS server: 10.60.100.2 (swarm02) 共享 /data/nfsdata
+# 用法: backend 多个副本通过 nfs 共享 /app/static/versions, 解决 PDF 孤儿问题
+
+services:
+
+  db:
+    image: pgvector/pgvector:pg16
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          memory: 1G
+    env_file: .env
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $POSTGRES_USER -d $POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - quote-net
+
+  redis:
+    image: redis:7-alpine
+    deploy:
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - quote-net
+
+  backend:
+    image: 10.60.100.2/rstech_saas/backend:v1.4.28
+    deploy:
+      replicas: 2
+      # backend 不限制节点 (NFS 解决 PDF 共享, 多副本可跨节点调度)
+      # 加上 spread 偏好让 swarm 分散到不同节点 (最大化资源利用 + 高可用)
+      # swarm03 没有 NFS client, 排除
+      placement:
+        constraints:
+          - node.hostname != swarm03
+        preferences:
+          - spread: node.labels.backend
+      resources:
+        limits:
+          memory: 1G
+    env_file: .env
+    volumes:
+      - backend_logs:/app/logs
+      # NFS 共享: PDF/Word 文件存到 swarm02 的 NFS, 所有 backend 副本可读可写
+      - nfs_versions:/app/static/versions
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:5001/api/ai/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - quote-net
+
+  frontend:
+    image: 10.60.100.2/rstech_saas/frontend:v1.3.55
+    ports:
+      - "8080:80"
+    deploy:
+      replicas: 2
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          memory: 128M
+    # healthcheck 移除: nginx 镜像没 wget/curl, swarm 端口绑定不需要 healthcheck
+    networks:
+      - quote-net
+
+volumes:
+  pgdata:
+  backend_logs:
+  # NFS volume driver 配置
+  # Docker Swarm 会在每个 backend 副本所在节点上自动 mount NFS 共享
+  nfs_versions:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: "addr=10.60.100.2,rw"
+      device: ":/data/nfsdata/quote-system/versions"
+
+networks:
+  quote-net:
+    driver: overlay

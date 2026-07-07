@@ -229,6 +229,7 @@ import { Plus, CircleClose, ArrowUpBold, ChatLineRound, Delete } from '@element-
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { aiAPI } from '../api/ai'
 import { useAIChatStore } from '../stores/aiChat'
+import { parseUtcDate } from '../utils/date'
 
 // ===== 防抖渲染：避免流式过程中每个 token 都跑 regex =====
 // 流式期间 100ms 才 render 一次，用户感知不到延迟，但 Vue 触发次数减少 10x
@@ -372,7 +373,8 @@ function renderInline(text) {
 
 // ===== 工具：时间 =====
 function formatTime(ts) {
-  const d = new Date(ts)
+  const d = parseUtcDate(ts)
+  if (!d) return ''
   const pad = (n) => String(n).padStart(2, '0')
   return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }

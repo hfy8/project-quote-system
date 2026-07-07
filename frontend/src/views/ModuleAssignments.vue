@@ -76,6 +76,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import request from '@/api/request'
+import { parseUtcDate } from '@/utils/date'
 
 const router = useRouter()
 const assignments = ref([])
@@ -127,7 +128,8 @@ async function loadParticipantTypes() {
 
 function formatDate(dateStr) {
   if (!dateStr) return '-'
-  const d = new Date(dateStr)
+  const d = parseUtcDate(dateStr)
+  if (!d) return '-'
   return d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 

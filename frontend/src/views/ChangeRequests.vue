@@ -150,6 +150,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import changeRequestsAPI from '../api/changeRequests'
+import { parseUtcDate } from '../utils/date'
 
 const loading = ref(false)
 const list = ref([])
@@ -199,7 +200,9 @@ const getStatusLabel = (status) => {
 
 const formatTime = (time) => {
   if (!time) return '-'
-  return new Date(time).toLocaleString('zh-CN')
+  const d = parseUtcDate(time)
+  if (!d) return '-'
+  return d.toLocaleString('zh-CN')
 }
 
 async function fetchData() {

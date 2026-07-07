@@ -169,41 +169,97 @@ def toggle_material(
 
 @router.post("/import", summary="批量导入物料", status_code=201)
 def import_materials(
-    materials_data: list[dict],
+    materials_data: dict,
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """批量导入物料
+    """批量导入物料 - 支持 upsert (品号去重/品名+规格联合去重)
 
-    兼容 Flask 版本的请求格式:{"materials": [...]} 或直接传 list
+    业务规则:
+      1. 有品号且 DB 已存在 → UPDATE (更新全部字段)
+      2. 有品号不存在, 但品名+规格已存在 → UPDATE
+      3. 无品号, 但品名+规格已存在 → UPDATE
+      4. 全新 → INSERT (有无品号均可)
     """
     _check_permission(db, int(user_id), 'material.create')
     from core.models import Material
+    from sqlalchemy import and_
 
-    # 兼容两种入参:dict 或 list
-    if isinstance(materials_data, dict) and "materials" in materials_data:
-        items = materials_data["materials"]
-    else:
-        items = materials_data
+    # 前端发送格式: { materials: [...] }
+    items = materials_data.get("materials", materials_data) if isinstance(materials_data, dict) else materials_data
 
-    created = []
-    for m_data in items:
-        material = Material(
-            name=m_data.get("name"),
-            spec=m_data.get("spec"),
-            brand=m_data.get("brand"),
-            unit=m_data.get("unit"),
-            unit_price=m_data.get("unit_price", 0),
-            category=m_data.get("category", "standard"),
-            status="active",
-        )
-        db.add(material)
-        created.append(material)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    for idx, m_data in enumerate(items):
+        item_no = (m_data.get("item_no") or "").strip()
+
+        try:
+            existing = None
+            # 1. 有品号 → 按品号查找
+            if item_no:
+                existing = db.query(Material).filter(Material.item_no == item_no).first()
+
+            # 2. 品号不存在(或无品号) → 按品名+规格联合查找
+            if not existing:
+                name = (m_data.get("name") or "").strip()
+                spec = (m_data.get("spec") or "").strip()
+                if name and spec:
+                    existing = db.query(Material).filter(
+                        and_(
+                            Material.name == name,
+                            Material.spec == spec,
+                        )
+                    ).first()
+
+            if existing:
+                # UPDATE: 除 unit_price 外, 其他字段照常更新
+                for field in ["name", "spec", "brand", "unit", "category", "status", "param1", "param2", "param3"]:
+                    if field in m_data and m_data[field] is not None:
+                        setattr(existing, field, m_data[field])
+                # 价格: 仅当 Excel 提供有效价格时才更新
+                if "unit_price" in m_data and m_data["unit_price"] is not None:
+                    existing.unit_price = m_data["unit_price"]
+                # 确保 status 默认值
+                if existing.status is None:
+                    existing.status = "active"
+                updated += 1
+            else:
+                # INSERT: Excel 有价格用 Excel 的, 否则默认 0
+                price = m_data["unit_price"] if (m_data.get("unit_price") is not None) else 0
+                material = Material(
+                    name=m_data.get("name"),
+                    spec=m_data.get("spec"),
+                    brand=m_data.get("brand"),
+                    unit=m_data.get("unit"),
+                    unit_price=price,
+                    category=m_data.get("category", "standard"),
+                    item_no=item_no or None,
+                    param1=m_data.get("param1"),
+                    param2=m_data.get("param2"),
+                    param3=m_data.get("param3"),
+                    status="active",
+                )
+                db.add(material)
+                created += 1
+
+        except Exception as e:
+            errors.append({"index": idx, "item_no": item_no, "error": str(e)})
+            db.rollback()
+            # 重新开始一个新事务
+            from sqlalchemy import text as sa_text
+            db.execute(sa_text("ROLLBACK"))
+            continue
 
     db.commit()
     return {
-        "created": len(created),
-        "materials": [m.to_dict() for m in created],
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "errors": errors,
+        "total": created + updated,
     }
 
 

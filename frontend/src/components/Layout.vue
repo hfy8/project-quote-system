@@ -123,6 +123,7 @@ import { useAuthStore } from '../stores/auth'
 import { ElMessageBox, ElMessage } from 'element-plus'
 import { Bell } from '@element-plus/icons-vue'
 import messagesAPI from '../api/messages'
+import { formatRelativeTime } from '../utils/date'
 
 const route = useRoute()
 const router = useRouter()
@@ -265,16 +266,7 @@ const getMessageIcon = (type) => {
 }
 
 // 格式化时间
-const formatTime = (time) => {
-  if (!time) return ''
-  const d = new Date(time)
-  const now = new Date()
-  const diff = now - d
-  if (diff < 60000) return '刚刚'
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}小时前`
-  return d.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-}
+const formatTime = formatRelativeTime
 
 // 权限检查函数 - 使用后端返回的权限列表
 const hasPermission = (permission) => {
@@ -293,7 +285,8 @@ const menuItems = computed(() => {
   const items = [
     { path: '/dashboard', label: '首页', icon: '🏠', permission: 'dashboard.view' },
     { path: '/messages', label: '我的消息', icon: '📬', permission: null },
-    { path: '/quotations', label: '报价单管理', icon: '📋', permission: 'quotation.view' },
+    { path: '/pending-approvals', label: '待审批归档', icon: '📋', permission: null },
+    { path: '/quotations', label: '报价单管理', icon: '📑', permission: 'quotation.view' },
     { path: '/trends', label: '报价趋势', icon: '📈', permission: 'quotation.view' },
     { path: '/my-assignments', label: '我的分配', icon: '📌', permission: 'module_assignment.view' },
     { path: '/change-requests', label: '变更审核', icon: '📤', permission: 'quotation.edit' },

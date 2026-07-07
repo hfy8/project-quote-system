@@ -288,79 +288,101 @@
             </el-select>
           </div>
 
-          <!-- 按模块分组显示物料 -->
-          <div v-for="mod in filteredModuleGroups" :key="mod.id" class="module-group">
-            <div class="module-group-header">
-              <span class="module-name">{{ mod.name }}</span>
-              <span v-if="mod.quotation_name" class="module-quotation-tag">{{ mod.quotation_name }}</span>
-              <span class="module-material-count">{{ mod.materials.length }} 项物料</span>
-              <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
-              <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
+          <!-- 按模块类型分组卡片展示 -->
+          <div v-for="group in groupedModulesByType" :key="group.value" class="module-type-group">
+            <div class="module-type-header" :class="'type-' + group.value">
+              <div class="module-type-icon" :class="'type-' + group.value">
+                <span v-if="group.value === 'mechanical'">🔧</span>
+                <span v-else-if="group.value === 'electrical'">⚡</span>
+                <span v-else>📦</span>
+              </div>
+              <span class="module-type-title">{{ group.label }}模块</span>
+              <span class="module-type-count">{{ group.group_module_count }} 个模块</span>
+              <div class="module-type-stat">
+                <span>{{ group.group_materials_count }} 项物料</span>
+                <span class="module-type-total">¥{{ group.group_total.toFixed(2) }}</span>
+              </div>
             </div>
-            <el-table :data="mod.materials" border style="width: 100%;" show-overflow-tooltip>
-              <el-table-column prop="material_name" label="物料名称" min-width="100">
-                <template #default="{ row }">{{ row.material_name || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="item_no" label="品号" min-width="110">
-                <template #default="{ row }">
-                  <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
-                  <span v-else style="color: #c0c4cc;">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="specification" label="规格" min-width="80">
-                <template #default="{ row }">{{ row.specification || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="brand" label="品牌" width="70">
-                <template #default="{ row }">{{ row.brand || '-' }}</template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param1" label="关键参数01" width="130">
-                <template #default="{ row }"><span v-if="row.param1">{{ row.param1 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param2" label="关键参数02" width="130">
-                <template #default="{ row }"><span v-if="row.param2">{{ row.param2 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param3" label="关键参数03" width="130">
-                <template #default="{ row }"><span v-if="row.param3">{{ row.param3 }}</span></template>
-              </el-table-column>
-              <el-table-column prop="unit" label="单位" width="60">
-                <template #default="{ row }">{{ row.unit || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="unit_price" label="单价" width="90">
-                <template #default="{ row }">{{ (row.unit_price || 0).toFixed(2) }}</template>
-              </el-table-column>
-              <el-table-column label="数量" width="130">
-                <template #default="{ row }">
-                  <span v-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
-                  <el-input-number
-                    v-else
-                    :model-value="row.quantity"
-                    :min="1"
-                    size="small"
-                    controls-position="right"
-                    @change="(val) => updateMaterialQuantity(row.id, val)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="小计" width="100">
-                <template #default="{ row }">
-                  {{ ((row.unit_price || 0) * row.quantity).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="添加人" width="80">
-                <template #default="{ row }">
-                  {{ row.selected_by_name || '-' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150" align="center">
-                <template #default="{ row }">
-                  <template v-if="row.is_other === true">
-                    <el-button size="small" @click="editOtherMaterial(row)">改单价</el-button>
-                    <el-button size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
-                  </template>
-                  <el-button v-else size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div class="module-type-body">
+              <div v-if="group.module_list.length === 0" class="module-type-empty">
+                该类型暂无模块
+              </div>
+              <div v-for="mod in group.module_list" :key="mod.id" class="module-group">
+                <div class="module-group-header">
+                  <span class="module-name">{{ mod.name }}</span>
+                  <el-tag size="small" :type="mod.module_type === 'mechanical' ? 'primary' : mod.module_type === 'electrical' ? 'warning' : 'info'" effect="plain">
+                    {{ mod.module_type_label || '其他' }}
+                  </el-tag>
+                  <span class="module-material-count">{{ mod.materials.length }} 项物料</span>
+                  <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
+                  <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
+                </div>
+                <el-table :data="mod.materials" border style="width: 100%;" show-overflow-tooltip>
+                  <el-table-column prop="material_name" label="物料名称" min-width="100">
+                    <template #default="{ row }">{{ row.material_name || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="item_no" label="品号" min-width="110">
+                    <template #default="{ row }">
+                      <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
+                      <span v-else style="color: #c0c4cc;">-</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="specification" label="规格" min-width="80">
+                    <template #default="{ row }">{{ row.specification || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="brand" label="品牌" width="70">
+                    <template #default="{ row }">{{ row.brand || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column v-if="hasKeyFields" prop="param1" label="关键参数01" width="130">
+                    <template #default="{ row }"><span v-if="row.param1">{{ row.param1 }}</span></template>
+                  </el-table-column>
+                  <el-table-column v-if="hasKeyFields" prop="param2" label="关键参数02" width="130">
+                    <template #default="{ row }"><span v-if="row.param2">{{ row.param2 }}</span></template>
+                  </el-table-column>
+                  <el-table-column v-if="hasKeyFields" prop="param3" label="关键参数03" width="130">
+                    <template #default="{ row }"><span v-if="row.param3">{{ row.param3 }}</span></template>
+                  </el-table-column>
+                  <el-table-column prop="unit" label="单位" width="60">
+                    <template #default="{ row }">{{ row.unit || '-' }}</template>
+                  </el-table-column>
+                  <el-table-column prop="unit_price" label="单价" width="90">
+                    <template #default="{ row }">{{ (row.unit_price || 0).toFixed(2) }}</template>
+                  </el-table-column>
+                  <el-table-column label="数量" width="130">
+                    <template #default="{ row }">
+                      <span v-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
+                      <el-input-number
+                        v-else
+                        :model-value="row.quantity"
+                        :min="1"
+                        size="small"
+                        controls-position="right"
+                        @change="(val) => updateMaterialQuantity(row.id, val)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="小计" width="100">
+                    <template #default="{ row }">
+                      {{ ((row.unit_price || 0) * row.quantity).toFixed(2) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="添加人" width="80">
+                    <template #default="{ row }">
+                      {{ row.selected_by_name || '-' }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="150" align="center">
+                    <template #default="{ row }">
+                      <template v-if="row.is_other === true">
+                        <el-button size="small" @click="editOtherMaterial(row)">改单价</el-button>
+                        <el-button size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
+                      </template>
+                      <el-button v-else size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
           </div>
 
           <!-- 全部模块合计 -->
@@ -372,23 +394,24 @@
           <el-dialog v-model="materialDialogVisible" title="添加物料" width="1300px">
             <!-- 筛选栏 -->
             <div class="material-filter-bar">
-              <el-input v-model="materialFilter.keyword" placeholder="搜索品名" clearable style="width: 140px;" />
-              <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 110px;">
+              <el-input v-model="materialFilter.keyword" placeholder="搜索品名/规格/品牌" clearable style="width: 200px;" @input="onKeywordChange" @clear="onMaterialFilterChange" />
+              <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 110px;" @change="onMaterialFilterChange">
                 <el-option label="大件" value="large" />
                 <el-option label="核心部件" value="standard" />
                 <el-option label="其他件" value="other" />
               </el-select>
-              <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 110px;">
+              <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 110px;" @change="onMaterialFilterChange">
                 <el-option v-for="b in availableBrands" :key="b" :label="b" :value="b" />
               </el-select>
+              <span style="margin-left:auto;color:#909399;font-size:13px;">共 {{ materialTotal }} 条</span>
             </div>
 
-            <!-- 物料列表 -->
+            <!-- 物料列表 (服务端分页, 每次改筛选重新查 DB) -->
             <el-table
-              :data="filteredAvailableMaterials"
+              :data="availableMaterials"
               border
               style="width: 100%; margin-top: 12px;"
-              max-height="400"
+              max-height="450"
               show-overflow-tooltip
               @selection-change="handleMaterialSelection"
               ref="materialTableRef"
@@ -431,6 +454,20 @@
                 </template>
               </el-table-column>
             </el-table>
+
+            <!-- 分页器 -->
+            <div class="material-pagination">
+              <el-pagination
+                v-model:current-page="materialPage"
+                v-model:page-size="materialPageSize"
+                :total="materialTotal"
+                :page-sizes="[20, 50, 100, 200]"
+                layout="total, sizes, prev, pager, next, jumper"
+                @current-change="onMaterialPageChange"
+                @size-change="onMaterialPageChange"
+              />
+            </div>
+
             <template #footer>
               <el-button @click="materialDialogVisible = false">取消</el-button>
               <el-button type="primary" @click="addMaterialsToModule">确定添加</el-button>
@@ -578,16 +615,19 @@
           <el-dialog v-model="laborDialogVisible" title="添加人力工时" width="500px">
             <el-form :model="laborForm" label-width="100px">
               <el-form-item label="名称">
-                <el-input v-model="laborForm.name" placeholder="如：电气设计、现场调试" />
+                <el-select v-model="laborForm.name" placeholder="请选择工时名称" style="width: 100%;" filterable @change="onLaborNameChange">
+                  <el-option v-for="n in LABOR_NAME_CHOICES" :key="n.name" :label="n.name" :value="n.name" />
+                </el-select>
               </el-form-item>
               <el-form-item label="工时类型">
-                <el-radio-group v-model="laborForm.labor_type">
+                <el-radio-group v-model="laborForm.labor_type" disabled>
                   <el-radio-button
                     v-for="t in LABOR_TYPE_CHOICES"
                     :key="t.value"
                     :label="t.value"
                   >{{ t.label }}</el-radio-button>
                 </el-radio-group>
+                <span class="form-hint">根据名称自动设置</span>
               </el-form-item>
               <el-form-item label="工时 (h)">
                 <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" @change="onHoursChange" />
@@ -840,78 +880,64 @@
                 </span>
               </div>
             </div>
-            <div class="summary-layout" v-if="summary">
-              <div class="summary-left">
-                <div class="summary-card compact">
-                  <div class="summary-label">物料合计</div>
-                  <div class="summary-value">{{ summary.material_total?.toFixed(2) || '0.00' }}</div>
+            <div v-if="summary" class="summary-top-cards">
+              <!-- 第一行: 硬件 / 设计 / 调试 / 差旅(人天) / 认证 -->
+              <div class="summary-row-cards">
+                <div class="summary-mini-card card-hardware">
+                  <div class="summary-mini-icon">🔧</div>
+                  <div class="summary-mini-label">硬件成本</div>
+                  <div class="summary-mini-value highlight">{{ fmtMoney(summary.material_total_with_rates) }}</div>
                 </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">物料合计(含系数)</div>
-                  <div class="summary-value highlight">{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                <div class="summary-mini-card card-design">
+                  <div class="summary-mini-icon">🎨</div>
+                  <div class="summary-mini-label">设计人力成本</div>
+                  <div class="summary-mini-value">{{ fmtMoney(designLaborCost) }}</div>
                 </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">小计</div>
-                  <div class="summary-value highlight">{{ summary.subtotal?.toFixed(2) || '0.00' }}</div>
+                <div class="summary-mini-card card-debug">
+                  <div class="summary-mini-icon">🔨</div>
+                  <div class="summary-mini-label">调试人力成本</div>
+                  <div class="summary-mini-value">{{ fmtMoney(debugLaborCost) }}</div>
                 </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">对外利润率</div>
-                  <div class="summary-value">{{ ((summary.profit_rate || 0) * 100).toFixed(0) }}%</div>
+                <div class="summary-mini-card card-travel-days">
+                  <div class="summary-mini-icon">🧳</div>
+                  <div class="summary-mini-label">差旅成本（出差人天）</div>
+                  <div class="summary-mini-value">{{ fmtMoney(summary.travel_person_days_total) }}</div>
                 </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">含利润小计</div>
-                  <div class="summary-value">{{ summary.subtotal_with_profit?.toFixed(2) || '0.00' }}</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">实际利润</div>
-                  <div class="summary-value highlight">
-                    <span>{{ (summary.subtotal_with_profit - summary.material_total - summary.fees_total)?.toFixed(2) || '0.00' }}</span>
-                    <span class="profit-pct">({{ (((summary.subtotal_with_profit - summary.material_total - summary.fees_total) / (summary.material_total + summary.fees_total)) * 100)?.toFixed(1) || '0.0' }}%)</span>
-                  </div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">税率</div>
-                  <div class="summary-value">{{ (summary.tax_rate * 100)?.toFixed(0) || 0 }}%</div>
-                </div>
-                <div class="summary-card compact">
-                  <div class="summary-label">税额</div>
-                  <div class="summary-value">{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
+                <div class="summary-mini-card card-cert">
+                  <div class="summary-mini-icon">📜</div>
+                  <div class="summary-mini-label">认证费用成本</div>
+                  <div class="summary-mini-value">{{ fmtMoney(certificationFeeCost) }}</div>
                 </div>
               </div>
-              <div class="summary-right">
-                <div class="summary-card fees-card">
-                  <div class="fees-card-header">
-                    <span class="summary-label">费用合计</span>
-                    <span class="fees-total highlight">{{ summary.fees_total?.toFixed(2) }}</span>
-                  </div>
-                  <div class="fees-list">
-                    <div class="fees-row" v-if="summary.fee_total > 0">
-                      <span>费用Tab</span>
-                      <span>{{ summary.fee_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.labor_total > 0">
-                      <span>人力合计</span>
-                      <span>{{ summary.labor_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.packing_total > 0">
-                      <span>运输包装费</span>
-                      <span>{{ summary.packing_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.travel_person_days_total > 0">
-                      <span>差旅住宿费</span>
-                      <span>{{ summary.travel_person_days_total?.toFixed(2) }}</span>
-                    </div>
-                    <div class="fees-row" v-if="summary.travel_person_trips_total > 0">
-                      <span>差旅交通签证费</span>
-                      <span>{{ summary.travel_person_trips_total?.toFixed(2) }}</span>
-                    </div>
-                  </div>
+
+              <!-- 第二行: 机票签证 / 项目管理 / 项目利润 / 包装运输 / 最终报价 -->
+              <div class="summary-row-cards">
+                <div class="summary-mini-card card-travel-trips">
+                  <div class="summary-mini-icon">✈️</div>
+                  <div class="summary-mini-label">差旅机票签证</div>
+                  <div class="summary-mini-value">{{ fmtMoney(summary.travel_person_trips_total) }}</div>
                 </div>
-                <div class="summary-card total">
-                  <div class="summary-label">最终报价</div>
-                  <div class="summary-value large">
-                    {{ convertedSummary?.grand_total?.toFixed(2) || '0.00' }} {{ selectedCurrency }}
-                  </div>
+                <div class="summary-mini-card card-mgmt">
+                  <div class="summary-mini-icon">📊</div>
+                  <div class="summary-mini-label">项目管理费用</div>
+                  <div class="summary-mini-value">{{ fmtMoney(projectManagementFee) }}</div>
+                </div>
+                <div class="summary-mini-card card-profit">
+                  <div class="summary-mini-icon">💰</div>
+                  <div class="summary-mini-label">项目利润（对外利润）</div>
+                  <div class="summary-mini-value">{{ fmtMoney(profitAmount) }}</div>
+                  <div class="summary-mini-sub">利润率 {{ ((summary.profit_rate || 0) * 100).toFixed(2) }}%</div>
+                </div>
+                <div class="summary-mini-card card-packing">
+                  <div class="summary-mini-icon">📦</div>
+                  <div class="summary-mini-label">包装运输费用</div>
+                  <div class="summary-mini-value">{{ fmtMoney(summary.packing_total) }}</div>
+                </div>
+                <div class="summary-mini-card card-grand-total">
+                  <div class="summary-mini-icon">💵</div>
+                  <div class="summary-mini-label">最终报价</div>
+                  <div class="summary-mini-value huge">{{ fmtMoney(summary.grand_total) }}</div>
+                  <div class="summary-mini-sub">含税 ¥{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
                 </div>
               </div>
             </div>
@@ -921,48 +947,7 @@
               <h3 class="section-title">📊 占比分析（基于含利润小计）</h3>
 
               <!-- 成本占比卡片组 -->
-              <div class="ratio-cards">
-                <div class="ratio-card">
-                  <div class="ratio-label">🔧 硬件成本</div>
-                  <div class="ratio-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-                  <div class="ratio-percent">{{ getRatio(summary.material_total_with_rates) }}%</div>
-                  <div class="ratio-bar">
-                    <div class="ratio-bar-fill material" :style="{ width: getRatio(summary.material_total_with_rates) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="ratio-card">
-                  <div class="ratio-label">👷 人力工时</div>
-                  <div class="ratio-value highlight">¥{{ summary.labor_total?.toFixed(2) || '0.00' }}</div>
-                  <div class="ratio-percent">{{ getRatio(summary.labor_total) }}%</div>
-                  <div class="ratio-bar">
-                    <div class="ratio-bar-fill labor" :style="{ width: getRatio(summary.labor_total) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="ratio-card">
-                  <div class="ratio-label">✈️ 运输+差旅</div>
-                  <div class="ratio-value highlight">¥{{ totalTravelAmount?.toFixed(2) || '0.00' }}</div>
-                  <div class="ratio-percent">{{ getRatio(totalTravelAmount) }}%</div>
-                  <div class="ratio-bar">
-                    <div class="ratio-bar-fill travel" :style="{ width: getRatio(totalTravelAmount) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="ratio-card">
-                  <div class="ratio-label">💰 利润</div>
-                  <div class="ratio-value highlight">¥{{ summary.profit_amount?.toFixed(2) || ((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)).toFixed(2) }}</div>
-                  <div class="ratio-percent">{{ getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) }}%</div>
-                  <div class="ratio-bar">
-                    <div class="ratio-bar-fill profit" :style="{ width: getRatio((summary.subtotal_with_profit || 0) - (summary.subtotal || 0)) + '%' }"></div>
-                  </div>
-                </div>
-                <div class="ratio-card">
-                  <div class="ratio-label">🧾 税额</div>
-                  <div class="ratio-value highlight">¥{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
-                  <div class="ratio-percent">{{ getRatio(summary.tax_amount) }}%</div>
-                  <div class="ratio-bar">
-                    <div class="ratio-bar-fill tax" :style="{ width: getRatio(summary.tax_amount) + '%' }"></div>
-                  </div>
-                </div>
-              </div>
+              <!-- 旧的占比分析 5 张卡片已移除 (ratio-cards), 直接显示硬件成本结构 -->
 
               <!-- 硬件成本结构 -->
               <div v-if="summary.rate_details && summary.rate_details.length > 0" class="hardware-structure">
@@ -1000,29 +985,185 @@
                   ></div>
                 </div>
               </div>
-            </div>
 
-            <!-- 费用系数详情 -->
-            <div v-if="summary?.rate_details?.length > 0" class="rate-details">
-              <h4>费用系数明细</h4>
-              <el-table :data="summary.rate_details" border size="small">
-                <el-table-column label="分类" width="100">
-                  <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
-                </el-table-column>
-                <el-table-column prop="rate" label="系数" width="80">
-                  <template #default="{ row }">{{ row.rate }}x</template>
-                </el-table-column>
-                <el-table-column prop="base" label="原价" width="120">
-                  <template #default="{ row }">{{ row.base?.toFixed(2) }}</template>
-                </el-table-column>
-                <el-table-column prop="with_rate" label="系数后">
-                  <template #default="{ row }">{{ row.with_rate?.toFixed(2) }}</template>
-                </el-table-column>
-              </el-table>
+              <!-- 目标调价: 5 张卡片 (硬件, 大件, 设计/调试比, 目标硬件占比, 目标报价) -->
+              <h4 class="section-subtitle" style="margin-top: 24px;">🎯 目标调价</h4>
+              <div class="target-price-cards">
+                <!-- 1. 硬件 (实际) -->
+                <div class="target-card">
+                  <div class="target-label">🔧 硬件（含系数）</div>
+                  <div class="target-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                  <div class="target-meta">占不含税报价 <strong>{{ actualHardwareRatioPercent.toFixed(2) }}%</strong></div>
+                  <div class="target-bar">
+                    <div class="target-bar-fill" :style="{ width: actualHardwareRatioPercent + '%' }"></div>
+                  </div>
+                  <div class="target-sub-meta">不含税报价 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}</div>
+                </div>
+
+                <!-- 2. 大件 (占硬件) -->
+                <div class="target-card">
+                  <div class="target-label">📦 大件占硬件</div>
+                  <div class="target-value highlight">¥{{ largeHardwareAmount?.toFixed(2) || '0.00' }}</div>
+                  <div class="target-meta">占硬件 <strong>{{ largeHardwareRatioPercent.toFixed(2) }}%</strong></div>
+                  <div class="target-bar">
+                    <div class="target-bar-fill cat-large" :style="{ width: largeHardwareRatioPercent + '%' }"></div>
+                  </div>
+                  <div class="target-sub-meta">硬件合计 ¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
+                </div>
+
+                <!-- 3. 机械/电控比 (设计/调试模块硬件成本比) -->
+                <div class="target-card">
+                  <div class="target-label">⚖️ 机械/电控比</div>
+                  <div class="target-value target-ratio-text">{{ moduleTypeRatio.label }}</div>
+                  <div class="target-meta">
+                    机械 ¥{{ moduleTypeRatio.mech.toFixed(0) }} : 电控 ¥{{ moduleTypeRatio.elec.toFixed(0) }}
+                  </div>
+                  <div class="target-bar">
+                    <div class="target-bar-fill cat-mechanical" :style="{ width: ((moduleTypeRatio.mech / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%' }"></div>
+                    <div class="target-bar-fill cat-electrical" :style="{ width: ((moduleTypeRatio.elec / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%', left: ((moduleTypeRatio.mech / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%' }"></div>
+                  </div>
+                  <div class="target-sub-meta">基于模块硬件成本（含系数）</div>
+                </div>
+
+                <!-- 4. 目标硬件占比 (可编辑) -->
+                <div class="target-card target-card-editable">
+                  <div class="target-label">🎯 目标硬件占比 <span class="editable-tag">可调</span></div>
+                  <div class="target-input-wrap">
+                    <el-input-number
+                      :model-value="targetHardwareRatio"
+                      @update:modelValue="onTargetHardwareRatioInput"
+                      :min="1" :max="100" :step="0.5" :precision="2"
+                      size="large"
+                      style="width: 100%;"
+                    >
+                      <template #append>%</template>
+                    </el-input-number>
+                  </div>
+                  <el-slider
+                    :model-value="targetHardwareRatio"
+                    @update:modelValue="onTargetHardwareRatioInput"
+                    :min="1" :max="100" :step="0.5"
+                    show-input
+                    :show-input-controls="false"
+                    style="margin-top: 8px;"
+                  />
+                  <div class="target-sub-meta">
+                    初始 {{ actualHardwareRatioPercent.toFixed(2) }}%
+                    <el-button link size="small" type="info" @click="resetTargetHardwareRatio" style="margin-left: 8px;">重置</el-button>
+                  </div>
+                </div>
+
+                <!-- 5. 目标报价 (联动) -->
+                <div class="target-card target-card-highlight">
+                  <div class="target-label">💰 目标报价（联动）</div>
+                  <div class="target-value huge">¥{{ targetPrice?.toFixed(2) || '0.00' }}</div>
+                  <div class="target-meta">
+                    vs 不含税 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}
+                    <span :class="['delta', targetPriceDelta >= 0 ? 'delta-pos' : 'delta-neg']">
+                      {{ targetPriceDelta >= 0 ? '+' : '' }}{{ targetPriceDelta.toFixed(2) }}
+                    </span>
+                  </div>
+                  <div class="target-bar">
+                    <div class="target-bar-fill" :style="{ width: targetHardwareRatio + '%' }"></div>
+                  </div>
+                  <div class="target-sub-meta">
+                    最终含税报价 ¥{{ finalPriceWithTax?.toFixed(2) || '0.00' }}
+                  </div>
+                </div>
+
+                <!-- 6. 物料分类系数 (基于现有基数) -->
+                <div class="target-card target-card-editable target-card-wide">
+                  <div class="target-label">⚙️ 物料分类建议系数 <span class="editable-tag">基数分配</span></div>
+                  <el-table :data="categoryCoefficients" border size="small" style="margin-top: 4px;">
+                    <el-table-column prop="label" label="分类" width="80" />
+                    <el-table-column label="原价" width="90" align="right">
+                      <template #default="{ row }">¥{{ row.base.toFixed(0) }}</template>
+                    </el-table-column>
+                    <el-table-column label="现系数" width="70" align="center">
+                      <template #default="{ row }">{{ row.current_rate.toFixed(2) }}x</template>
+                    </el-table-column>
+                    <el-table-column label="建议系数" width="80" align="center">
+                      <template #default="{ row }">
+                        <strong :class="['coef-new', row.cat_class]">{{ row.new_rate.toFixed(2) }}x</strong>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="调整金额" align="right">
+                      <template #default="{ row }">
+                        <span :class="['uplift-amt', row.uplift >= 0 ? 'uplift-pos' : 'uplift-neg']">
+                          {{ row.uplift >= 0 ? '+' : '' }}{{ row.uplift.toFixed(0) }}
+                        </span>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                  <div class="target-sub-meta">
+                    按原价占比分配, 调高占比→各分类同比例上调
+                  </div>
+                </div>
+              </div>
             </div>
 
             <h3 style="margin-top: 24px;">模块汇总</h3>
-            <el-table :data="summary?.modules" border style="width: 100%; margin-top: 8px;">
+
+            <!-- 按模块类型分组卡片展示 (横向排列, table 高度固定 400 滚动) -->
+            <div class="summary-modules-grid">
+              <div v-for="group in groupedSummaryModulesByType" :key="group.value" class="module-type-group summary-module-card">
+                <div class="module-type-header" :class="'type-' + group.value">
+                  <div class="module-type-icon" :class="'type-' + group.value">
+                    <span v-if="group.value === 'mechanical'">🔧</span>
+                    <span v-else-if="group.value === 'electrical'">⚡</span>
+                    <span v-else>📦</span>
+                  </div>
+                  <span class="module-type-title">{{ group.label }}模块</span>
+                  <span class="module-type-count">{{ group.group_module_count }} 个</span>
+                </div>
+                <div class="module-type-stats">
+                  <div class="module-type-stat-row">
+                    <span class="stat-label">模块数</span>
+                    <span class="stat-value">{{ group.group_module_count }}</span>
+                  </div>
+                  <div class="module-type-stat-row">
+                    <span class="stat-label">物料数</span>
+                    <span class="stat-value">{{ group.group_materials_count }}</span>
+                  </div>
+                  <div class="module-type-stat-row">
+                    <span class="stat-label">物料小计</span>
+                    <span class="stat-value">¥{{ group.group_total.toFixed(2) }}</span>
+                  </div>
+                  <div class="module-type-stat-row highlight">
+                    <span class="stat-label">含系数小计</span>
+                    <span class="stat-value module-type-total">¥{{ group.group_total_with_rate.toFixed(2) }}</span>
+                  </div>
+                </div>
+                <div class="module-type-table-wrapper">
+                  <el-table :data="group.module_list" border height="400" empty-text="暂无模块" style="width: 100%;">
+                    <el-table-column prop="module_name" label="模块名称" min-width="60" flex="1">
+                      <template #default="{ row }">
+                        <div class="cell-name-wrap">
+                          <span class="cell-module-name" :title="row.module_name">{{ row.module_name }}</span>
+                          <el-tag size="mini" :type="row.module_type === 'mechanical' ? 'primary' : row.module_type === 'electrical' ? 'warning' : 'info'" effect="plain">
+                            {{ row.module_type_label || '其他' }}
+                          </el-tag>
+                        </div>
+                      </template>
+                    </el-table-column>
+                    <el-table-column prop="material_count" label="物料" min-width="50" align="center" />
+                    <el-table-column label="物料小计" min-width="80" align="right">
+                      <template #default="{ row }">
+                        <span class="cell-amount">¥{{ (row.material_amount || 0).toFixed(0) }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="含系数" width="90" align="right">
+                      <template #default="{ row }">
+                        <span class="cell-amount highlight">¥{{ (row.material_amount_with_rate || row.material_amount || 0).toFixed(0) }}</span>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </div>
+            </div>
+
+            <!-- 兼容旧数据: 如果后端尚未返回 module_type, 显示原始表格 -->
+            <el-table v-if="groupedSummaryModulesByType.length === 0 && summary?.modules?.length > 0" :data="summary.modules" border style="width: 100%; margin-top: 8px;">
               <el-table-column prop="module_name" label="模块名称" />
               <el-table-column prop="material_count" label="物料数量" width="100" />
               <el-table-column label="物料小计" width="120">
@@ -1037,18 +1178,41 @@
               </el-table-column>
             </el-table>
 
-            <h3 style="margin-top: 24px;">费用明细</h3>
-            <el-table :data="feesIncludingLabor" border style="width: 100%; margin-top: 8px;">
-              <el-table-column prop="fee_type" label="费用类型" />
-              <el-table-column prop="location" label="位置/工时">
-                <template #default="{ row }">
-                  <span v-if="row.hours !== undefined">{{ row.hours }}h</span>
-                  <span v-else>{{ getLocationLabel(row.location) }}</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="amount" label="金额" />
-              <el-table-column prop="description" label="描述" />
-            </el-table>
+            <!-- 费用明细参数 (2 卡片: 单价/系数 + 数量) - 与查看页面同步 -->
+            <h3 style="margin-top: 32px;">📋 费用明细参数</h3>
+            <div v-if="summary" class="coefficient-detail-section">
+              <!-- 卡片 1: 单价 + 系数 -->
+              <div class="detail-card">
+                <div class="detail-card-header">
+                  <h4>📋 单价/系数</h4>
+                </div>
+                <el-table :data="detailPriceRows" border size="small">
+                  <el-table-column prop="group" label="类别" width="140" />
+                  <el-table-column prop="label" label="项目" />
+                  <el-table-column prop="value" label="数值" width="140" align="right">
+                    <template #default="{ row }">
+                      <span :class="{ 'value-strong': row.strong }">{{ row.value }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+
+              <!-- 卡片 2: 数量 -->
+              <div class="detail-card">
+                <div class="detail-card-header">
+                  <h4>📊 数量</h4>
+                </div>
+                <el-table :data="detailQuantityRows" border size="small">
+                  <el-table-column prop="group" label="类别" width="140" />
+                  <el-table-column prop="label" label="项目" />
+                  <el-table-column prop="value" label="数量" width="140" align="right">
+                    <template #default="{ row }">
+                      <span :class="{ 'value-strong': row.strong }">{{ row.value }}</span>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -1286,6 +1450,10 @@ const users = ref([])
 const businessUsers = ref([])
 const feeTypes = ref([])
 const availableMaterials = ref([])
+// 分页状态 (服务端分页)
+const materialPage = ref(1)
+const materialPageSize = ref(50)
+const materialTotal = ref(0)
 
 // 三大新费用数据
 const packingEntries = ref([])
@@ -1294,6 +1462,8 @@ const travelPersonTrips = ref([])
 const packingTypes = ref([])
 const travelCategories = ref([])
 const travelModes = ref([])
+// 全部差旅人次单价配置 (category × mode → unit_price + visa_fee), 前端本地查
+const travelPersonTripFees = ref([])
 
 const selectedModuleId = ref(null)
 const pageLoading = ref(true)
@@ -1370,21 +1540,360 @@ const totalTravelAmount = computed(() => {
   return packing + days + trips
 })
 
-// 占比计算：含利润小计为分母
+// 占比计算：含利润小计为分母 (精确到小数点后两位)
 function getRatio(amount) {
-  if (!summary.value || !amount) return '0.0'
+  if (!summary.value || !amount) return '0.00'
   const denom = summary.value.subtotal_with_profit || 0
-  if (denom === 0) return '0.0'
-  return ((amount / denom) * 100).toFixed(1)
+  if (denom === 0) return '0.00'
+  return ((amount / denom) * 100).toFixed(2)
 }
 
-// 硬件分类占比：material_total_with_rates 为分母
+// 硬件分类占比：material_total_with_rates 为分母 (精确到小数点后两位)
 function getMaterialCategoryRatio(amount) {
-  if (!summary.value || !amount) return '0.0'
+  if (!summary.value || !amount) return '0.00'
   const denom = summary.value.material_total_with_rates || 0
-  if (denom === 0) return '0.0'
-  return ((amount / denom) * 100).toFixed(1)
+  if (denom === 0) return '0.00'
+  return ((amount / denom) * 100).toFixed(2)
 }
+
+// ====== 目标调价 (联动目标硬件占比) ======
+const targetHardwareRatio = ref(null)
+const targetHardwareManuallySet = ref(false)
+
+const actualHardwareRatioPercent = computed(() => {
+  if (!summary.value) return 0
+  const hw = summary.value.material_total_with_rates || 0
+  const denom = (summary.value.subtotal || 0)
+  if (denom === 0) return 0
+  return (hw / denom) * 100
+})
+
+const largeHardwareAmount = computed(() => {
+  if (!summary.value) return 0
+  const rows = summary.value.rate_details || []
+  const r = rows.find(x => x.category === 'large')
+  return r ? (r.with_rate || 0) : 0
+})
+
+const largeHardwareRatioPercent = computed(() => {
+  if (!summary.value) return 0
+  const denom = summary.value.material_total_with_rates || 0
+  if (denom === 0) return 0
+  return (largeHardwareAmount.value / denom) * 100
+})
+
+const moduleTypeRatio = computed(() => {
+  if (!summary.value) return { mech: 0, elec: 0, label: '0 : 0' }
+  let mech = 0, elec = 0
+  for (const sm of (summary.value.modules || [])) {
+    const amt = sm.material_amount_with_rate || sm.material_amount || 0
+    if (sm.module_type === 'mechanical') mech += amt
+    else if (sm.module_type === 'electrical') elec += amt
+  }
+  return { mech, elec, label: elec > 0 ? `${mech.toFixed(0)} : ${elec.toFixed(0)} ≈ ${(mech / elec).toFixed(2)}` : (mech > 0 ? `机械 ${mech.toFixed(0)} / 无电控模块` : '暂无模块') }
+})
+
+const noTaxPrice = computed(() => {
+  if (!summary.value) return 0
+  return summary.value.subtotal || 0
+})
+
+const finalPriceWithTax = computed(() => {
+  if (!summary.value) return 0
+  return summary.value.final_price_with_tax || summary.value.subtotal_with_profit_with_tax || 0
+})
+
+watch(actualHardwareRatioPercent, (newVal) => {
+  if (newVal > 0 && !targetHardwareManuallySet.value) {
+    targetHardwareRatio.value = Number(newVal.toFixed(2))
+  }
+}, { immediate: true })
+
+const targetPrice = computed(() => {
+  // 调整目标硬件占比后, 目标含税报价 (基于不含税小计反推):
+  // 假设: 人力 + 运输 + 差旅 (其他成本) 保持不变, 通过调整物料系数使硬件占比达到目标值。
+  // 设 other = 当前 subtotal - 当前物料含系数 (其他成本, 固定)
+  // 则: target_subtotal - other = target_subtotal × targetRatio
+  // 即: target_subtotal = other / (1 - targetRatio)
+  // 调高占比 → target_subtotal 增大 → targetPrice 升 ✅
+  const ratio = Number(targetHardwareRatio.value || 0)
+  if (ratio <= 0 || !summary.value) return 0
+  if (ratio >= 100) return 0
+  const hw = summary.value.material_total_with_rates || 0
+  const sub = noTaxPrice.value || 0
+  if (sub <= 0) return 0
+  const other = sub - hw
+  return other / (1 - ratio / 100)
+})
+
+const targetHardwareAtTarget = computed(() => {
+  const tp = targetPrice.value
+  const ratio = Number(targetHardwareRatio.value || 0)
+  return (tp * ratio / 100) || 0
+})
+
+const targetHardwareUplift = computed(() => {
+  if (!summary.value) return 0
+  const cur = summary.value.material_total_with_rates || 0
+  return targetHardwareAtTarget.value - cur
+})
+
+// 各分类 (大件/核心部件/其他件) 的建议系数 - 按现有 base 占比分配调整量
+const categoryCoefficients = computed(() => {
+  if (!summary.value) return []
+  const rows = summary.value.rate_details || []
+  const totalBase = rows.reduce((sum, r) => sum + (r.base || 0), 0)
+  const totalCurrentWithRate = rows.reduce((sum, r) => sum + (r.with_rate || 0), 0)
+  if (totalBase <= 0) return []
+
+  const targetHW = targetHardwareAtTarget.value
+  const adjustment = targetHW - totalCurrentWithRate
+
+  const out = []
+  for (const r of rows) {
+    const cur_base = r.base || 0
+    const cur_with_rate = r.with_rate || 0
+    const cur_rate = r.rate || 1
+    const weight = cur_base / totalBase
+    const uplift = adjustment * weight
+    const new_with_rate = Math.max(0, cur_with_rate + uplift)
+    const new_rate = cur_base > 0 ? new_with_rate / cur_base : cur_rate
+    out.push({
+      category: r.category,
+      label: r.category === 'large' ? '大件' : r.category === 'standard' ? '核心部件' : '其他件',
+      cat_class: 'cat-' + r.category,
+      base: cur_base,
+      current_with_rate: cur_with_rate,
+      current_rate: cur_rate,
+      new_with_rate,
+      new_rate,
+      uplift,
+    })
+  }
+  return out
+})
+
+// ====== 汇总头部双行 10 卡片汇总数据 ======
+// 设计人力成本: 各类设计工时 total 之和
+const designLaborCost = computed(() => {
+  if (!summary.value) return 0
+  return (summary.value.labor_details || [])
+    .filter((d) => d.labor_type === 'design')
+    .reduce((s, d) => s + (Number(d.total) || 0), 0)
+})
+
+// 调试人力成本: 各类调试工时 total 之和
+const debugLaborCost = computed(() => {
+  if (!summary.value) return 0
+  return (summary.value.labor_details || [])
+    .filter((d) => d.labor_type === 'debug')
+    .reduce((s, d) => s + (Number(d.total) || 0), 0)
+})
+
+// 按费用类型关键词过滤金额合计
+function sumFeesByKeyword(keyword) {
+  if (!summary.value || !Array.isArray(summary.value.fees)) return 0
+  return summary.value.fees
+    .filter((f) => String(f.fee_type || '').includes(keyword))
+    .reduce((s, f) => s + (Number(f.amount) || 0), 0)
+}
+
+// 认证费用成本: fee_type 包含"认证"
+const certificationFeeCost = computed(() => sumFeesByKeyword('认证'))
+
+// 项目管理费用: fee_type 包含"管理"
+const projectManagementFee = computed(() => sumFeesByKeyword('管理'))
+
+// 项目利润 (对外利润 = subtotal * profit_rate)
+const profitAmount = computed(() => {
+  if (!summary.value) return 0
+  const swp = Number(summary.value.subtotal_with_profit) || 0
+  const s = Number(summary.value.subtotal) || 0
+  return swp - s
+})
+
+// 第一行 / 第二行卡片通用辅助
+const fmtMoney = (v) => `¥${(Number(v) || 0).toFixed(2)}`
+
+const targetPriceDelta = computed(() => {
+  return targetPrice.value - noTaxPrice.value
+})
+
+function onTargetHardwareRatioInput(val) {
+  targetHardwareManuallySet.value = true
+  targetHardwareRatio.value = Number(val) || 0
+}
+
+function resetTargetHardwareRatio() {
+  targetHardwareManuallySet.value = false
+  targetHardwareRatio.value = Number(actualHardwareRatioPercent.value.toFixed(2))
+}
+
+// 费用明细参数 (2 卡片) - 数据源 - 与 QuotationView 同步
+const LABOR_TYPE_LABELS = {
+  design: '设计',
+  debug: '调试',
+  assembly: '装配',
+}
+
+// 卡片 1: 单价 + 系数
+const detailPriceRows = computed(() => {
+  const rows = []
+  const s = summary.value
+  if (!s) return rows
+
+  // 1) 物料系数
+  const rates = s.fee_rates || { large: 1, standard: 1, other: 1 }
+  rows.push({ group: '物料系数', label: '大件系数',        value: `${rates.large || 1}x` })
+  rows.push({ group: '物料系数', label: '核心部件系数',    value: `${rates.standard || 1}x` })
+  rows.push({ group: '物料系数', label: '其他件系数',      value: `${rates.other || 1}x`, strong: true })
+
+  // 2) 各类工时单价
+  const laborDetails = s.labor_details || []
+  const seenLabor = new Set()
+  for (const l of laborDetails) {
+    const key = `${l.name}|${l.labor_type}`
+    if (seenLabor.has(key)) continue
+    seenLabor.add(key)
+    const typeLabel = LABOR_TYPE_LABELS[l.labor_type] || l.labor_type
+    rows.push({
+      group: '工时单价',
+      label: `${l.name} (${typeLabel})`,
+      value: `${(l.unit_price || 0).toFixed(2)} 元/h`,
+    })
+  }
+  if (laborDetails.length === 0) {
+    rows.push({ group: '工时单价', label: '尚未添加工时', value: '-' })
+  }
+
+  // 3) 对外利润率
+  rows.push({
+    group: '对外利润率',
+    label: '对外利润率',
+    value: `${((s.profit_rate || 0) * 100).toFixed(2)}%`,
+    strong: true,
+  })
+
+  // 4) 各类运输单价
+  const packingDetails = s.packing_details || []
+  if (packingDetails.length === 0) {
+    rows.push({ group: '运输单价', label: '尚未添加运输', value: '-' })
+  } else {
+    for (const p of packingDetails) {
+      rows.push({
+        group: '运输单价',
+        label: p.packing_type_name || '运输',
+        value: `${(p.unit_price || 0).toFixed(2)} 元/单位`,
+      })
+    }
+  }
+
+  // 5) 各类差旅人天单价
+  const daysDetails = s.person_days_details || []
+  if (daysDetails.length === 0) {
+    rows.push({ group: '差旅人天单价', label: '尚未添加差旅人天', value: '-' })
+  } else {
+    for (const d of daysDetails) {
+      rows.push({
+        group: '差旅人天单价',
+        label: d.travel_category_name || '差旅',
+        value: `${(d.unit_price || 0).toFixed(2)} 元/人天`,
+      })
+    }
+  }
+
+  // 6) 各类差旅人次交通 + 签证费用
+  const tripDetails = s.person_trip_details || []
+  if (tripDetails.length === 0) {
+    rows.push({ group: '差旅人次费用', label: '尚未添加差旅人次', value: '-' })
+  } else {
+    for (const t of tripDetails) {
+      rows.push({
+        group: '差旅人次费用',
+        label: `${t.travel_category_name || '差旅'} 交通`,
+        value: `${(t.unit_price || 0).toFixed(2)} 元/人次`,
+      })
+      if (t.visa_fee && t.visa_fee > 0) {
+        rows.push({
+          group: '差旅人次费用',
+          label: `${t.travel_category_name || '差旅'} 签证`,
+          value: `${(t.visa_fee || 0).toFixed(2)} 元/人次`,
+        })
+      }
+    }
+  }
+
+  return rows
+})
+
+// 卡片 2: 数量
+const detailQuantityRows = computed(() => {
+  const rows = []
+  const s = summary.value
+  if (!s) return rows
+
+  // 1) 各类工时人天
+  const laborDetails = s.labor_details || []
+  const laborByType = {}
+  for (const l of laborDetails) {
+    const t = l.labor_type || 'design'
+    laborByType[t] = (laborByType[t] || 0) + (l.person_days || 0)
+  }
+  const allLaborTypes = ['design', 'debug', 'assembly']
+  for (const t of allLaborTypes) {
+    const days = laborByType[t] || 0
+    rows.push({
+      group: '工时人天',
+      label: LABOR_TYPE_LABELS[t] || t,
+      value: days > 0 ? `${days.toFixed(2)} 人天` : '-',
+    })
+  }
+
+  // 2) 各类运输数量
+  const packingDetails = s.packing_details || []
+  if (packingDetails.length === 0) {
+    rows.push({ group: '运输数量', label: '尚未添加运输', value: '-' })
+  } else {
+    for (const p of packingDetails) {
+      rows.push({
+        group: '运输数量',
+        label: p.packing_type_name || '运输',
+        value: `${p.quantity || 0} 单位`,
+      })
+    }
+  }
+
+  // 3) 各类差旅人天
+  const daysDetails = s.person_days_details || []
+  if (daysDetails.length === 0) {
+    rows.push({ group: '差旅人天', label: '尚未添加差旅人天', value: '-' })
+  } else {
+    for (const d of daysDetails) {
+      rows.push({
+        group: '差旅人天',
+        label: d.travel_category_name || '差旅',
+        value: `${(d.person_days || 0).toFixed(2)} 人天`,
+      })
+    }
+  }
+
+  // 4) 各类差旅人次
+  const tripDetails = s.person_trip_details || []
+  if (tripDetails.length === 0) {
+    rows.push({ group: '差旅人次', label: '尚未添加差旅人次', value: '-' })
+  } else {
+    for (const t of tripDetails) {
+      rows.push({
+        group: '差旅人次',
+        label: t.travel_category_name || '差旅',
+        value: `${(t.person_count || 0).toFixed(0)} 人次`,
+        strong: true,
+      })
+    }
+  }
+
+  return rows
+})
 
 // 费用明细表格：费用 + 人力工时合并展示
 const feesIncludingLabor = computed(() => {
@@ -1484,22 +1993,9 @@ const otherMaterial = computed(() => {
   return availableMaterials.value.find(m => m.name === '其他')
 })
 
-// 显示添加其他物料弹窗
-const filteredAvailableMaterials = computed(() => {
-  let list = availableMaterials.value || []
-  if (materialFilter.keyword) {
-    list = list.filter(m => m.name && m.name.toLowerCase().includes(materialFilter.keyword.toLowerCase()))
-  }
-  if (materialFilter.category) {
-    list = list.filter(m => m.category === materialFilter.category)
-  }
-  if (materialFilter.brand) {
-    list = list.filter(m => m.brand === materialFilter.brand)
-  }
-  return list
-})
+// 服务端分页 + 筛选, 前端不再做客户端过滤 (filteredAvailableMaterials 已废弃)
 
-// 计算属性：可选品牌列表
+// 计算属性：可选品牌列表 (从当前页物料中提取, 主要用于 UI 显示)
 const availableBrands = computed(() => {
   const brands = new Set()
   availableMaterials.value.forEach(m => {
@@ -1529,10 +2025,57 @@ const filteredModuleGroups = computed(() => {
     return {
       id: mod.id,
       name: mod.name,
+      module_type: mod.module_type,
+      module_type_label: mod.module_type_label,
       materials: matList,
       total: matList.reduce((sum, m) => sum + (m.unit_price || 0) * m.quantity, 0)
     }
   })
+})
+
+// 按模块类型分组的卡片 (机构/电气/其他) - 用于物料清单 tab
+const groupedModulesByType = computed(() => {
+  const groups = {}
+  for (const t of MODULE_TYPES) {
+    groups[t.value] = []
+  }
+  for (const modGroup of filteredModuleGroups.value) {
+    // modGroup.id 实际是 module id; module_type 需要查 modules
+    const mod = modules.value.find(m => m.id === modGroup.id)
+    const t = (mod?.module_type) || 'other'
+    if (!groups[t]) groups[t] = []
+    groups[t].push(modGroup)
+  }
+  // 永远返回 3 个类型 (机构/电气/其他), 没有数据的也显示, 数值默认为 0, 表格为空
+  return MODULE_TYPES.map(t => ({
+    ...t,
+    module_list: groups[t.value] || [],
+    group_total: (groups[t.value] || []).reduce((sum, m) => sum + m.total, 0),
+    group_materials_count: (groups[t.value] || []).reduce((sum, m) => sum + m.materials.length, 0),
+    group_module_count: (groups[t.value] || []).length
+  }))
+})
+
+// 汇总模块按类型分组 - 用于汇总 tab
+const groupedSummaryModulesByType = computed(() => {
+  const groups = {}
+  for (const t of MODULE_TYPES) {
+    groups[t.value] = []
+  }
+  for (const sm of (summary.value?.modules || [])) {
+    const t = sm.module_type || 'other'
+    if (!groups[t]) groups[t] = []
+    groups[t].push(sm)
+  }
+  // 永远返回 3 个类型 (机构/电气/其他), 没有数据的也显示, 数值默认为 0, 表格为空
+  return MODULE_TYPES.map(t => ({
+    ...t,
+    module_list: groups[t.value] || [],
+    group_total: (groups[t.value] || []).reduce((sum, m) => sum + (m.material_amount || 0), 0),
+    group_total_with_rate: (groups[t.value] || []).reduce((sum, m) => sum + (m.material_amount_with_rate || m.material_amount || 0), 0),
+    group_materials_count: (groups[t.value] || []).reduce((sum, m) => sum + (m.material_count || 0), 0),
+    group_module_count: (groups[t.value] || []).length
+  }))
 })
 
 // 计算属性：全部物料总计
@@ -1700,6 +2243,17 @@ async function resetCoefficientsToDefault() {
 const laborDialogVisible = ref(false)
 // 8 工时 = 1 人天 (标准 1 天 8 小时)
 const HOURS_PER_DAY = 8
+// 7 个固定工时名称 (选择后自动匹配工时类型)
+const LABOR_NAME_CHOICES = [
+  { name: '机械设计',                     labor_type: 'design' },
+  { name: '电控编程设计（PLC&HMI）',         labor_type: 'design' },
+  { name: '软件编程设计（C#&Vision&robot）', labor_type: 'design' },
+  { name: '生产装配',                     labor_type: 'assembly' },
+  { name: '机械厂外调试',                 labor_type: 'debug' },
+  { name: '电控编程厂外调试（PLC&HMI）',      labor_type: 'debug' },
+  { name: '软件编程厂外调试（C#&Vision&robot）', labor_type: 'debug' },
+]
+
 const LABOR_TYPE_CHOICES = [
   { value: 'design', label: '设计', color: '#3b82f6' },
   { value: 'debug', label: '调试', color: '#f59e0b' },
@@ -1712,6 +2266,14 @@ const laborForm = reactive({
   unit_price: 0,
   labor_type: 'design',  // 默认设计
 })
+
+// 工时名称变化 → 自动设置 labor_type
+function onLaborNameChange(name) {
+  const choice = LABOR_NAME_CHOICES.find(n => n.name === name)
+  if (choice) {
+    laborForm.labor_type = choice.labor_type
+  }
+}
 
 const laborTotal = computed(() => {
   return laborHours.value.reduce((sum, item) => sum + (item.hours || 0) * (item.unit_price || 0), 0)
@@ -1867,35 +2429,53 @@ const travelTripsTotal = computed(() =>
 async function loadTravelModes() {
   try {
     const res = await travelModeAPI.getList()
-    travelModes.value = Array.isArray(res) ? res : (res.items || [])
+    const all = Array.isArray(res) ? res : (res.items || [])
+    // 去掉"轮船" (DB 有但实际无对应单价配置)
+    travelModes.value = all.filter(m => m.code !== 'ship')
   } catch (e) { console.error(e) }
 }
 
-function onTripCategoryChange() {
-  travelTripForm.unit_price = 0
-  travelTripForm.visa_fee = 0
-  travelTripForm.subtotal = 0
-}
-async function onTripModeChange() {
-  // 选择出行方式后，查询对应分类×方式的单价
-  if (!travelTripForm.travel_category_id || !travelTripForm.travel_mode_id) return
+async function loadTravelPersonTripFees() {
   try {
-    const res = await travelPersonTripFeeAPI.getList({
-      travel_category_id: travelTripForm.travel_category_id,
-      travel_mode_id: travelTripForm.travel_mode_id
-    })
-    const fee = Array.isArray(res) ? res.find(f => f.is_active) : null
-    if (fee) {
-      travelTripForm.unit_price = fee.unit_price || 0
-      travelTripForm.visa_fee = fee.visa_fee || 0
-    } else {
-      travelTripForm.unit_price = 0
-      travelTripForm.visa_fee = 0
-    }
-  } catch (e) {
-    travelTripForm.unit_price = 0
-    travelTripForm.visa_fee = 0
+    const res = await travelPersonTripFeeAPI.getList()
+    travelPersonTripFees.value = Array.isArray(res) ? res : (res.items || [])
+  } catch (e) { console.error(e) }
+}
+
+// 本地查 (cat, mode) → fee 配置 (返回所有, 含已停用, 便于历史回填)
+function findTripFee(categoryId, modeId) {
+  if (!categoryId || !modeId) return null
+  return travelPersonTripFees.value.find(f =>
+    f.travel_category_id === categoryId && f.travel_mode_id === modeId
+  ) || null
+}
+
+// 推荐默认出行方式: 优先 airplane > train > car > other (按 fee 表里的实际配置挑)
+function getDefaultModeId(categoryId) {
+  if (!categoryId) return null
+  const priority = ['airplane', 'flight', 'train', 'car', 'other']
+  for (const code of priority) {
+    const mode = travelModes.value.find(m => m.code === code)
+    if (!mode) continue
+    if (findTripFee(categoryId, mode.id)) return mode.id
   }
+  return travelModes.value[0]?.id || null
+}
+
+function onTripCategoryChange() {
+  // 选分类后: 自动推荐默认出行方式, 并按 (cat, mode) 填单价
+  travelTripForm.travel_mode_id = getDefaultModeId(travelTripForm.travel_category_id)
+  applyTripDefaultsFromFee()
+}
+
+function onTripModeChange() {
+  applyTripDefaultsFromFee()
+}
+
+function applyTripDefaultsFromFee() {
+  const fee = findTripFee(travelTripForm.travel_category_id, travelTripForm.travel_mode_id)
+  travelTripForm.unit_price = fee ? Number(fee.unit_price || 0) : 0
+  travelTripForm.visa_fee = fee ? Number(fee.visa_fee || 0) : 0
 }
 
 function computeTripSubtotal() {
@@ -1920,6 +2500,9 @@ async function loadTravelPersonTrips() {
 function showAddTravelTripEntry() {
   Object.assign(travelTripForm, { travel_category_id: null, travel_mode_id: null, unit_price: 0, visa_fee: 0, person_count: 0, remark: '' })
   travelTripDialogVisible.value = true
+  loadTravelCategories()
+  loadTravelModes()
+  loadTravelPersonTripFees()
 }
 
 async function addTravelTripConfirm() {
@@ -1970,6 +2553,14 @@ function showAddLabor() {
 
 async function addLaborConfirm() {
   if (!laborForm.name) { ElMessage.warning('请填写名称'); return }
+  // 验证名称必须在 7 个固定选项里
+  const validChoice = LABOR_NAME_CHOICES.find(n => n.name === laborForm.name)
+  if (!validChoice) {
+    ElMessage.warning('请选择 7 个固定工时名称之一')
+    return
+  }
+  // 同步 labor_type (防止用户绕过 onLaborNameChange)
+  laborForm.labor_type = validChoice.labor_type
   if (laborForm.hours <= 0) { ElMessage.warning('工时必须大于0'); return }
   if (!laborForm.labor_type) { ElMessage.warning('请选择工时类型'); return }
   try {
@@ -2358,14 +2949,44 @@ async function deleteModule(id) {
   }
 }
 
-// 加载物料列表（所有可选物料）
+// 加载物料列表（按筛选条件 + 分页查询）
 async function loadAvailableMaterials() {
   try {
-    const data = await api.get('/materials')
-    availableMaterials.value = data.items || data || []
+    const params = {
+      page: materialPage.value,
+      page_size: materialPageSize.value,
+      status: 'active',
+    }
+    if (materialFilter.keyword) params.keyword = materialFilter.keyword
+    if (materialFilter.category) params.category = materialFilter.category
+    if (materialFilter.brand) params.brand = materialFilter.brand
+    const data = await api.get('/materials', { params })
+    availableMaterials.value = data.items || []
+    materialTotal.value = data.total || 0
   } catch (error) {
     ElMessage.error('加载物料列表失败')
   }
+}
+
+// 分页改变
+async function onMaterialPageChange(page) {
+  materialPage.value = page
+  await loadAvailableMaterials()
+}
+
+// 筛选条件变化 - 重置页码并重新查询 (keyword 单独防抖)
+async function onMaterialFilterChange() {
+  materialPage.value = 1
+  await loadAvailableMaterials()
+}
+
+let _keywordDebounceTimer = null
+async function onKeywordChange() {
+  if (_keywordDebounceTimer) clearTimeout(_keywordDebounceTimer)
+  _keywordDebounceTimer = setTimeout(async () => {
+    materialPage.value = 1
+    await loadAvailableMaterials()
+  }, 400)
 }
 
 // 加载模块物料
@@ -2404,6 +3025,12 @@ watch(() => feeForm.fee_type, (newFeeType) => {
 // 显示添加物料弹窗（指定模块）
 async function showAddMaterialToModule(moduleId) {
   selectedModuleId.value = moduleId
+  // 重置筛选条件 + 分页
+  materialFilter.keyword = ''
+  materialFilter.category = ''
+  materialFilter.brand = ''
+  materialPage.value = 1
+  materialPageSize.value = 50
   await loadAvailableMaterials()
   addMaterialQuantity.value = 1
   selectedMaterials.value = []
@@ -2819,6 +3446,7 @@ watch(activeTab, (tab) => {
   } else if (tab === 'travel-trips') {
     loadTravelCategories()
     loadTravelModes()
+    loadTravelPersonTripFees()
     loadTravelPersonTrips()
   }
 })
@@ -3226,6 +3854,96 @@ onMounted(async () => {
   color: var(--color-primary);
 }
 
+/* ===== 汇总头部双行 10 卡片 ===== */
+.summary-top-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: var(--spacing-xl);
+}
+
+.summary-row-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
+}
+
+.summary-mini-card {
+  background: var(--color-bg-hover);
+  border: 1px solid var(--color-border-light);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+  border-left: 4px solid var(--color-primary);
+  min-height: 100px;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.summary-mini-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.summary-mini-icon {
+  font-size: 22px;
+  margin-bottom: 2px;
+}
+
+.summary-mini-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  font-weight: 500;
+}
+
+.summary-mini-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  font-family: monospace;
+  line-height: 1.2;
+}
+
+.summary-mini-value.huge {
+  font-size: 28px;
+  color: #1d4ed8;
+  letter-spacing: -0.5px;
+}
+
+.summary-mini-value.highlight {
+  color: #0f766e;
+}
+
+.summary-mini-sub {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.summary-mini-card.card-hardware { border-left-color: #0d9488; }
+.summary-mini-card.card-design { border-left-color: #6366f1; }
+.summary-mini-card.card-debug { border-left-color: #ec4899; }
+.summary-mini-card.card-travel-days { border-left-color: #f59e0b; }
+.summary-mini-card.card-cert { border-left-color: #14b8a6; }
+.summary-mini-card.card-travel-trips { border-left-color: #3b82f6; }
+.summary-mini-card.card-mgmt { border-left-color: #8b5cf6; }
+.summary-mini-card.card-profit { border-left-color: #10b981; }
+.summary-mini-card.card-packing { border-left-color: #f97316; }
+
+.summary-mini-card.card-grand-total {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 2px solid #3b82f6;
+  border-left: 6px solid #1d4ed8;
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.12);
+}
+
+.summary-mini-card.card-grand-total .summary-mini-label {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
 /* 汇总布局 */
 .summary-layout {
   display: flex;
@@ -3607,6 +4325,13 @@ onMounted(async () => {
   display: flex;
   gap: var(--spacing-sm);
   flex-wrap: wrap;
+  align-items: center;
+}
+
+.material-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-md);
 }
 
 .participant-manager {
@@ -3712,6 +4437,194 @@ onMounted(async () => {
   margin-left: auto;
   font-weight: 600;
   color: var(--color-primary);
+}
+
+/* 模块类型分组卡片 (按机构/电气/其他 分类) */
+.module-type-group {
+  margin-bottom: 24px;
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--color-bg-card);
+}
+
+.module-type-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--color-bg-hover);
+  border-bottom: 2px solid var(--color-border-light);
+}
+.module-type-header.type-mechanical { border-bottom-color: #3b82f6; }
+.module-type-header.type-electrical { border-bottom-color: #f59e0b; }
+.module-type-header.type-other { border-bottom-color: #94a3b8; }
+
+.module-type-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #fff;
+}
+.module-type-icon.type-mechanical { background: #3b82f6; }
+.module-type-icon.type-electrical { background: #f59e0b; }
+.module-type-icon.type-other { background: #94a3b8; }
+
+.module-type-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.module-type-count {
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--color-bg-hover);
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.module-type-stat {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.module-type-total {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--color-primary);
+}
+
+.module-type-body {
+  padding: 0;
+}
+
+.module-type-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.module-type-body .module-group {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border-light);
+}
+.module-type-body .module-group:last-child {
+  border-bottom: none;
+}
+
+/* 汇总模块卡片横向 grid 排列 - 强制 1 行 3 列 (自适应: <3 类时每列等宽) */
+.summary-modules-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+
+/* viewport < 760px 时降为 1 列 */
+@media (max-width: 760px) {
+  .summary-modules-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.summary-module-card {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 0;
+}
+
+.summary-module-card .module-type-header {
+  flex-shrink: 0;
+}
+
+.summary-module-card .module-type-stats {
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  background: var(--color-bg-card);
+  border-bottom: 1px solid var(--color-border-light);
+  flex-shrink: 0;
+}
+
+.module-type-stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+}
+.module-type-stat-row .stat-label {
+  color: var(--color-text-secondary);
+}
+.module-type-stat-row .stat-value {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  font-family: monospace;
+}
+.module-type-stat-row.highlight {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border-light);
+}
+
+.module-type-table-wrapper {
+  flex: 1;
+  padding: 12px;
+  background: var(--color-bg-card);
+  overflow: hidden;
+}
+
+.module-type-table-wrapper .el-table {
+  border-radius: 6px;
+}
+
+.module-type-table-wrapper .el-table .cell {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cell-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cell-module-name {
+  font-weight: 600;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.cell-amount {
+  font-family: monospace;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.cell-amount.highlight {
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
 /* 响应式 */
@@ -3838,5 +4751,205 @@ onMounted(async () => {
 .money {
   font-weight: 600;
   color: var(--color-primary);
+}
+
+/* 汇总费用系数明细 - 2 卡片布局 (与 QuotationView 同步) */
+.coefficient-detail-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.coefficient-detail-section .detail-card {
+  background: var(--color-bg-card, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.coefficient-detail-section .detail-card-header {
+  background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+
+.coefficient-detail-section .detail-card-header h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+}
+
+.coefficient-detail-section .value-strong {
+  font-weight: 600;
+  color: var(--color-primary, #3b82f6);
+}
+
+@media (max-width: 900px) {
+  .coefficient-detail-section { grid-template-columns: 1fr; }
+}
+
+/* ====== 目标调价 (5 张卡片) ====== */
+.target-price-cards {
+  display: grid;
+  /* 5 个 1fr + 1 个跨 2 列 (分类建议表) → 实际占 7 个 grid 列 */
+  grid-template-columns: repeat(7, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.target-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 160px;
+  position: relative;
+}
+
+.target-card-editable {
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  border-color: #fbbf24;
+}
+
+.target-card-wide {
+  grid-column: span 2;
+  min-height: auto;
+}
+
+.target-card-highlight {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border-color: #3b82f6;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
+}
+
+.target-label {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.editable-tag {
+  background: #fbbf24;
+  color: #78350f;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.target-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.target-value.huge {
+  font-size: 26px;
+  color: #1d4ed8;
+}
+
+.target-value.highlight {
+  color: #0f766e;
+}
+
+.target-ratio-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.target-meta {
+  font-size: 13px;
+  color: #475569;
+}
+
+.target-meta strong {
+  color: #1e293b;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.target-bar {
+  position: relative;
+  width: 100%;
+  height: 8px;
+  background: #f1f5f9;
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.target-bar-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  background: linear-gradient(90deg, #0d9488, #14b8a6);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.target-bar-fill.cat-large { background: linear-gradient(90deg, #0d9488, #14b8a6); }
+.target-bar-fill.cat-standard { background: linear-gradient(90deg, #6366f1, #818cf8); }
+.target-bar-fill.cat-other { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.target-bar-fill.cat-mechanical { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.target-bar-fill.cat-electrical { background: linear-gradient(90deg, #f97316, #fb923c); }
+.target-bar-fill.target-bar-blue { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+
+.target-sub-meta {
+  font-size: 12px;
+  color: #94a3b8;
+  border-top: 1px dashed #e2e8f0;
+  padding-top: 6px;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.delta {
+  font-weight: 600;
+  font-family: monospace;
+  margin-left: 6px;
+}
+.delta-pos { color: #16a34a; }
+.delta-neg { color: #dc2626; }
+
+.coef-new {
+  font-weight: 700;
+  font-family: monospace;
+}
+.coef-new.cat-large { color: #0d9488; }
+.coef-new.cat-standard { color: #6366f1; }
+.coef-new.cat-other { color: #f59e0b; }
+
+.uplift-amt {
+  font-weight: 600;
+  font-family: monospace;
+}
+.uplift-pos { color: #16a34a; }
+.uplift-neg { color: #dc2626; }
+
+.target-input-wrap {
+  margin: 4px 0;
+}
+
+@media (max-width: 1440px) {
+  .target-price-cards { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 900px) {
+  .target-price-cards { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 600px) {
+  .target-price-cards { grid-template-columns: 1fr; }
 }
 </style>

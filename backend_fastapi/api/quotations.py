@@ -1553,15 +1553,13 @@ def approve_archive(
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """部门领导同意归档"""
-    _check_permission(db, int(user_id), 'quotation.edit')
+    """部门领导同意归档 (谁能调用 = 谁就是审批人)"""
     approval = db.query(ArchiveApproval).filter_by(
         quotation_id=quotation_id, status='pending'
     ).first()
     if not approval:
         raise HTTPException(status_code=404, detail='没有待审批记录')
-    if approval.approver_id != int(user_id):
-        raise HTTPException(status_code=403, detail='您不是该审批的指定审批人')
+    # 不再校验 approver_id == user_id: 流程到达用户即默认其为审批人 (与可查看页面的用户一致)
 
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
@@ -1602,16 +1600,13 @@ def reject_archive(
     db=Depends(get_db),
     user_id: str = Depends(get_current_user_id),
 ):
-    """部门领导驳回归档"""
-    _check_permission(db, int(user_id), 'quotation.edit')
-
+    """部门领导驳回归档 (谁能调用 = 谁就是审批人)"""
     approval = db.query(ArchiveApproval).filter_by(
         quotation_id=quotation_id, status='pending'
     ).first()
     if not approval:
         raise HTTPException(status_code=404, detail='没有待审批记录')
-    if approval.approver_id != int(user_id):
-        raise HTTPException(status_code=403, detail='您不是该审批的指定审批人')
+    # 不再校验 approver_id == user_id: 流程到达用户即默认其为审批人
 
     quotation = db.query(Quotation).get(quotation_id)
     if not quotation:
@@ -2127,6 +2122,12 @@ def get_quotation_summary(
                 'module_id': module.id,
                 'module_name': module.name,
                 'module_code': module.code,
+                'module_type': module.module_type or 'other',  # mechanical/electrical/other
+                'module_type_label': {
+                    'mechanical': '机构',
+                    'electrical': '电气',
+                    'other': '其他'
+                }.get(module.module_type or 'other', '其他'),
                 'source': source_name if is_line else None,
                 'material_count': len(module_materials),
                 'material_amount': round(module_amount, 2),
@@ -2140,6 +2141,32 @@ def get_quotation_summary(
     # 人力
     total_labor = sum(float(l.total or 0) for l in db.query(LaborHour).filter(
         LaborHour.quotation_id.in_(all_ids)).all())
+
+    # 按 labor_type + name 分组聚合工时明细 (供汇总卡片展示)
+    labor_groups = {}
+    for l in db.query(LaborHour).filter(LaborHour.quotation_id.in_(all_ids)).all():
+        key = (l.name, l.labor_type or 'design')
+        if key not in labor_groups:
+            labor_groups[key] = {
+                'name': l.name,
+                'labor_type': l.labor_type or 'design',
+                'unit_price': float(l.unit_price or 0),
+                'hours': 0.0,
+                'total': 0.0,
+            }
+        labor_groups[key]['hours'] += float(l.hours or 0)
+        labor_groups[key]['total'] += float(l.total or 0)
+    labor_details = [
+        {
+            'name': v['name'],
+            'labor_type': v['labor_type'],
+            'unit_price': round(v['unit_price'], 2),
+            'hours': round(v['hours'], 1),
+            'person_days': round(v['hours'] / 8, 2),  # 8h = 1 人天
+            'total': round(v['total'], 2),
+        }
+        for v in labor_groups.values()
+    ]
 
     # 包装
     packing_entries = db.query(PackingEntry).filter(
@@ -2225,6 +2252,7 @@ def get_quotation_summary(
         'fees_total': round(fees_total, 2),
         'fee_total': round(total_fees, 2),
         'labor_total': round(total_labor, 2),
+        'labor_details': labor_details,
         'fee_rates': fee_rates,
         'rate_details': [{'category': k, **v} for k, v in rate_details.items()],
         'packing_details': packing_details,

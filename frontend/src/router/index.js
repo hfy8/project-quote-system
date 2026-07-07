@@ -38,6 +38,7 @@ const routePermissionMap = {
   'ExchangeRatesConfig': 'exchange_rate.view',
   'ModuleAssignments': null,         // 所有人可访问
   'QuotationAssignmentView': null,  // 所有人可访问
+  'PendingApprovals': null,         // 所有人可访问
   'ParticipantTypePermissions': 'participant_type_permission.view',
   'TravelFeeConfig': 'fee_type.view',
   'ChangeRequests': 'quotation.view',
@@ -184,6 +185,12 @@ const routes = [
         name: 'Messages',
         component: Messages,
         meta: { title: '我的消息' }
+      },
+      {
+        path: 'pending-approvals',
+        name: 'PendingApprovals',
+        component: () => import('../views/PendingApprovals.vue'),
+        meta: { title: '待审批归档' }
       },
 
     ]
