@@ -1,6 +1,7 @@
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
 from db import db
+from core.models.permission import Role  # D3: 用于查 DB role_permissions
 
 
 # 角色权限映射 - 与 roles.py 保持一致
@@ -41,9 +42,14 @@ class User(db.Model):
         return check_password_hash(self.password_hash, password)
 
     def get_permissions(self):
-        """获取用户权限"""
+        """获取用户权限 (D3: 统一从 DB role_permissions 读, 不再走硬编码 ROLE_PERMISSIONS)"""
         if self.role == 'admin':
             return ['*']
+        # D3: 优先查 DB (User.role string → Role.code → Role.permissions)
+        role = db.session.query(Role).filter_by(code=self.role).first()
+        if role and role.permissions is not None:
+            return [p.code for p in role.permissions]
+        # 兜底: ROLE_PERMISSIONS (向后兼容, 比如新 role 还没 seed)
         return ROLE_PERMISSIONS.get(self.role, ['dashboard.view', 'module_assignment.view'])
 
     def to_dict(self):
