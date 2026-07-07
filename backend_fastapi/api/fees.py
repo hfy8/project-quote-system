@@ -14,7 +14,8 @@ router = APIRouter()
 
 class FeeCreate(BaseModel):
     module_id: Optional[int] = None
-    fee_type: Optional[str] = None
+    fee_type: Optional[str] = None  # 兼容: 传字符串 name 自动查 fee_type_id
+    fee_type_id: Optional[int] = None  # B3: 优先用 id
     location: Optional[str] = ""
     amount: float = 0
     description: Optional[str] = None
@@ -23,6 +24,7 @@ class FeeCreate(BaseModel):
 class FeeUpdate(BaseModel):
     module_id: Optional[int] = None
     fee_type: Optional[str] = None
+    fee_type_id: Optional[int] = None
     location: Optional[str] = None
     amount: Optional[float] = None
     description: Optional[str] = None
@@ -42,6 +44,28 @@ class FeeTypeUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
+def _resolve_fee_type_id(db, body) -> int:
+    """B3: 把 fee_type (字符串) 或 fee_type_id (整数) 解析为 fee_type_id (整数)
+
+    优先级: fee_type_id > fee_type > 报错
+    返回: fee_type_id
+    """
+    if body.fee_type_id is not None:
+        ft = db.query(FeeType).get(body.fee_type_id)
+        if not ft:
+            raise HTTPException(status_code=400, detail=f'fee_type_id={body.fee_type_id} 不存在')
+        return body.fee_type_id
+    if body.fee_type:
+        ft = db.query(FeeType).filter(FeeType.name == body.fee_type, FeeType.is_active == True).first()
+        if not ft:
+            raise HTTPException(
+                status_code=400,
+                detail=f'fee_type "{body.fee_type}" 不在 fee_types 表中, 请先创建或传 fee_type_id'
+            )
+        return ft.id
+    raise HTTPException(status_code=400, detail='fee_type 或 fee_type_id 必须传一个')
+
+
 # ---- OtherFee ----
 
 @router.get("/quotations/{quotation_id}/fees")
@@ -56,10 +80,14 @@ def create_fee(
     db: Session = Depends(get_db), user_id: str = Depends(get_current_user_id),
 ):
     _check_permission(db, int(user_id), 'quotation.edit')
+    # B3: 解析 fee_type_id
+    fee_type_id = _resolve_fee_type_id(db, body)
+    fee_type_name = db.query(FeeType).get(fee_type_id).name
     fee = OtherFee(
         quotation_id=quotation_id,
         module_id=body.module_id,
-        fee_type=body.fee_type,
+        fee_type=fee_type_name,  # 冗余字段, 保持兼容
+        fee_type_id=fee_type_id,  # B3: FK
         location=body.location,
         amount=body.amount,
         description=body.description,
@@ -79,7 +107,12 @@ def update_fee(
     if not fee:
         raise HTTPException(status_code=404, detail="费用不存在")
     data = body.model_dump(exclude_unset=True)
-    for key in ("module_id", "fee_type", "location", "amount", "description"):
+    # B3: 处理 fee_type_id / fee_type
+    if 'fee_type_id' in data or 'fee_type' in data:
+        fee_type_id = _resolve_fee_type_id(db, body)
+        fee.fee_type_id = fee_type_id
+        fee.fee_type = db.query(FeeType).get(fee_type_id).name
+    for key in ("module_id", "location", "amount", "description"):
         if key in data:
             setattr(fee, key, data[key])
     db.commit()

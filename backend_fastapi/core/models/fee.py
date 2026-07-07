@@ -9,13 +9,15 @@ class OtherFee(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     quotation_id = db.Column(db.Integer, db.ForeignKey('quotations.id'), nullable=False)
     module_id = db.Column(db.Integer, db.ForeignKey('modules.id'), nullable=True)  # 可空
-    fee_type = db.Column(db.String(50), nullable=False)
+    fee_type = db.Column(db.String(50), nullable=False)  # 兼容旧数据 (冗余)
+    fee_type_id = db.Column(db.Integer, db.ForeignKey('fee_types.id', ondelete='RESTRICT'), nullable=True)  # B3: FK
     location = db.Column(db.String(20), nullable=False)  # 厂内/厂外
     amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     description = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     module = db.relationship('Module', backref='fees')
+    fee_type_rel = db.relationship('FeeType', backref='fees')
 
     def to_dict(self):
         return {
@@ -23,6 +25,8 @@ class OtherFee(db.Model):
             'quotation_id': self.quotation_id,
             'module_id': self.module_id,
             'fee_type': self.fee_type,
+            'fee_type_id': self.fee_type_id,
+            'fee_type_name': self.fee_type_rel.name if self.fee_type_rel else self.fee_type,
             'location': self.location,
             'amount': float(self.amount) if self.amount else 0,
             'description': self.description,
