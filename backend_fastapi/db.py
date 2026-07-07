@@ -32,9 +32,24 @@ def _get_config():
 
 # ============== 引擎 + Session 工厂 ==============
 def _make_engine():
-    """根据 Config 构造引擎（延迟初始化）"""
+    """根据 Config 构造引擎（延迟初始化）
+
+    连接池配置说明（修复 DB 连接僵死问题 F1）:
+    - pool_pre_ping=True: 每次借用前发 SELECT 1 检测, 但 post 关闭后 ping 不一定及时
+    - pool_recycle=1800: 30 分钟强制回收, 避免 PG idle timeout 杀掉连接后被复用
+    - pool_size=10: 单 worker 10 个长连接 (默认 5 太少)
+    - max_overflow=20: 突发流量额外 20 个, 总 30/worker
+    - pool_timeout=10: 拿连接超时 10s 报错 (默认 30s 太长用户看不到)
+    """
     Config = _get_config()
-    return create_engine(Config.SQLALCHEMY_DATABASE_URI, pool_pre_ping=True)
+    return create_engine(
+        Config.SQLALCHEMY_DATABASE_URI,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=10,
+    )
 
 
 def _make_session_factory():
