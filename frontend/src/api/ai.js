@@ -1,5 +1,5 @@
 /**
- * AI 助手 API（流式 + 多轮对话）
+ * AI 助手 API（流式 + 多轮对话 + 会话管理）
  */
 import request from './request'
 import axios from 'axios'
@@ -75,7 +75,27 @@ export const aiAPI = {
     }
   },
 
-  // 清除会话
+  // ========== 会话管理 ==========
+
+  // 获取会话列表
+  getConversations: () => request.get('/ai/conversations'),
+
+  // 创建新会话
+  createConversation: (title = '新对话') => request.post('/ai/conversations', { title }),
+
+  // 重命名会话
+  renameConversation: (id, title) => request.put(`/ai/conversations/${id}`, { title }),
+
+  // 删除会话
+  deleteConversation: (id) => request.delete(`/ai/conversations/${id}`),
+
+  // 获取会话消息
+  getMessages: (conversationId) => request.get(`/ai/conversations/${conversationId}/messages`),
+
+  // 清空会话消息
+  clearMessages: (conversationId) => request.delete(`/ai/conversations/${conversationId}/messages`),
+
+  // 清除会话（旧版兼容）
   clearConversation: (conversationId) =>
     request.delete(`/ai/conversation/${conversationId}`),
 

@@ -17,7 +17,7 @@ from sqlalchemy import (
     UniqueConstraint, CheckConstraint, Index,
 )
 from sqlalchemy.orm import declarative_base, relationship, backref, sessionmaker, scoped_session, \
-    joinedload, selectinload, contains_eager
+    joinedload, selectinload, contains_eager, column_property
 from sqlalchemy.ext.associationproxy import association_proxy
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm.decl_api import DeclarativeAttributeIntercept
@@ -143,6 +143,7 @@ class _DBProxy:
     CheckConstraint = staticmethod(CheckConstraint)
     Index = staticmethod(Index)
     association_proxy = staticmethod(association_proxy)
+    column_property = staticmethod(column_property)
 
     # === session 方法代理 ===
     @property

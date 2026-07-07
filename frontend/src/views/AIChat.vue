@@ -562,22 +562,25 @@ function newConversation() {
     ElMessage.warning('请先停止当前生成')
     return
   }
-  aiChatStore.createSession()
-  conversationId.value = null
-  currentAnswer.value = ''
-  currentToolCalls.value = []
-  currentWarning.value = ''
-  ElMessage.success('已开始新对话')
+  aiChatStore.createSession().then(session => {
+    if (session) {
+      conversationId.value = null
+      currentAnswer.value = ''
+      currentToolCalls.value = []
+      currentWarning.value = ''
+      ElMessage.success('已开始新对话')
+    }
+  })
 }
 
 // 切换会话
-function switchToSession(id) {
+async function switchToSession(id) {
   if (streaming.value) {
     ElMessage.warning('请先停止当前生成')
     return
   }
-  if (aiChatStore.switchSession(id)) {
-    conversationId.value = null  // 重置后端 conversation_id（新会话由后端新建）
+  if (await aiChatStore.switchSession(id)) {
+    conversationId.value = null
     currentAnswer.value = ''
     currentToolCalls.value = []
     currentWarning.value = ''
@@ -596,7 +599,7 @@ async function deleteSessionConfirm(id) {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
-    aiChatStore.deleteSession(id)
+    await aiChatStore.deleteSession(id)
     ElMessage.success('已删除')
   } catch {
     // 用户取消
@@ -632,13 +635,14 @@ watch(streaming, (isStreaming, wasStreaming) => {
 })
 
 onMounted(async () => {
+  await aiChatStore.init()
   await nextTick()
   setupScrollObserver()
-  // 初始化会话：如果没有当前会话，自动新建一个
+  // 如果没有当前会话，自动新建一个
   if (!aiChatStore.currentSession) {
-    aiChatStore.createSession()
+    await aiChatStore.createSession()
   }
-  // 拉工具数（可选，不阻塞 UI）
+  // 拉工具数
   try {
     const r = await aiAPI.health?.()
     if (r?.tools) toolCount.value = r.tools
