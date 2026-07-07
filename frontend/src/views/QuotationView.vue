@@ -936,67 +936,15 @@
                 </span>
               </div>
             </div>
-            <div v-if="summary" class="summary-top-cards">
-                          <!-- 第一行: 硬件 / 设计 / 调试 / 差旅(人天) / 认证 -->
-                          <div class="summary-row-cards">
-                            <div class="summary-mini-card card-hardware">
-                              <div class="summary-mini-icon">🔧</div>
-                              <div class="summary-mini-label">硬件成本</div>
-                              <div class="summary-mini-value highlight">{{ fmtMoney(summary.material_total_with_rates) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-design">
-                              <div class="summary-mini-icon">🎨</div>
-                              <div class="summary-mini-label">设计人力成本</div>
-                              <div class="summary-mini-value">{{ fmtMoney(designLaborCost) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-debug">
-                              <div class="summary-mini-icon">🔨</div>
-                              <div class="summary-mini-label">调试人力成本</div>
-                              <div class="summary-mini-value">{{ fmtMoney(debugLaborCost) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-travel-days">
-                              <div class="summary-mini-icon">🧳</div>
-                              <div class="summary-mini-label">差旅成本（出差人天）</div>
-                              <div class="summary-mini-value">{{ fmtMoney(summary.travel_person_days_total) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-cert">
-                              <div class="summary-mini-icon">📜</div>
-                              <div class="summary-mini-label">认证费用成本</div>
-                              <div class="summary-mini-value">{{ fmtMoney(certificationFeeCost) }}</div>
-                            </div>
-                          </div>
-
-                          <!-- 第二行: 机票签证 / 项目管理 / 项目利润 / 包装运输 / 最终报价 -->
-                          <div class="summary-row-cards">
-                            <div class="summary-mini-card card-travel-trips">
-                              <div class="summary-mini-icon">✈️</div>
-                              <div class="summary-mini-label">差旅机票签证</div>
-                              <div class="summary-mini-value">{{ fmtMoney(summary.travel_person_trips_total) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-mgmt">
-                              <div class="summary-mini-icon">📊</div>
-                              <div class="summary-mini-label">项目管理费用</div>
-                              <div class="summary-mini-value">{{ fmtMoney(projectManagementFee) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-profit">
-                              <div class="summary-mini-icon">💰</div>
-                              <div class="summary-mini-label">项目利润（对外利润）</div>
-                              <div class="summary-mini-value">{{ fmtMoney(profitAmount) }}</div>
-                              <div class="summary-mini-sub">利润率 {{ ((summary.profit_rate || 0) * 100).toFixed(2) }}%</div>
-                            </div>
-                            <div class="summary-mini-card card-packing">
-                              <div class="summary-mini-icon">📦</div>
-                              <div class="summary-mini-label">包装运输费用</div>
-                              <div class="summary-mini-value">{{ fmtMoney(summary.packing_total) }}</div>
-                            </div>
-                            <div class="summary-mini-card card-grand-total">
-                              <div class="summary-mini-icon">💵</div>
-                              <div class="summary-mini-label">最终报价</div>
-                              <div class="summary-mini-value huge">{{ fmtMoney(summary.grand_total) }}</div>
-                              <div class="summary-mini-sub">含税 ¥{{ summary.tax_amount?.toFixed(2) || '0.00' }}</div>
-                            </div>
-                          </div>
-                        </div>
+            <QuotationSummaryCards
+              :summary="summary"
+              :design-labor-cost="designLaborCost"
+              :debug-labor-cost="debugLaborCost"
+              :profit-amount="profitAmount"
+              :management-fee-total="projectManagementFee"
+              :certification-fee-cost="certificationFeeCost"
+              :fmt-money="fmtMoney"
+            />
 
             <!-- 占比分析 -->
             <div v-if="summary" class="breakdown-section">
@@ -1307,6 +1255,7 @@ import { ref, reactive, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
+import QuotationSummaryCards from '@/components/QuotationSummaryCards.vue'
 import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -3760,95 +3709,9 @@ onMounted(async () => {
   color: var(--color-primary);
 }
 
-/* ===== 汇总头部双行 10 卡片 ===== */
-.summary-top-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: var(--spacing-xl);
-}
-
-.summary-row-cards {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 12px;
-}
-
-.summary-mini-card {
-  background: var(--color-bg-hover);
-  border: 1px solid var(--color-border-light);
-  border-radius: 10px;
-  padding: 14px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  position: relative;
-  border-left: 4px solid var(--color-primary);
-  min-height: 100px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.summary-mini-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-}
-
-.summary-mini-icon {
-  font-size: 22px;
-  margin-bottom: 2px;
-}
-
-.summary-mini-label {
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
-}
-
-.summary-mini-value {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--color-text-primary);
-  font-family: monospace;
-  line-height: 1.2;
-}
-
-.summary-mini-value.huge {
-  font-size: 28px;
-  color: #1d4ed8;
-  letter-spacing: -0.5px;
-}
-
-.summary-mini-value.highlight {
-  color: #0f766e;
-}
-
-.summary-mini-sub {
-  font-size: 12px;
-  color: var(--color-text-muted);
-  margin-top: 2px;
-}
-
-/* 各分类配色 */
-.summary-mini-card.card-hardware { border-left-color: #0d9488; }
-.summary-mini-card.card-design { border-left-color: #6366f1; }
-.summary-mini-card.card-debug { border-left-color: #ec4899; }
-.summary-mini-card.card-travel-days { border-left-color: #f59e0b; }
-.summary-mini-card.card-cert { border-left-color: #14b8a6; }
-.summary-mini-card.card-travel-trips { border-left-color: #3b82f6; }
-.summary-mini-card.card-mgmt { border-left-color: #8b5cf6; }
-.summary-mini-card.card-profit { border-left-color: #10b981; }
-.summary-mini-card.card-packing { border-left-color: #f97316; }
-
-.summary-mini-card.card-grand-total {
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 2px solid #3b82f6;
-  border-left: 6px solid #1d4ed8;
+/* ===== 占比分析 ===== */
+.breakdown-section {
   box-shadow: 0 2px 8px rgba(29, 78, 216, 0.12);
-}
-
-.summary-mini-card.card-grand-total .summary-mini-label {
-  color: #1d4ed8;
-  font-weight: 600;
 }
 
 /* 汇总布局 */

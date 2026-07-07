@@ -1,6 +1,6 @@
 <template>
   <div v-if="summary" class="summary-top-cards">
-    <!-- 第一行: 硬件 / 设计 / 调试 / 差旅(人天) / 认证 -->
+    <!-- 第一行: 硬件 / 设计重写 / 调试重写 / 差旅(人天) / 认证 -->
     <div class="summary-row-cards">
       <div class="summary-mini-card card-hardware">
         <div class="summary-mini-icon">🔧</div>
@@ -10,12 +10,12 @@
       <div class="summary-mini-card card-design">
         <div class="summary-mini-icon">📐</div>
         <div class="summary-mini-label">设计成本</div>
-        <div class="summary-mini-value">{{ fmtMoney(summary.design_total) }}</div>
+        <div class="summary-mini-value">{{ fmtMoney(designLaborCost ?? summary?.design_total) }}</div>
       </div>
       <div class="summary-mini-card card-debug">
         <div class="summary-mini-icon">🔍</div>
         <div class="summary-mini-label">调试成本</div>
-        <div class="summary-mini-value">{{ fmtMoney(summary.debug_total) }}</div>
+        <div class="summary-mini-value">{{ fmtMoney(debugLaborCost ?? summary?.debug_total) }}</div>
       </div>
       <div class="summary-mini-card card-travel">
         <div class="summary-mini-icon">✈️</div>
@@ -29,7 +29,7 @@
       </div>
     </div>
 
-    <!-- 第二行: 机票签证 / 项目管理 / 项目利润 / 包装运输 / 最终报价 -->
+    <!-- 第二行: 机票签证 / 项目管理 / 项目利润重写 / 包装运输 / 最终报价 -->
     <div class="summary-row-cards">
       <div class="summary-mini-card card-travel-trips">
         <div class="summary-mini-icon">🚄</div>
@@ -44,7 +44,7 @@
       <div class="summary-mini-card card-profit">
         <div class="summary-mini-icon">💰</div>
         <div class="summary-mini-label">项目利润</div>
-        <div class="summary-mini-value">{{ fmtMoney(summary.profit_total) }}</div>
+        <div class="summary-mini-value">{{ fmtMoney(profitAmount ?? summary?.profit_total) }}</div>
       </div>
       <div class="summary-mini-card card-packing">
         <div class="summary-mini-icon">📦</div>
@@ -64,8 +64,12 @@
 <script setup>
 defineProps({
   summary: { type: Object, default: null },
-  certificationFeeCost: { type: Number, default: 0 },
+  // 可选重写: 各卡片的值, 不传则从 summary 取
+  designLaborCost: { type: Number, default: null },
+  debugLaborCost: { type: Number, default: null },
+  profitAmount: { type: Number, default: null },
   managementFeeTotal: { type: Number, default: 0 },
+  certificationFeeCost: { type: Number, default: 0 },
   selectedCurrency: { type: String, default: 'CNY' },
   fmtMoney: { type: Function, required: true },
   taxAmount: { type: Number, default: 0 },
@@ -73,15 +77,8 @@ defineProps({
 </script>
 
 <style scoped>
-.summary-top-cards {
-  margin-bottom: 16px;
-}
-.summary-row-cards {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 10px;
-  margin-bottom: 10px;
-}
+.summary-top-cards { margin-bottom: 16px; }
+.summary-row-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 10px; }
 .summary-mini-card {
   background: var(--color-bg-secondary, #f8fafc);
   border: 1px solid var(--color-border, #e2e8f0);
@@ -94,6 +91,7 @@ defineProps({
 .summary-mini-card.card-final {
   background: linear-gradient(135deg, #e0f2fe, #dbeafe);
   border-color: #93c5fd;
+  border-left: 6px solid #2563eb;
 }
 .summary-mini-card.card-hardware { border-left: 4px solid #3b82f6; }
 .summary-mini-card.card-design { border-left: 4px solid #8b5cf6; }
@@ -104,7 +102,6 @@ defineProps({
 .summary-mini-card.card-mgmt { border-left: 4px solid #6366f1; }
 .summary-mini-card.card-profit { border-left: 4px solid #ef4444; }
 .summary-mini-card.card-packing { border-left: 4px solid #f97316; }
-.summary-mini-card.card-final { border-left: 6px solid #2563eb; }
 .summary-mini-icon { font-size: 20px; margin-bottom: 4px; }
 .summary-mini-label { font-size: 11px; color: var(--color-text-muted, #64748b); margin-bottom: 4px; white-space: nowrap; }
 .summary-mini-value { font-size: 18px; font-weight: 700; color: var(--color-text-primary, #1e293b); }
