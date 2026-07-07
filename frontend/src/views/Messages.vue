@@ -101,7 +101,6 @@ const defaultTitle = (type) => {
   const map = {
     system: '系统通知',
     archive_approval: '归档审批',
-    change_request: '变更审核',
     quotation: '报价单通知',
   }
   return map[type] || '消息通知'
@@ -111,7 +110,6 @@ const iconEmoji = (type) => {
   const map = {
     system: '🔔',
     archive_approval: '📦',
-    change_request: '📝',
     quotation: '📋',
   }
   return map[type] || '💬'
@@ -316,7 +314,6 @@ onMounted(() => {
 
 .msg-icon-system { background: #f0f9ff; }
 .msg-icon-archive_approval { background: #fef3c7; }
-.msg-icon-change_request { background: #ede9fe; }
 .msg-icon-quotation { background: #dcfce7; }
 
 .unread-dot {

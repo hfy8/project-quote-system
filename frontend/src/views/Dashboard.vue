@@ -177,10 +177,6 @@
             <div class="action-icon bg-warning"><span>📌</span></div>
             <span class="action-label">我的分配</span>
           </div>
-          <div v-if="hasPerm('quotation.edit')" class="action-item" @click="$router.push('/change-requests')">
-            <div class="action-icon bg-info"><span>📤</span></div>
-            <span class="action-label">变更审核</span>
-          </div>
           <div class="action-item" @click="$router.push('/trends')">
             <div class="action-icon bg-purple"><span>📈</span></div>
             <span class="action-label">趋势</span>
@@ -306,12 +302,6 @@
             <span class="todo-num">{{ stats.my_tasks.pending_archives }}</span>
             <span class="todo-lbl">待审批归档</span>
           </div>
-          <div v-if="stats.my_tasks.pending_changes > 0"
-               class="todo-item todo-info"
-               @click="$router.push('/change-requests')">
-            <span class="todo-num">{{ stats.my_tasks.pending_changes }}</span>
-            <span class="todo-lbl">待审变更</span>
-          </div>
           <div v-if="stats.my_tasks.unread_messages > 0"
                class="todo-item todo-pri"
                @click="$router.push('/messages')">
@@ -421,16 +411,12 @@ const formatTime = formatRelativeTime
 
 const msgTypeIcon = (type) => ({
   module_member_added: '👥',
-  change_request_submitted: '📤',
-  change_request_approved: '✅',
-  change_request_rejected: '❌',
   version_updated: '🔄',
 }[type] || '🔔')
 const msgTypeClass = (type) => `msg-${type}`
 const goMessage = (msg) => {
   if (msg.related_id) {
     if (msg.related_type === 'quotation') router.push(`/quotations/${msg.related_id}`)
-    else if (msg.related_type === 'change_request') router.push(`/change-requests/${msg.related_id}`)
     else router.push('/messages')
   } else {
     router.push('/messages')

@@ -41,7 +41,6 @@ const routePermissionMap = {
   'PendingApprovals': null,         // 所有人可访问
   'ParticipantTypePermissions': 'participant_type_permission.view',
   'TravelFeeConfig': 'fee_type.view',
-  'ChangeRequests': 'quotation.view',
   'VersionCompare': 'version.view',
   'AIChat': 'ai.query',
   'Trends': 'quotation.view',  // 趋势页：能看报价单的人都能看趋势
@@ -103,11 +102,6 @@ const routes = [
         path: 'quotations/:id/view',
         name: 'QuotationView',
         component: QuotationView
-      },
-      {
-        path: 'change-requests',
-        name: 'ChangeRequests',
-        component: () => import('../views/ChangeRequests.vue')
       },
       {
         path: 'materials',

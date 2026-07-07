@@ -182,10 +182,7 @@ const handleMessageClick = async (msg) => {
   }
   
   // 跳转到相关页面
-  if (msg.related_type === 'change_request') {
-    messageDialogVisible.value = false
-    router.push('/change-requests')
-  } else if (msg.related_type === 'quotation') {
+  if (msg.related_type === 'quotation') {
     messageDialogVisible.value = false
     router.push(`/quotations/${msg.related_id}`)
   }
@@ -257,9 +254,6 @@ const handleChangePassword = async () => {
 const getMessageIcon = (type) => {
   const iconMap = {
     'module_member_added': 'el-icon-user-plus',
-    'change_request_submitted': 'el-icon-document-add',
-    'change_request_approved': 'el-icon-check',
-    'change_request_rejected': 'el-icon-close',
     'version_updated': 'el-icon-document'
   }
   return iconMap[type] || 'el-icon-bell'
@@ -289,7 +283,6 @@ const menuItems = computed(() => {
     { path: '/quotations', label: '报价单管理', icon: '📑', permission: 'quotation.view' },
     { path: '/trends', label: '报价趋势', icon: '📈', permission: 'quotation.view' },
     { path: '/my-assignments', label: '我的分配', icon: '📌', permission: 'module_assignment.view' },
-    { path: '/change-requests', label: '变更审核', icon: '📤', permission: 'quotation.edit' },
     { path: '/materials', label: '原材料库', icon: '📦', permission: 'material.view' },
     { path: '/fee-types', label: '费用类型', icon: '💰', permission: 'fee_type.view' },
     { path: '/fee-rates', label: '费用系数', icon: '📊', permission: 'fee_rate.view' },
@@ -619,16 +612,6 @@ onUnmounted(() => {
   color: #0D9488;
   font-size: 16px;
   flex-shrink: 0;
-}
-
-.message-icon.change_request_submitted {
-  background-color: #fff3e0;
-  color: #ff9800;
-}
-
-.message-icon.change_request_rejected {
-  background-color: #ffebee;
-  color: #f44336;
 }
 
 .message-icon.module_member_added {

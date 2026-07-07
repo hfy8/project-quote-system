@@ -130,10 +130,7 @@ const handleMessageClick = async (msg) => {
   }
   
   // 跳转到相关页面
-  if (msg.related_type === 'change_request') {
-    messageDialogVisible.value = false
-    router.push('/change-requests')
-  } else if (msg.related_type === 'quotation') {
+  if (msg.related_type === 'quotation') {
     messageDialogVisible.value = false
     router.push(`/quotations/${msg.related_id}`)
   }
@@ -167,9 +164,6 @@ const goToMessages = () => {
 const getMessageIcon = (type) => {
   const iconMap = {
     'module_member_added': 'el-icon-user-plus',
-    'change_request_submitted': 'el-icon-document-add',
-    'change_request_approved': 'el-icon-check',
-    'change_request_rejected': 'el-icon-close',
     'version_updated': 'el-icon-document'
   }
   return iconMap[type] || 'el-icon-bell'
@@ -343,16 +337,6 @@ onUnmounted(() => {
   background-color: #e8f5e9;
   color: #0D9488;
   font-size: 16px;
-}
-
-.message-icon.change_request_submitted {
-  background-color: #fff3e0;
-  color: #ff9800;
-}
-
-.message-icon.change_request_rejected {
-  background-color: #ffebee;
-  color: #f44336;
 }
 
 .message-icon.module_member_added {

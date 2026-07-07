@@ -275,7 +275,6 @@ from api.logs import router as logs_router
 from api.module_participants import router as module_participants_router
 from api.sync import router as sync_router
 from api.messages import router as messages_router
-from api.change_requests import router as change_requests_router
 from api.roles import router as roles_router
 from api.participant_type_permissions import router as participant_type_permissions_router
 from api.users import router as users_router
@@ -299,7 +298,6 @@ fastapi_app.include_router(logs_router, tags=["操作日志"])
 fastapi_app.include_router(module_participants_router, tags=["模块参与者"])
 fastapi_app.include_router(sync_router, prefix="/api/sync", tags=["数据同步"])
 fastapi_app.include_router(messages_router, tags=["消息"])
-fastapi_app.include_router(change_requests_router, prefix="/api/change-requests", tags=["变更申请"])
 fastapi_app.include_router(roles_router, tags=["角色管理"])
 fastapi_app.include_router(participant_type_permissions_router, tags=["参与者类型权限"])
 fastapi_app.include_router(users_router, tags=["用户管理"])

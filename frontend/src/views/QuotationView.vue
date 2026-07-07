@@ -348,15 +348,8 @@
         <!-- 物料清单 -->
         <el-tab-pane v-if="permissions.tabs?.includes('materials')" label="物料清单" name="materials">
           <!-- 已归档警告 -->
-          <el-alert v-if="isArchived" title="报价单已归档，物料变更需要提交审核" type="warning" :closable="false" show-icon style="margin-bottom: 16px;">
-            <template #default>
-              您的物料变更申请将发送给报价单负责人审核，审核通过后才会生效。
-              <el-button type="warning" size="small" style="margin-left: 16px;" @click="goToPendingReviews" v-if="pendingReviewCount > 0">
-                查看待审核 ({{ pendingReviewCount }})
-              </el-button>
-            </template>
-          </el-alert>
-          
+          <el-alert v-if="isArchived" title="报价单已归档，物料不可编辑" type="warning" :closable="false" show-icon style="margin-bottom: 16px;" />
+
           <div class="material-actions">
             <el-select v-model="selectedModuleFilter" placeholder="全部模块" clearable style="width: 200px;">
               <el-option
@@ -1261,7 +1254,6 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
-import { changeRequestsAPI } from '@/api/changeRequests'
 
 const route = useRoute()
 const router = useRouter()
@@ -1286,7 +1278,6 @@ const hasKeyFields = computed(() => {
 const materialHasKeyParams = computed(() => {
   return availableMaterials.value.some(m => m.param1 || m.param2 || m.param3)
 })
-const pendingReviewCount = ref(0)
 const permissions = ref({
   can_edit_coefficients: false,
   can_edit_participants: false,
@@ -2154,21 +2145,6 @@ async function loadQuotation() {
   }
 }
 
-// 加载待审核变更申请数量
-async function loadPendingReviewCount() {
-  try {
-    const data = await changeRequestsAPI.getPending()
-    pendingReviewCount.value = Array.isArray(data) ? data.length : (data.total || 0)
-  } catch (error) {
-    console.error('加载待审核数量失败', error)
-  }
-}
-
-// 跳转到待审核页面
-function goToPendingReviews() {
-  router.push('/change-requests')
-}
-
 // 加载用户列表（支持分页搜索）
 async function loadUsers() {
   try {
@@ -2609,24 +2585,7 @@ async function addMaterialsToModule() {
   
   // 已归档报价单需要提交变更申请
   if (isArchived.value) {
-    try {
-      for (const material of selectedMaterials.value) {
-        const qty = material._quantity || 1
-        await changeRequestsAPI.create({
-          quotation_id: quotationId.value,
-          module_id: selectedModuleId.value,
-          change_type: 'material_add',
-          proposed_data: { material_id: material.id, quantity: qty },
-          original_data: {}
-        })
-      }
-      ElMessage.warning('报价单已归档，添加物料已提交审核')
-      materialDialogVisible.value = false
-      selectedMaterials.value.forEach(m => m._quantity = 1)
-      selectedMaterials.value = []
-    } catch (error) {
-      ElMessage.error('提交变更申请失败')
-    }
+    ElMessage.error('已归档报价单不可编辑')
     return
   }
   
@@ -2660,25 +2619,11 @@ async function addMaterialsToModule() {
 
 // 更新模块物料数量
 async function updateMaterialQuantity(id, quantity) {
-  // 已归档报价单需要提交变更申请
   if (isArchived.value) {
-    const row = moduleMaterials.value.find(m => m.id === id)
-    try {
-      await changeRequestsAPI.create({
-        quotation_id: quotationId.value,
-        module_id: row.module_id,
-        change_type: 'material_update',
-        proposed_data: { id, quantity },
-        original_data: { id, quantity: row.quantity }
-      })
-      ElMessage.warning('报价单已归档，数量变更已提交审核')
-      loadModuleMaterials() // 刷新显示原始数据
-    } catch (error) {
-      ElMessage.error('提交变更申请失败')
-    }
+    ElMessage.error('已归档报价单不可编辑')
     return
   }
-  
+
   try {
     await api.put(`/module_materials/${id}`, { quantity })
     ElMessage.success('数量已更新')
@@ -2690,22 +2635,8 @@ async function updateMaterialQuantity(id, quantity) {
 
 // 删除模块物料
 async function deleteModuleMaterial(id) {
-  // 已归档报价单需要提交变更申请
   if (isArchived.value) {
-    const row = moduleMaterials.value.find(m => m.id === id)
-    try {
-      await changeRequestsAPI.create({
-        quotation_id: quotationId.value,
-        module_id: row.module_id,
-        change_type: 'material_delete',
-        proposed_data: {},
-        original_data: { id: row.id, quantity: row.quantity }
-      })
-      ElMessage.warning('报价单已归档，删除物料已提交审核')
-      loadModuleMaterials()
-    } catch (error) {
-      ElMessage.error('提交变更申请失败')
-    }
+    ElMessage.error('已归档报价单不可编辑')
     return
   }
   
