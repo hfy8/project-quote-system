@@ -131,7 +131,11 @@ CREATE TABLE module_materials (
   module_id integer NOT NULL,
   material_id integer NOT NULL,
   quantity numeric(10, 4) NOT NULL,
-  unit_price numeric(12, 2) NULL,
+  -- unit_price 字段 B4 已 DROP (2026-07-07): 137 行全 None + ORM 不同步 + 无业务引用
+  -- 业务计算走 material.unit_price + module_materials.unit_price_override (后者仅特例 is_other)
+  unit_price_override numeric(12, 2) NULL,
+  is_other boolean NULL DEFAULT false,
+  selected_by_id integer NULL,
   notes character varying NULL,
   created_at timestamp without time zone DEFAULT now() NULL,
   PRIMARY KEY (id)
