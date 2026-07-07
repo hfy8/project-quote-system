@@ -1,74 +1,14 @@
 <template>
   <nav class="sidebar-nav">
-    <div class="nav-section">
-      <div class="nav-section-title">主菜单</div>
-      <router-link to="/dashboard" class="nav-item" :class="{ active: isActive('/dashboard') }">
-        <span class="nav-icon">🏠</span>
-        <span class="nav-text">首页</span>
-      </router-link>
-      <router-link to="/quotations" class="nav-item" :class="{ active: isActive('/quotations') }" v-if="canView('quotation.view')">
-        <span class="nav-icon">📋</span>
-        <span class="nav-text">报价单管理</span>
-      </router-link>
-      <router-link to="/materials" class="nav-item" :class="{ active: isActive('/materials') }" v-if="canView('material.view')">
-        <span class="nav-icon">📦</span>
-        <span class="nav-text">原材料库</span>
-      </router-link>
-      <router-link to="/fee-types" class="nav-item" :class="{ active: isActive('/fee-types') }" v-if="canView('fee_type.view')">
-        <span class="nav-icon">💰</span>
-        <span class="nav-text">费用类型</span>
-      </router-link>
-      <router-link to="/my-assignments" class="nav-item" :class="{ active: isActive('/my-assignments') }" v-if="canView('module_assignment.view')">
-        <span class="nav-icon">📌</span>
-        <span class="nav-text">我的分配</span>
-      </router-link>
-    </div>
-
-    <div class="nav-section" v-if="canView('user.view') || canView('role.view') || canView('fee_rate.view') || canView('exchange_rate.view') || canView('log.view') || canView('fee_type.view') || canView('travel_fee_config.view')">
-      <div class="nav-section-title">系统管理</div>
-      <router-link to="/users" class="nav-item" :class="{ active: isActive('/users') }" v-if="canView('user.view')">
-        <span class="nav-icon">👤</span>
-        <span class="nav-text">用户管理</span>
-      </router-link>
-      <router-link to="/roles" class="nav-item" :class="{ active: isActive('/roles') }" v-if="canView('role.view')">
-        <span class="nav-icon">👥</span>
-        <span class="nav-text">角色管理</span>
-      </router-link>
-      <router-link to="/fee-rates" class="nav-item" :class="{ active: isActive('/fee-rates') }" v-if="canView('fee_rate.view')">
-        <span class="nav-icon">📊</span>
-        <span class="nav-text">费用系数</span>
-      </router-link>
-      <router-link to="/exchange-rates" class="nav-item" :class="{ active: isActive('/exchange-rates') }" v-if="canView('exchange_rate.view')">
-        <span class="nav-icon">💱</span>
-        <span class="nav-text">汇率配置</span>
-      </router-link>
-      <router-link to="/logs" class="nav-item" :class="{ active: isActive('/logs') }" v-if="canView('log.view')">
-        <span class="nav-icon">📝</span>
-        <span class="nav-text">操作日志</span>
-      </router-link>
-      <router-link to="/travel-fee-config" class="nav-item" :class="{ active: isActive('/travel-fee-config') }" v-if="canView('travel_fee_config.view')">
-        <span class="nav-icon">🚚</span>
-        <span class="nav-text">运输差旅配置</span>
-      </router-link>
-    </div>
-
-    <div class="nav-section" v-if="canView('ai.query')">
-      <div class="nav-section-title">智能助手</div>
-      <router-link to="/ai-chat" class="nav-item" :class="{ active: isActive('/ai-chat') }">
-        <span class="nav-icon">🤖</span>
-        <span class="nav-text">AI 助手</span>
-      </router-link>
-    </div>
-
-    <div class="nav-section" v-if="canView('system.view') || canView('participant_type_permission.view')">
-      <div class="nav-section-title">设置</div>
-      <router-link to="/system" class="nav-item" :class="{ active: isActive('/system') }" v-if="canView('system.view')">
-        <span class="nav-icon">⚙️</span>
-        <span class="nav-text">系统设置</span>
-      </router-link>
-      <router-link to="/participant-type-permissions" class="nav-item" :class="{ active: isActive('/participant-type-permissions') }" v-if="canView('participant_type_permission.view')">
-        <span class="nav-icon">🔐</span>
-        <span class="nav-text">参与人权限</span>
+    <div v-for="section in NAV_SECTIONS" :key="section.title" class="nav-section" v-if="section.items.some(item => canView(item.perm))">
+      <div class="nav-section-title">{{ section.title }}</div>
+      <router-link
+        v-for="item in section.items" :key="item.path"
+        :to="item.path" class="nav-item" :class="{ active: isActive(item.path) }"
+        v-if="canView(item.perm)"
+      >
+        <span class="nav-icon">{{ item.icon }}</span>
+        <span class="nav-text">{{ item.text }}</span>
       </router-link>
     </div>
   </nav>
@@ -80,7 +20,47 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { hasPermission } from '../router'
 
-const route = useRoute()
+const NAV_SECTIONS = [
+  {
+    title: '主菜单',
+    items: [
+      { path: '/dashboard', icon: '🏠', text: '首页', perm: null },  // null = 总是可见
+      { path: '/quotations', icon: '📋', text: '报价单管理', perm: 'quotation.view' },
+      { path: '/materials', icon: '📦', text: '原材料库', perm: 'material.view' },
+      { path: '/fee-types', icon: '💰', text: '费用类型', perm: 'fee_type.view' },
+      { path: '/my-assignments', icon: '📌', text: '我的分配', perm: 'module_assignment.view' },
+    ],
+  },
+  {
+    title: '系统管理',
+    items: [
+      { path: '/users', icon: '👤', text: '用户管理', perm: 'user.view' },
+      { path: '/roles', icon: '👥', text: '角色管理', perm: 'role.view' },
+      { path: '/fee-rates', icon: '📊', text: '费用系数', perm: 'fee_rate.view' },
+      { path: '/exchange-rates', icon: '💱', text: '汇率配置', perm: 'exchange_rate.view' },
+      { path: '/logs', icon: '📝', text: '操作日志', perm: 'log.view' },
+      { path: '/travel-fee-config', icon: '🚚', text: '运输差旅配置', perm: 'travel_fee_config.view' },
+    ],
+  },
+  {
+    title: '智能助手',
+    items: [
+      { path: '/ai-chat', icon: '🤖', text: 'AI 助手', perm: 'ai.query' },
+    ],
+  },
+  {
+    title: '设置',
+    items: [
+      { path: '/system', icon: '⚙️', text: '系统设置', perm: 'system.view' },
+      { path: '/participant-type-permissions', icon: '🔐', text: '参与人权限', perm: 'participant_type_permission.view' },
+    ],
+  },
+]
+
+const canView = (perm) => {
+  if (!perm) return true  // null perm = 总是可见
+  return hasPermission(userPermissions.value, perm)
+}
 const authStore = useAuthStore()
 
 const userPermissions = computed(() => authStore.userInfo?.permissions || [])
