@@ -115,7 +115,7 @@
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { logsAPI } from '../api'
+import { logsAPI, usersAPI } from '../api'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -185,9 +185,7 @@ const fetchData = async () => {
     total.value = res.total || tableData.value.length
     // 加载用户列表
     if (users.value.length === 0) {
-      const userRes = await fetch('/api/users?page_size=100', {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      }).then(r => r.json())
+      const userRes = await usersAPI.getList({ page_size: 100 })
       users.value = userRes.items || []
     }
   } catch (error) {

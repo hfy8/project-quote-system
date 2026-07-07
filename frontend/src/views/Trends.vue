@@ -187,7 +187,7 @@ import {
 } from 'echarts/components'
 import VChart from 'vue-echarts'
 import { Loading } from '@element-plus/icons-vue'
-import axios from 'axios'
+import request from '@/utils/request'
 
 use([
   CanvasRenderer, BarChart, LineChart, PieChart, ScatterChart,
@@ -383,11 +383,7 @@ const onScatterClick = (params) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const token = localStorage.getItem('token') || ''
-    const res = await axios.get(`/api/quotations/trends?months=${monthsRange.value}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    const d = res.data
+    const d = await request.get(`/quotations/trends`, { params: { months: monthsRange.value } })
     summary.value = d.summary || summary.value
     monthly.value = d.monthly || []
     byStatus.value = d.by_status || []
