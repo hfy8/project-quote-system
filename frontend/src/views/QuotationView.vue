@@ -88,201 +88,26 @@
         <el-tab-pane v-if="permissions.tabs?.includes('materials')" label="物料清单" name="materials">
           <!-- 已归档警告 -->
           <el-alert v-if="isArchived" title="报价单已归档，物料不可编辑" type="warning" :closable="false" show-icon style="margin-bottom: 16px;" />
-
-          <div class="material-actions">
-            <el-select v-model="selectedModuleFilter" placeholder="全部模块" clearable style="width: 200px;">
-              <el-option
-                v-for="mod in modules"
-                :key="mod.id"
-                :label="mod.name"
-                :value="mod.id"
-              />
-            </el-select>
-          </div>
-
-          <!-- 按模块分组显示物料 -->
-          <div v-for="mod in filteredModuleGroups" :key="mod.id" class="module-group">
-            <div class="module-group-header">
-              <span class="module-name">{{ mod.name }}</span>
-              <el-tag v-if="quotation.type === 'line' && mod.quotation_name" size="small" type="info" effect="plain" style="margin-left: 8px;">
-                {{ mod.quotation_name }}
-              </el-tag>
-              <span class="module-material-count">{{ mod.materials.length }} 项物料</span>
-              <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
-              <el-button type="primary" size="small" @click="showAddMaterialToModule(mod.id)">+ 添加物料</el-button>
-            </div>
-            <el-table :data="mod.materials" border style="width: 100%;" show-overflow-tooltip>
-              <el-table-column prop="material_name" label="物料名称" min-width="100">
-                <template #default="{ row }">{{ row.material_name || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="item_no" label="品号" min-width="110">
-                <template #default="{ row }">
-                  <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
-                  <span v-else style="color: #c0c4cc;">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="specification" label="规格" min-width="80">
-                <template #default="{ row }">{{ row.specification || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="brand" label="品牌" width="70">
-                <template #default="{ row }">{{ row.brand || '-' }}</template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param1" label="关键参数01" width="130">
-                <template #default="{ row }"><span v-if="row.param1">{{ row.param1 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param2" label="关键参数02" width="130">
-                <template #default="{ row }"><span v-if="row.param2">{{ row.param2 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="hasKeyFields" prop="param3" label="关键参数03" width="130">
-                <template #default="{ row }"><span v-if="row.param3">{{ row.param3 }}</span></template>
-              </el-table-column>
-              <el-table-column prop="unit" label="单位" width="60">
-                <template #default="{ row }">{{ row.unit || '-' }}</template>
-              </el-table-column>
-              <el-table-column prop="unit_price" label="单价" width="90">
-                <template #default="{ row }">{{ (row.unit_price || 0).toFixed(2) }}</template>
-              </el-table-column>
-              <el-table-column label="数量" width="130">
-                <template #default="{ row }">
-                  <span v-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
-                  <el-input-number
-                    v-else
-                    :model-value="row.quantity"
-                    :min="1"
-                    size="small"
-                    controls-position="right"
-                    @change="(val) => updateMaterialQuantity(row.id, val)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="小计" width="100">
-                <template #default="{ row }">
-                  {{ ((row.unit_price || 0) * row.quantity).toFixed(2) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="添加人" width="80">
-                <template #default="{ row }">
-                  {{ row.selected_by_name || '-' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="150" align="center">
-                <template #default="{ row }">
-                  <template v-if="row.is_other === true">
-                    <el-button size="small" @click="editOtherMaterial(row)">改单价</el-button>
-                    <el-button size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
-                  </template>
-                  <el-button v-else size="small" type="danger" @click="deleteModuleMaterial(row.id)">删除</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </div>
-
-          <!-- 全部模块合计 -->
-          <div v-if="moduleMaterials.length > 0" class="material-summary total">
-            <span>全部物料合计：{{ allMaterialsTotal.toFixed(2) }} 元</span>
-          </div>
-
-          <!-- 添加物料弹窗 -->
-          <el-dialog v-model="materialDialogVisible" title="添加物料" width="1300px">
-            <!-- 筛选栏 -->
-            <div class="material-filter-bar">
-              <el-input v-model="materialFilter.keyword" placeholder="搜索品名/规格/品牌" clearable style="width: 200px;" @input="onKeywordChange" @clear="onMaterialFilterChange" />
-              <el-select v-model="materialFilter.category" placeholder="分类" clearable style="width: 110px;" @change="onMaterialFilterChange">
-                <el-option label="大件" value="large" />
-                <el-option label="核心部件" value="standard" />
-                <el-option label="其他件" value="other" />
-              </el-select>
-              <el-select v-model="materialFilter.brand" placeholder="品牌" clearable style="width: 110px;" @change="onMaterialFilterChange">
-                <el-option v-for="b in availableBrands" :key="b" :label="b" :value="b" />
-              </el-select>
-              <span style="margin-left:auto;color:#909399;font-size:13px;">共 {{ materialTotal }} 条</span>
-            </div>
-
-            <!-- 物料列表 (服务端分页, 每次改筛选重新查 DB) -->
-            <el-table
-              :data="availableMaterials"
-              border
-              style="width: 100%; margin-top: 12px;"
-              max-height="450"
-              show-overflow-tooltip
-              @selection-change="handleMaterialSelection"
-              ref="materialTableRef"
-            >
-              <el-table-column type="selection" width="45"></el-table-column>
-              <el-table-column prop="name" label="品名" min-width="120" />
-              <el-table-column prop="item_no" label="品号" min-width="110">
-                <template #default="{ row }">
-                  <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
-                  <span v-else style="color: #c0c4cc;">-</span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="spec" label="规格" min-width="100" />
-              <el-table-column prop="brand" label="品牌" width="70" />
-              <el-table-column v-if="materialHasKeyParams" prop="param1" label="关键参数01" width="140">
-                <template #default="{ row }"><span v-if="row.param1" class="key-param">{{ row.param1 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="materialHasKeyParams" prop="param2" label="关键参数02" width="140">
-                <template #default="{ row }"><span v-if="row.param2" class="key-param">{{ row.param2 }}</span></template>
-              </el-table-column>
-              <el-table-column v-if="materialHasKeyParams" prop="param3" label="关键参数03" width="140">
-                <template #default="{ row }"><span v-if="row.param3" class="key-param">{{ row.param3 }}</span></template>
-              </el-table-column>
-              <el-table-column prop="unit" label="单位" width="60" />
-              <el-table-column prop="unit_price" label="单价" width="70" />
-              <el-table-column label="分类" width="70">
-                <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
-              </el-table-column>
-              <el-table-column label="数量" width="120">
-                <template #default="{ row }">
-                  <span v-if="row.name === '其他'">1 <span style="color:#999;font-size:12px">(不可改)</span></span>
-                  <el-input-number
-                    v-else
-                    v-model="row._quantity"
-                    :min="1"
-                    size="small"
-                    controls-position="right"
-                    :disabled="!selectedMaterials.includes(row)"
-                  />
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <!-- 分页器 -->
-            <div class="material-pagination">
-              <el-pagination
-                v-model:current-page="materialPage"
-                v-model:page-size="materialPageSize"
-                :total="materialTotal"
-                :page-sizes="[20, 50, 100, 200]"
-                layout="total, sizes, prev, pager, next, jumper"
-                @current-change="onMaterialPageChange"
-                @size-change="onMaterialPageChange"
-              />
-            </div>
-
-            <template #footer>
-              <el-button @click="materialDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="addMaterialsToModule">确定添加</el-button>
-            </template>
-          </el-dialog>
-
-          <!-- 修改其他物料单价弹窗 -->
-          <el-dialog v-model="otherPriceDialogVisible" title="修改其他物料单价" width="400px">
-            <el-form :model="otherPriceForm" label-width="100px">
-              <el-form-item label="物料名称">
-                <el-input v-model="otherPriceForm.material_name" disabled />
-              </el-form-item>
-              <el-form-item label="单价">
-                <el-input-number v-model="otherPriceForm.unit_price_override" :min="0" :precision="2" style="width: 100%;" />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="otherPriceDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="saveOtherMaterialPrice">保存</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewMaterialsTab
+            :module-materials="moduleMaterials"
+            :grouped-materials="filteredModuleGroups"
+            :all-materials-total="allMaterialsTotal"
+            :selected-currency="selectedCurrency"
+            :exchange-rates="exchangeRates"
+            :modules="modules"
+            :available-materials="availableMaterials"
+            :material-total="materialTotal"
+            :has-key-fields="hasKeyFields"
+            :material-has-key-params="materialHasKeyParams"
+            :selected-module-filter="selectedModuleFilter"
+            @update:selected-module-filter="selectedModuleFilter = $event"
+            @update-quantity="updateMaterialQuantity"
+            @delete-material="deleteModuleMaterial"
+            @add-materials="addMaterialsToModule"
+            @save-other-price="saveOtherMaterialPrice"
+            @load-materials="onLoadAvailableMaterials"
+          />
         </el-tab-pane>
-
         <!-- 费用 -->
         <el-tab-pane v-if="permissions.tabs?.includes('fees')" label="费用" name="fees">
           <QuotationViewFeesTab
@@ -386,308 +211,20 @@
             @mode-change="onTripModeChange"
           />
         </el-tab-pane>
-        <!-- 汇总 -->
+        <!-- 汇总 (currency select 由 QuotationEditSummary 内部渲染) -->
         <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
-          <div v-loading="summaryLoading" ref="summaryRef" element-loading-text="页面加载中...">
-            <div class="summary-header no-export">
-              <div class="summary-currency">
-                <span class="currency-label">显示货币：</span>
-                <el-select v-model="selectedCurrency" style="width: 120px;">
-                  <el-option v-for="rate in exchangeRates" :key="rate.currency" :label="rate.currency" :value="rate.currency" />
-                </el-select>
-                <span v-if="selectedCurrency !== 'CNY'" class="currency-note">
-                  汇率：{{ getExchangeRate(selectedCurrency) }}，已转换
-                </span>
-              </div>
-            </div>
-            <QuotationSummaryCards
-              :summary="summary"
-              :design-labor-cost="designLaborCost"
-              :debug-labor-cost="debugLaborCost"
-              :profit-amount="profitAmount"
-              :management-fee-total="projectManagementFee"
-              :certification-fee-cost="certificationFeeCost"
-              :fmt-money="fmtMoney"
-            />
-
-            <!-- 占比分析 -->
-            <div v-if="summary" class="breakdown-section">
-              <h3 class="section-title">📊 占比分析（基于含利润小计）</h3>
-
-              <!-- 旧的占比分析 5 张卡片已移除 (ratio-cards), 直接显示硬件成本结构 -->
-
-              <div v-if="summary.rate_details && summary.rate_details.length > 0" class="hardware-structure">
-                <h4 class="section-subtitle">🔩 硬件成本结构</h4>
-                <div class="hardware-cards">
-                  <div
-                    v-for="row in summary.rate_details"
-                    :key="row.category"
-                    class="hardware-card"
-                    :class="'cat-' + row.category"
-                  >
-                    <div class="hardware-label">
-                      <span class="dot"></span>
-                      {{ getCategoryLabel(row.category) }}
-                    </div>
-                    <div class="hardware-amount">¥{{ row.with_rate?.toFixed(2) || '0.00' }}</div>
-                    <div class="hardware-percent">
-                      {{ getMaterialCategoryRatio(row.with_rate) }}% <span class="ratio-of">of 硬件</span>
-                    </div>
-                    <div class="hardware-bar">
-                      <div class="hardware-bar-fill" :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"></div>
-                    </div>
-                    <div class="hardware-meta">系数 {{ row.rate }}x · 原价 ¥{{ row.base?.toFixed(2) }}</div>
-                  </div>
-                </div>
-                <div class="hardware-stacked-bar">
-                  <div
-                    v-for="row in summary.rate_details"
-                    :key="'stack-' + row.category"
-                    class="stacked-segment"
-                    :class="'cat-' + row.category"
-                    :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"
-                    :title="`${getCategoryLabel(row.category)}: ¥${row.with_rate?.toFixed(2)} (${getMaterialCategoryRatio(row.with_rate)}%)`"
-                  ></div>
-                </div>
-              </div>
-
-              <!-- 目标调价: 5 张卡片 (硬件, 大件, 设计/调试比, 目标硬件占比, 目标报价) -->
-              <h4 class="section-subtitle" style="margin-top: 24px;">🎯 目标调价</h4>
-              <div class="target-price-cards">
-                <!-- 1. 硬件 (实际) -->
-                <div class="target-card">
-                  <div class="target-label">🔧 硬件（含系数）</div>
-                  <div class="target-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-                  <div class="target-meta">占不含税报价 <strong>{{ actualHardwareRatioPercent.toFixed(2) }}%</strong></div>
-                  <div class="target-bar">
-                    <div class="target-bar-fill" :style="{ width: actualHardwareRatioPercent + '%' }"></div>
-                  </div>
-                  <div class="target-sub-meta">不含税报价 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}</div>
-                </div>
-
-                <!-- 2. 大件 (占硬件) -->
-                <div class="target-card">
-                  <div class="target-label">📦 大件占硬件</div>
-                  <div class="target-value highlight">¥{{ largeHardwareAmount?.toFixed(2) || '0.00' }}</div>
-                  <div class="target-meta">占硬件 <strong>{{ largeHardwareRatioPercent.toFixed(2) }}%</strong></div>
-                  <div class="target-bar">
-                    <div class="target-bar-fill cat-large" :style="{ width: largeHardwareRatioPercent + '%' }"></div>
-                  </div>
-                  <div class="target-sub-meta">硬件合计 ¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-                </div>
-
-                <!-- 3. 机械/电控比 (设计/调试模块硬件成本比) -->
-                <div class="target-card">
-                  <div class="target-label">⚖️ 机械/电控比</div>
-                  <div class="target-value target-ratio-text">{{ moduleTypeRatio.label }}</div>
-                  <div class="target-meta">
-                    机械 ¥{{ moduleTypeRatio.mech.toFixed(0) }} : 电控 ¥{{ moduleTypeRatio.elec.toFixed(0) }}
-                  </div>
-                  <div class="target-bar">
-                    <div class="target-bar-fill cat-mechanical" :style="{ width: ((moduleTypeRatio.mech / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%' }"></div>
-                    <div class="target-bar-fill cat-electrical" :style="{ width: ((moduleTypeRatio.elec / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%', left: ((moduleTypeRatio.mech / Math.max(moduleTypeRatio.mech + moduleTypeRatio.elec, 1)) * 100) + '%' }"></div>
-                  </div>
-                  <div class="target-sub-meta">基于模块硬件成本（含系数）</div>
-                </div>
-
-                <!-- 4. 目标硬件占比 (可编辑) -->
-                <div class="target-card target-card-editable">
-                  <div class="target-label">🎯 目标硬件占比 <span class="editable-tag">可调</span></div>
-                  <div class="target-input-wrap">
-                    <el-input-number
-                      :model-value="targetHardwareRatio"
-                      @update:modelValue="onTargetHardwareRatioInput"
-                      :min="1" :max="100" :step="0.5" :precision="2"
-                      size="large"
-                      style="width: 100%;"
-                    >
-                      <template #append>%</template>
-                    </el-input-number>
-                  </div>
-                  <el-slider
-                    :model-value="targetHardwareRatio"
-                    @update:modelValue="onTargetHardwareRatioInput"
-                    :min="1" :max="100" :step="0.5"
-                    show-input
-                    :show-input-controls="false"
-                    style="margin-top: 8px;"
-                  />
-                  <div class="target-sub-meta">
-                    初始 {{ actualHardwareRatioPercent.toFixed(2) }}%
-                    <el-button link size="small" type="info" @click="resetTargetHardwareRatio" style="margin-left: 8px;">重置</el-button>
-                  </div>
-                </div>
-
-                <!-- 5. 目标报价 (联动) -->
-                <div class="target-card target-card-highlight">
-                  <div class="target-label">💰 目标报价（联动）</div>
-                  <div class="target-value huge">¥{{ targetPrice?.toFixed(2) || '0.00' }}</div>
-                  <div class="target-meta">
-                    vs 不含税 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}
-                    <span :class="['delta', targetPriceDelta >= 0 ? 'delta-pos' : 'delta-neg']">
-                      {{ targetPriceDelta >= 0 ? '+' : '' }}{{ targetPriceDelta.toFixed(2) }}
-                    </span>
-                  </div>
-                  <div class="target-bar">
-                    <div class="target-bar-fill" :style="{ width: targetHardwareRatio + '%' }"></div>
-                  </div>
-                  <div class="target-sub-meta">
-                    最终含税报价 ¥{{ finalPriceWithTax?.toFixed(2) || '0.00' }}
-                  </div>
-                </div>
-
-                <!-- 6. 物料分类系数 (基于现有基数) -->
-                <div class="target-card target-card-editable target-card-wide">
-                  <div class="target-label">⚙️ 物料分类建议系数 <span class="editable-tag">基数分配</span></div>
-                  <el-table :data="categoryCoefficients" border size="small" style="margin-top: 4px;">
-                    <el-table-column prop="label" label="分类" width="80" />
-                    <el-table-column label="原价" width="90" align="right">
-                      <template #default="{ row }">¥{{ row.base.toFixed(0) }}</template>
-                    </el-table-column>
-                    <el-table-column label="现系数" width="70" align="center">
-                      <template #default="{ row }">{{ row.current_rate.toFixed(2) }}x</template>
-                    </el-table-column>
-                    <el-table-column label="建议系数" width="80" align="center">
-                      <template #default="{ row }">
-                        <strong :class="['coef-new', row.cat_class]">{{ row.new_rate.toFixed(2) }}x</strong>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="调整金额" align="right">
-                      <template #default="{ row }">
-                        <span :class="['uplift-amt', row.uplift >= 0 ? 'uplift-pos' : 'uplift-neg']">
-                          {{ row.uplift >= 0 ? '+' : '' }}{{ row.uplift.toFixed(0) }}
-                        </span>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                  <div class="target-sub-meta">
-                    按原价占比分配, 调高占比→各分类同比例上调
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <h3 style="margin-top: 24px;">模块汇总</h3>
-
-            <!-- 按模块类型分组卡片展示 (横向排列, table 高度固定 400 滚动) -->
-            <div class="summary-modules-grid">
-              <div v-for="group in groupedViewSummaryModulesByType" :key="group.value" class="module-type-group summary-module-card">
-                <div class="module-type-header" :class="'type-' + group.value">
-                  <div class="module-type-icon" :class="'type-' + group.value">
-                    <span v-if="group.value === 'mechanical'">🔧</span>
-                    <span v-else-if="group.value === 'electrical'">⚡</span>
-                    <span v-else>📦</span>
-                  </div>
-                  <span class="module-type-title">{{ group.label }}模块</span>
-                  <span class="module-type-count">{{ group.group_module_count }} 个</span>
-                </div>
-                <div class="module-type-stats">
-                  <div class="module-type-stat-row">
-                    <span class="stat-label">模块数</span>
-                    <span class="stat-value">{{ group.group_module_count }}</span>
-                  </div>
-                  <div class="module-type-stat-row">
-                    <span class="stat-label">物料数</span>
-                    <span class="stat-value">{{ group.group_materials_count }}</span>
-                  </div>
-                  <div class="module-type-stat-row">
-                    <span class="stat-label">物料小计</span>
-                    <span class="stat-value">¥{{ group.group_total.toFixed(2) }}</span>
-                  </div>
-                  <div class="module-type-stat-row highlight">
-                    <span class="stat-label">含系数小计</span>
-                    <span class="stat-value module-type-total">¥{{ group.group_total_with_rate.toFixed(2) }}</span>
-                  </div>
-                </div>
-                <div class="module-type-table-wrapper">
-                  <el-table :data="group.module_list" border height="400" empty-text="暂无模块" style="width: 100%;">
-                    <el-table-column prop="module_name" label="模块名称" min-width="60" flex="1">
-                      <template #default="{ row }">
-                        <div class="cell-name-wrap">
-                          <span class="cell-module-name" :title="row.module_name">{{ row.module_name }}</span>
-                          <el-tag size="mini" :type="row.module_type === 'mechanical' ? 'primary' : row.module_type === 'electrical' ? 'warning' : 'info'" effect="plain">
-                            {{ row.module_type_label || '其他' }}
-                          </el-tag>
-                        </div>
-                      </template>
-                    </el-table-column>
-                    <el-table-column prop="material_count" label="物料" min-width="50" align="center" />
-                    <el-table-column label="物料小计" min-width="80" align="right">
-                      <template #default="{ row }">
-                        <span class="cell-amount">¥{{ (row.material_amount || 0).toFixed(0) }}</span>
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="含系数" width="90" align="right">
-                      <template #default="{ row }">
-                        <span class="cell-amount highlight">¥{{ (row.material_amount_with_rate || row.material_amount || 0).toFixed(0) }}</span>
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-              </div>
-            </div>
-
-            <!-- 兼容旧数据 -->
-            <el-table v-if="groupedViewSummaryModulesByType.length === 0 && summary?.modules?.length > 0" :data="summary.modules" border style="width: 100%; margin-top: 8px;">
-              <el-table-column prop="module_name" label="模块名称" />
-              <el-table-column prop="material_count" label="物料数量" width="100" />
-              <el-table-column label="物料小计" width="120">
-                <template #default="{ row }">
-                  {{ row.material_amount?.toFixed(2) || '0.00' }}
-                </template>
-              </el-table-column>
-              <el-table-column label="含系数小计" width="130">
-                <template #default="{ row }">
-                  {{ row.material_amount_with_rate?.toFixed(2) || row.material_amount?.toFixed(2) || '0.00' }}
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <!-- 费用明细参数 (2 卡片: 单价/系数 + 数量) -->
-            <h3 style="margin-top: 32px;">📋 费用明细参数</h3>
-            <div v-if="summary" class="coefficient-detail-section">
-              <!-- 卡片 1: 单价 + 系数 -->
-              <div class="detail-card">
-                <div class="detail-card-header">
-                  <h4>📋 单价/系数</h4>
-                </div>
-                <el-table :data="detailPriceRows" border size="small">
-                  <el-table-column prop="group" label="类别" width="140" />
-                  <el-table-column prop="label" label="项目" />
-                  <el-table-column prop="value" label="数值" width="140" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'value-strong': row.strong }">{{ row.value }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-
-              <!-- 卡片 2: 数量 -->
-              <div class="detail-card">
-                <div class="detail-card-header">
-                  <h4>📊 数量</h4>
-                </div>
-                <el-table :data="detailQuantityRows" border size="small">
-                  <el-table-column prop="group" label="类别" width="140" />
-                  <el-table-column prop="label" label="项目" />
-                  <el-table-column prop="value" label="数量" width="140" align="right">
-                    <template #default="{ row }">
-                      <span :class="{ 'value-strong': row.strong }">{{ row.value }}</span>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </div>
-            </div>
-
-            <div class="export-grid no-export" style="margin-top: 24px;">
-              <div class="export-item" @click="exportSummaryAsPDF">
-                <span class="export-icon">🖼️</span>
-                <span class="export-label">导出汇总 PDF（按网页）</span>
-              </div>
-            </div>
-          </div>
+          <QuotationViewSummaryTab
+            ref="summaryRef"
+            :summary="summary"
+            :summary-loading="summaryLoading"
+            :selected-currency="selectedCurrency"
+            :exchange-rates="exchangeRates"
+            :exchange-rate-symbol="exchangeRateSymbol"
+            :grouped-view-summary-modules-by-type="groupedViewSummaryModulesByType"
+            :all-modules-count="allModulesCount"
+            @update:selected-currency="selectedCurrency = $event"
+          />
         </el-tab-pane>
-
         <!-- 导出 -->
         <el-tab-pane v-if="permissions.tabs?.includes('export')" label="导出" name="export">
           <QuotationViewExportTab
@@ -716,6 +253,8 @@ import QuotationViewLaborTab from '@/components/QuotationViewLaborTab.vue'
 import QuotationViewTravelDaysTab from '@/components/QuotationViewTravelDaysTab.vue'
 import QuotationViewTravelTripsTab from '@/components/QuotationViewTravelTripsTab.vue'
 import QuotationViewModulesTab from '@/components/QuotationViewModulesTab.vue'
+import QuotationViewMaterialsTab from '@/components/QuotationViewMaterialsTab.vue'
+import QuotationViewSummaryTab from '@/components/QuotationViewSummaryTab.vue'
 import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
@@ -1860,16 +1399,32 @@ async function deleteModule(id) {
 }
 
 // 加载物料列表（按筛选条件 + 分页查询）
-async function loadAvailableMaterials() {
+// 可接受子组件 emit 的 params, 父级直接传 null 用本地状态
+async function onLoadAvailableMaterials(params) {
+  return loadAvailableMaterials(params)
+}
+
+// 兼容旧 API: 无参调用
+async function loadAvailableMaterials(params = null) {
   try {
-    const params = {
-      page: materialPage.value,
-      page_size: materialPageSize.value,
-      status: 'active',
+    if (!params) {
+      params = {
+        page: materialPage.value,
+        page_size: materialPageSize.value,
+        status: 'active',
+      }
+      if (materialFilter.keyword) params.keyword = materialFilter.keyword
+      if (materialFilter.category) params.category = materialFilter.category
+      if (materialFilter.brand) params.brand = materialFilter.brand
+    } else {
+      // 子组件 emit 的 params 同步到父级 (保持本地状态一致)
+      materialPage.value = params.page
+      materialPageSize.value = params.pageSize
+      materialFilter.keyword = params.keyword || ''
+      materialFilter.category = params.category || ''
+      materialFilter.brand = params.brand || ''
+      params.status = 'active'
     }
-    if (materialFilter.keyword) params.keyword = materialFilter.keyword
-    if (materialFilter.category) params.category = materialFilter.category
-    if (materialFilter.brand) params.brand = materialFilter.brand
     const data = await api.get('/materials', { params })
     availableMaterials.value = data.items || []
     materialTotal.value = data.total || 0
@@ -1999,40 +1554,52 @@ function handleMaterialSelection(selection) {
 }
 
 // 添加物料到模块
-async function addMaterialsToModule() {
-  if (selectedMaterials.value.length === 0) {
+async function addMaterialsToModule(moduleId, materials) {
+  // 兼容旧调用方式 (无参) - 从子组件 emit 进来时 moduleId/materials 必传
+  if (arguments.length === 0) {
+    // 旧 dialog 模式, 用 selectedModuleId / selectedMaterials
+    if (selectedMaterials.value.length === 0) {
+      ElMessage.warning('请选择物料')
+      return
+    }
+    moduleId = selectedModuleId.value
+    materials = selectedMaterials.value.map(m => ({ material_id: m.id, quantity: m._quantity || 1 }))
+  }
+
+  if (!moduleId || !materials || materials.length === 0) {
     ElMessage.warning('请选择物料')
     return
   }
-  
+
   // 已归档报价单需要提交变更申请
   if (isArchived.value) {
     ElMessage.error('已归档报价单不可编辑')
     return
   }
-  
+
   try {
     // 检查是否重复物料
     const existingMaterialIds = moduleMaterials.value
-      .filter(mm => mm.module_id === selectedModuleId.value)
+      .filter(mm => mm.module_id === moduleId)
       .map(mm => mm.material_id || mm.id)
-    const duplicate = selectedMaterials.value.find(m => existingMaterialIds.includes(m.id))
+    const duplicate = materials.find(m => existingMaterialIds.includes(m.material_id))
     if (duplicate) {
-      ElMessage.warning(`"${duplicate.name}" 已在该模块中，请修改数量`)
+      ElMessage.warning(`该物料已在该模块中，请修改数量`)
       return
     }
 
-    for (const material of selectedMaterials.value) {
-      const qty = material._quantity || 1
-      await api.post(`/modules/${selectedModuleId.value}/materials`, {
-        material_id: material.id,
-        quantity: qty
+    for (const material of materials) {
+      await api.post(`/modules/${moduleId}/materials`, {
+        material_id: material.material_id,
+        quantity: material.quantity || 1
       })
     }
     ElMessage.success('添加成功')
     materialDialogVisible.value = false
     // 重置选中物料的 _quantity
-    selectedMaterials.value.forEach(m => m._quantity = 1)
+    if (selectedMaterials.value.length > 0) {
+      selectedMaterials.value.forEach(m => m._quantity = 1)
+    }
     loadModuleMaterials()
   } catch (error) {
     ElMessage.error('添加失败')
