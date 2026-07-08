@@ -25,201 +25,32 @@
 
         <!-- 模块管理 -->
         <el-tab-pane v-if="permissions.tabs?.includes('modules')" label="模块管理" name="modules">
-          <div class="module-actions">
-            <el-button type="primary" @click="showAddModule">添加模块</el-button>
-            <el-button type="success" @click="showCopyModuleDialog">从其他报价单复制模块</el-button>
-          </div>
-
-          <!-- 按模块类型分组卡片展示 -->
-          <div v-for="group in groupedViewModulesByType" :key="group.value" class="module-type-group">
-            <div class="module-type-header" :class="'type-' + group.value">
-              <div class="module-type-icon" :class="'type-' + group.value">
-                <span v-if="group.value === 'mechanical'">🔧</span>
-                <span v-else-if="group.value === 'electrical'">⚡</span>
-                <span v-else>📦</span>
-              </div>
-              <span class="module-type-title">{{ group.label }}模块</span>
-              <span class="module-type-count">{{ group.group_module_count }} 个</span>
-            </div>
-            <div class="module-type-body">
-              <div v-if="group.module_list.length === 0" class="module-type-empty">
-                该类型暂无模块
-              </div>
-              <div v-for="row in group.module_list" :key="row.id" class="module-card-item">
-                <div class="module-card-info">
-                  <div class="module-card-name">{{ row.name }}</div>
-                  <div class="module-card-meta">
-                    <span v-if="row.name_en">{{ row.name_en }} · </span>
-                    {{ row.description || '暂无描述' }}
-                  </div>
-                </div>
-                <div class="module-card-actions">
-                  <el-button size="small" @click="editModule(row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteModule(row.id)">删除</el-button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 兼容旧数据: 后端未返 module_type 时降级 -->
-          <el-table v-if="groupedViewModulesByType.length === 0 && modules.length > 0" :data="modules" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="name" label="模块名称" />
-            <el-table-column prop="name_en" label="英文名称" />
-            <el-table-column prop="description" label="描述" />
-            <el-table-column label="模块类型" width="120">
-              <template #default="{ row }">
-                <el-tag
-                  :type="row.module_type === 'mechanical' ? 'primary' : row.module_type === 'electrical' ? 'warning' : 'info'"
-                  effect="light"
-                  disable-transitions
-                >
-                  {{ row.module_type_label || '其他' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="180">
-              <template #default="{ row }">
-                <el-button size="small" @click="editModule(row)">编辑</el-button>
-                <el-button size="small" type="danger" @click="deleteModule(row.id)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <!-- 添加/编辑模块弹窗 -->
-          <el-dialog v-model="moduleDialogVisible" :title="moduleDialogTitle" width="500px">
-            <el-form :model="moduleForm" label-width="100px">
-              <el-form-item label="模块名称">
-                <el-input v-model="moduleForm.name" placeholder="请输入模块名称" />
-              </el-form-item>
-              <el-form-item label="英文名称">
-                <el-input v-model="moduleForm.name_en" placeholder="English name (optional)" />
-              </el-form-item>
-              <el-form-item label="描述">
-                <el-input v-model="moduleForm.description" type="textarea" rows="3" placeholder="请输入描述" />
-              </el-form-item>
-              <el-form-item label="模块类型">
-                <div style="display: flex; align-items: center; gap: 8px; width: 100%;">
-                  <el-radio-group v-model="moduleForm.module_type" style="flex: 1;">
-                    <el-radio-button
-                      v-for="t in MODULE_TYPES"
-                      :key="t.value"
-                      :value="t.value"
-                    >
-                      <span :style="{ color: t.color, fontWeight: 600 }">{{ t.label }}</span>
-                    </el-radio-button>
-                  </el-radio-group>
-                  <el-button
-                    v-if="currentParticipants.length > 0"
-                    size="small"
-                    @click="inferModuleType"
-                    :title="`根据已选 ${currentParticipants.length} 个参与人员岗位自动推断`"
-                  >
-                    ✨ 自动推断
-                  </el-button>
-                </div>
-                <div class="form-hint">
-                  机构: 机械/装配/焊工/CNC/钳工等; 电气: 电气/电控/电工等; 其他: 混合或无明确技术方向
-                </div>
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="moduleDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="saveModule">确定</el-button>
-            </template>
-          </el-dialog>
-
-          <!-- 复制模块弹窗 -->
-          <el-dialog v-model="copyModuleDialogVisible" title="从其他报价单复制模块" width="800px" :close-on-click-modal="false">
-            <el-form label-width="100px">
-              <el-form-item label="选择报价单">
-                <el-select
-                  v-model="copyForm.sourceQuotationId"
-                  placeholder="搜索报价单名称/方案号"
-                  filterable
-                  remote
-                  :remote-method="searchQuotationsForCopy"
-                  :loading="copyForm.searching"
-                  style="width: 100%;"
-                  @change="onCopySourceChange"
-                >
-                  <el-option
-                    v-for="q in copyForm.quotationOptions"
-                    :key="q.id"
-                    :label="`#${q.id} ${q.name} (${q.scheme_no || '无方案号'})`"
-                    :value="q.id"
-                  />
-                </el-select>
-              </el-form-item>
-
-              <el-form-item v-if="copyForm.sourceQuotationId" label="选择模块">
-                <div style="width: 100%;">
-                  <div style="margin-bottom: 8px;">
-                    <el-button size="small" @click="selectAllCopyModules" :disabled="!copyForm.availableModules.length">
-                      全选
-                    </el-button>
-                    <el-button size="small" @click="deselectAllCopyModules" :disabled="!copyForm.selectedModuleIds.length">
-                      全不选
-                    </el-button>
-                    <span style="margin-left: 12px; color: #909399; font-size: 12px;">
-                      已选 {{ copyForm.selectedModuleIds.length }} / {{ copyForm.availableModules.length }} 个模块
-                    </span>
-                  </div>
-                  <el-table
-                    :data="copyForm.availableModules"
-                    border
-                    max-height="300"
-                    @selection-change="handleCopyModuleSelection"
-                    v-loading="copyForm.loadingModules"
-                  >
-                    <el-table-column type="selection" width="50" />
-                    <el-table-column prop="id" label="ID" width="60" />
-                    <el-table-column prop="name" label="模块名称" />
-                    <el-table-column prop="name_en" label="英文名称" />
-                    <el-table-column label="物料数" width="80">
-                      <template #default="{ row }">
-                        {{ (row.materials || []).length }}
-                      </template>
-                    </el-table-column>
-                    <el-table-column label="小计" width="100">
-                      <template #default="{ row }">
-                        ¥{{ Number(row.total || 0).toFixed(2) }}
-                      </template>
-                    </el-table-column>
-                  </el-table>
-                </div>
-              </el-form-item>
-
-              <el-alert
-                v-if="copyForm.sourceQuotationId"
-                type="info"
-                :closable="false"
-                show-icon
-                style="margin-top: 12px;"
-              >
-                <template #title>
-                  <span style="font-size: 13px;">
-                    确认后将复制所选模块到当前报价单
-                    <strong style="color: #409EFF;">「{{ quotation?.name }}」</strong>
-                    ，新模块将包含相同的名称和物料信息。
-                  </span>
-                </template>
-              </el-alert>
-            </el-form>
-
-            <template #footer>
-              <el-button @click="copyModuleDialogVisible = false">取消</el-button>
-              <el-button
-                type="primary"
-                :disabled="!copyForm.selectedModuleIds.length"
-                :loading="copyForm.submitting"
-                @click="submitCopyModules"
-              >
-                确定复制 ({{ copyForm.selectedModuleIds.length }})
-              </el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewModulesTab
+            :modules="modules"
+            :grouped-view-modules-by-type="groupedViewModulesByType"
+            :dialog-visible="moduleDialogVisible"
+            :dialog-title="moduleDialogTitle"
+            :form-data="moduleForm"
+            :copy-dialog-visible="copyModuleDialogVisible"
+            :copy-source-id="copyModuleSourceId"
+            :copy-source-quotations="copyModuleQuotations"
+            :copy-loading="copyModuleLoading"
+            :module-types="MODULE_TYPES"
+            :current-participants-count="currentParticipants.length"
+            :infer-hint="inferModuleTypeHint"
+            @show-add="showAddModule"
+            @show-copy-dialog="showCopyModuleDialog"
+            @edit="editModule"
+            @delete="deleteModule"
+            @infer-type="inferModuleType"
+            @update:dialog-visible="moduleDialogVisible = $event"
+            @update:form-data="(v) => Object.assign(moduleForm, v)"
+            @confirm-save="saveModule"
+            @update:copy-dialog-visible="copyModuleDialogVisible = $event"
+            @update:copy-source-id="copyModuleSourceId = $event"
+            @confirm-copy="confirmCopyModule"
+          />
         </el-tab-pane>
-
         <!-- 参与人员 -->
         <el-tab-pane v-if="permissions.tabs?.includes('participants')" label="参与人员" name="participants">
           <QuotationViewParticipantsTab
@@ -471,113 +302,22 @@
 
         <!-- 人力工时 -->
         <el-tab-pane v-if="permissions.tabs?.includes('labor')" label="人力工时" name="labor">
-          <div class="labor-header">
-            <el-button type="primary" @click="showAddLabor">+ 添加工时</el-button>
-          </div>
-
-          <el-table :data="laborHours" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="labor_type" label="工时类型" width="110">
-              <template #default="{ row }">
-                <el-radio-group v-if="row._editing && !isViewMode" v-model="row._labor_type" size="small">
-                  <el-radio-button
-                    v-for="t in LABOR_TYPE_CHOICES"
-                    :key="t.value"
-                    :label="t.value"
-                    :title="t.label"
-                  >{{ t.label }}</el-radio-button>
-                </el-radio-group>
-                <el-tag v-else :color="LABOR_TYPE_CHOICES.find(t => t.value === row.labor_type)?.color" effect="dark" size="small" style="border: none; color: #fff;">
-                  {{ LABOR_TYPE_CHOICES.find(t => t.value === row.labor_type)?.label || '设计' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="name" label="名称" min-width="120">
-              <template #default="{ row }">
-                <el-input v-if="row._editing" v-model="row._name" size="small" placeholder="工时名称" />
-                <span v-else>{{ row.name }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="hours" label="工时 (h)" width="120">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._hours" :min="0" :precision="1" size="small" controls-position="right" style="width: 100px;" @change="onRowHoursChange(row)" />
-                <span v-else>{{ row.hours }} h</span>
-              </template>
-            </el-table-column>
-            <el-table-column prop="person_days" label="人天" width="120">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._person_days" :min="0" :precision="2" size="small" controls-position="right" style="width: 100px;" @change="onRowPersonDaysChange(row)" />
-                <span v-else>{{ formatPersonDays(row.hours) }} 人天</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="!isViewMode" prop="unit_price" label="单价 (元/h)" width="140">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 110px;" />
-                <span v-else>{{ row.unit_price.toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="!isViewMode" prop="total" label="合计" width="120">
-              <template #default="{ row }">{{ (row.hours * row.unit_price).toFixed(2) }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="150" align="center">
-              <template #default="{ row }">
-                <template v-if="row._editing">
-                  <el-button size="small" type="primary" @click="saveLaborRow(row)">保存</el-button>
-                  <el-button size="small" @click="cancelLaborEdit(row)">取消</el-button>
-                </template>
-                <template v-else>
-                  <el-button size="small" @click="editLaborRow(row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteLabor(row.id)">删除</el-button>
-                </template>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <div v-if="laborHours.length > 0 && !isViewMode" class="labor-total">
-            人力费用合计：<strong>{{ laborTotal.toFixed(2) }} 元</strong>
-            <span class="labor-total-days">（{{ formatPersonDays(laborHours.reduce((s, i) => s + (i.hours || 0), 0)) }} 人天）</span>
-          </div>
-          <div v-else-if="laborHours.length > 0 && isViewMode" class="labor-total">
-            合计：<strong>{{ formatPersonDays(laborHours.reduce((s, i) => s + (i.hours || 0), 0)) }} 人天</strong>
-          </div>
-
-          <!-- 添加工时弹窗 -->
-          <el-dialog v-model="laborDialogVisible" title="添加人力工时" width="500px">
-            <el-form :model="laborForm" label-width="100px">
-              <el-form-item label="名称">
-                <el-select v-model="laborForm.name" placeholder="请选择工时名称" style="width: 100%;" filterable @change="onLaborNameChange">
-                  <el-option v-for="n in LABOR_NAME_CHOICES" :key="n.name" :label="n.name" :value="n.name" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="工时类型">
-                <el-radio-group v-model="laborForm.labor_type" disabled>
-                  <el-radio-button
-                    v-for="t in LABOR_TYPE_CHOICES"
-                    :key="t.value"
-                    :label="t.value"
-                  >{{ t.label }}</el-radio-button>
-                </el-radio-group>
-                <span class="form-hint">根据名称自动设置</span>
-              </el-form-item>
-              <el-form-item label="工时 (h)">
-                <el-input-number v-model="laborForm.hours" :min="0" :precision="1" style="width: 100%;" @change="onHoursChange" />
-              </el-form-item>
-              <el-form-item label="人天">
-                <el-input-number v-model="laborForm.person_days" :min="0" :precision="2" style="width: 100%;" @change="onPersonDaysChange" />
-                <span class="form-hint">{{ HOURS_PER_DAY }} h = 1 人天</span>
-              </el-form-item>
-              <el-form-item label="单价 (元/h)" v-if="!isMyAssignments">
-                <el-input-number v-model="laborForm.unit_price" :min="0" :precision="2" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item label="合计" v-if="!isMyAssignments">
-                <span>{{ (laborForm.hours * laborForm.unit_price).toFixed(2) }} 元</span>
-                <span class="form-hint">（{{ laborForm.hours }} h = {{ formatPersonDays(laborForm.hours) }} 人天）</span>
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="laborDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="addLaborConfirm">确定</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewLaborTab
+            :labor-hours="laborHours"
+            :labor-total="laborTotal"
+            :is-view-mode="isViewMode"
+            :is-my-assignments="isMyAssignments"
+            :dialog-visible="laborDialogVisible"
+            :form-data="laborForm"
+            @show-add="showAddLabor"
+            @edit-row="editLaborRow"
+            @save-row="saveLaborRow"
+            @cancel-edit="cancelLaborEdit"
+            @delete="deleteLabor"
+            @update:dialog-visible="laborDialogVisible = $event"
+            @update:form-data="(v) => Object.assign(laborForm, v)"
+            @confirm-add="addLaborConfirm"
+          />
         </el-tab-pane>
 
 
@@ -588,194 +328,63 @@
 
         <!-- 运输包装 -->
         <el-tab-pane v-if="permissions.tabs?.includes('packing') && !isBoundChild" label="运输包装" name="packing">
-          <div class="packing-header">
-            <el-button type="primary" @click="showAddPackingEntry">+ 添加运输包装条目</el-button>
-          </div>
-          <el-table :data="packingEntries" border style="width: 100%; margin-top: 16px;">
-                      <el-table-column prop="packing_type_name" label="运输包装类型" />
-                      <el-table-column v-if="!isViewMode" prop="unit_price" label="单价（元/个）" width="150">
-                        <template #default="{ row }">
-                          <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 120px;" />
-                          <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
-                        </template>
-                      </el-table-column>
-                      <el-table-column label="数量" width="160">
-                        <template #default="{ row }">
-                          <el-input-number v-if="row._editing" v-model="row._quantity" :min="0" :precision="2" size="small" controls-position="right" style="width: 120px;" />
-                          <span v-else>{{ row.quantity }} {{ row.unit }}</span>
-                        </template>
-                      </el-table-column>
-                      <el-table-column v-if="!isViewMode" label="小计" width="130">
-                        <template #default="{ row }"><span class="money">¥{{ (row._editing ? row._unit_price : row.unit_price) * (row._editing ? row._quantity : row.quantity) }}</span></template>
-                      </el-table-column>
-                      <el-table-column prop="remark" label="备注" />
-                      <el-table-column label="操作" width="150" align="center">
-                        <template #default="{ row }">
-                          <template v-if="row._editing">
-                            <el-button size="small" type="primary" @click="savePackingRow(row)">保存</el-button>
-                            <el-button size="small" @click="cancelPackingEdit(row)">取消</el-button>
-                          </template>
-                          <template v-else>
-                            <el-button size="small" @click="editPackingRow(row)">编辑</el-button>
-                                              <el-button size="small" type="danger" @click="deletePackingEntry(row.id)">删除</el-button>
-                          </template>
-                        </template>
-                      </el-table-column>
-                    </el-table>
-          <div v-if="packingEntries.length > 0 && !isViewMode" class="labor-total">
-            运输包装费用合计：<strong>¥{{ packingTotal.toFixed(2) }}</strong>
-          </div>
-          <el-dialog v-model="packingDialogVisible" title="添加运输包装条目" width="450px">
-            <el-form :model="packingForm" label-width="110px">
-              <el-form-item label="运输包装类型" required>
-                <el-select v-model="packingForm.packing_type_id" placeholder="请选择" @change="onPackingTypeChange">
-                  <el-option v-for="pt in packingTypes" :key="pt.id" :label="pt.name" :value="pt.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="数量">
-                <el-input-number v-model="packingForm.quantity" :min="0" :precision="2" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item label="备注">
-                <el-input v-model="packingForm.remark" placeholder="可选" />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="packingDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="addPackingConfirm">确定</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewPackingTab
+            :entries="packingEntries"
+            :total="packingTotal"
+            :packing-types="packingTypes"
+            :is-view-mode="isViewMode"
+            @edit="editPackingRow"
+            @save="savePackingRow"
+            @cancel="cancelPackingEdit"
+            @delete="deletePackingEntry"
+            @confirm-add="addPackingConfirm"
+            @type-change="onPackingTypeChange"
+            @load-types="loadPackingTypes"
+          />
         </el-tab-pane>
 
         <!-- 差旅人天 -->
         <el-tab-pane v-if="permissions.tabs?.includes('travel_person_days') && !isBoundChild" label="差旅人天" name="travel-days">
-          <div class="packing-header">
-            <el-button type="primary" @click="showAddTravelDaysEntry">+ 添加人天条目</el-button>
-          </div>
-          <el-table :data="travelPersonDays" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="travel_category_name" label="差旅分类" />
-            <el-table-column v-if="!isViewMode" prop="unit_price" label="单价（元/人天）" width="150">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 120px;" />
-                <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="人天" width="160">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._person_days" :min="0" :precision="2" size="small" controls-position="right" style="width: 120px;" />
-                <span v-else>{{ row.person_days }} 人天</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="!isViewMode" label="小计" width="130">
-              <template #default="{ row }"><span class="money">¥{{ (row._editing ? row._unit_price : row.unit_price) * (row._editing ? row._person_days : row.person_days) }}</span></template>
-            </el-table-column>
-            <el-table-column prop="remark" label="备注" />
-            <el-table-column label="操作" width="150" align="center">
-              <template #default="{ row }">
-                <template v-if="row._editing">
-                  <el-button size="small" type="primary" @click="saveTravelDaysRow(row)">保存</el-button>
-                  <el-button size="small" @click="cancelTravelDaysEdit(row)">取消</el-button>
-                </template>
-                <template v-else>
-                  <el-button size="small" @click="editTravelDaysRow(row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteTravelDaysEntry(row.id)">删除</el-button>
-                </template>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="travelPersonDays.length > 0 && !isViewMode" class="labor-total">
-            差旅人天合计：<strong>¥{{ travelDaysTotal.toFixed(2) }}</strong>
-          </div>
-          <el-dialog v-model="travelDaysDialogVisible" title="添加差旅人天" width="450px">
-            <el-form :model="travelDaysForm" label-width="120px">
-              <el-form-item label="差旅分类" required>
-                <el-select v-model="travelDaysForm.travel_category_id" placeholder="请选择" @change="onTravelCategoryChange">
-                  <el-option v-for="c in travelCategories" :key="c.id" :label="c.name" :value="c.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="人天">
-                <el-input-number v-model="travelDaysForm.person_days" :min="0" :precision="2" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item label="备注">
-                <el-input v-model="travelDaysForm.remark" placeholder="可选" />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="travelDaysDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="addTravelDaysConfirm">确定</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewTravelDaysTab
+            :person-days="travelPersonDays"
+            :days-total="travelDaysTotal"
+            :is-view-mode="isViewMode"
+            :dialog-visible="travelDaysDialogVisible"
+            :form-data="travelDaysForm"
+            :travel-categories="travelCategories"
+            @show-add="showAddTravelDaysEntry"
+            @edit-row="editTravelDaysRow"
+            @save-row="saveTravelDaysRow"
+            @cancel-edit="cancelTravelDaysEdit"
+            @delete="deleteTravelDaysEntry"
+            @update:dialog-visible="travelDaysDialogVisible = $event"
+            @update:form-data="(v) => Object.assign(travelDaysForm, v)"
+            @confirm-add="addTravelDaysConfirm"
+            @category-change="onTravelCategoryChange"
+          />
         </el-tab-pane>
 
         <!-- 差旅人次 -->
         <el-tab-pane v-if="permissions.tabs?.includes('travel_person_trips') && !isBoundChild" label="差旅人次" name="travel-trips">
-          <div class="packing-header">
-            <el-button type="primary" @click="showAddTravelTripEntry">+ 添加人次条目</el-button>
-          </div>
-          <el-table :data="travelPersonTrips" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="travel_category_name" label="差旅分类" />
-            <el-table-column prop="travel_mode_name" label="出行方式" />
-            <el-table-column v-if="!isViewMode" prop="unit_price" label="交通单价" width="130">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._unit_price" :min="0" :precision="2" size="small" controls-position="right" style="width: 110px;" />
-                <span v-else class="money">¥{{ row.unit_price.toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="!isViewMode" prop="visa_fee" label="签证费" width="110">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._visa_fee" :min="0" :precision="2" size="small" controls-position="right" style="width: 90px;" />
-                <span v-else class="money">¥{{ row.visa_fee.toFixed(2) }}</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="人次" width="100">
-              <template #default="{ row }">
-                <el-input-number v-if="row._editing" v-model="row._person_count" :min="0" :precision="0" size="small" controls-position="right" style="width: 80px;" />
-                <span v-else>{{ row.person_count }} 人</span>
-              </template>
-            </el-table-column>
-            <el-table-column v-if="!isViewMode" label="小计" width="130">
-              <template #default="{ row }"><span class="money">¥{{ ((row._editing ? row._unit_price : row.unit_price) + (row._editing ? row._visa_fee : row.visa_fee)) * (row._editing ? row._person_count : row.person_count) }}</span></template>
-            </el-table-column>
-            <el-table-column prop="remark" label="备注" />
-            <el-table-column label="操作" width="150" align="center">
-              <template #default="{ row }">
-                <template v-if="row._editing">
-                  <el-button size="small" type="primary" @click="saveTravelTripRow(row)">保存</el-button>
-                  <el-button size="small" @click="cancelTravelTripEdit(row)">取消</el-button>
-                </template>
-                <template v-else>
-                  <el-button size="small" @click="editTravelTripRow(row)">编辑</el-button>
-                  <el-button size="small" type="danger" @click="deleteTravelTripEntry(row.id)">删除</el-button>
-                </template>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div v-if="travelPersonTrips.length > 0 && !isViewMode" class="labor-total">
-            差旅人次合计：<strong>¥{{ travelTripsTotal.toFixed(2) }}</strong>
-          </div>
-          <el-dialog v-model="travelTripDialogVisible" title="添加差旅人次" width="500px">
-            <el-form :model="travelTripForm" label-width="120px">
-              <el-form-item label="差旅分类" required>
-                <el-select v-model="travelTripForm.travel_category_id" placeholder="请选择" @change="onTripCategoryChange">
-                  <el-option v-for="c in travelCategories" :key="c.id" :label="c.name" :value="c.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="出行方式" required>
-                <el-select v-model="travelTripForm.travel_mode_id" placeholder="请选择" @change="onTripModeChange">
-                  <el-option v-for="m in travelModes" :key="m.id" :label="m.name" :value="m.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="人次">
-                <el-input-number v-model="travelTripForm.person_count" :min="0" :precision="0" style="width: 100%;" />
-              </el-form-item>
-              <el-form-item label="备注">
-                <el-input v-model="travelTripForm.remark" placeholder="可选" />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="travelTripDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="addTravelTripConfirm">确定</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewTravelTripsTab
+            :person-trips="travelPersonTrips"
+            :trips-total="travelTripsTotal"
+            :is-view-mode="isViewMode"
+            :dialog-visible="travelTripDialogVisible"
+            :form-data="travelTripForm"
+            :travel-categories="travelCategories"
+            :travel-modes="travelModes"
+            @show-add="showAddTravelTripEntry"
+            @edit-row="editTravelTripRow"
+            @save-row="saveTravelTripRow"
+            @cancel-edit="cancelTravelTripEdit"
+            @delete="deleteTravelTripEntry"
+            @update:dialog-visible="travelTripDialogVisible = $event"
+            @update:form-data="(v) => Object.assign(travelTripForm, v)"
+            @confirm-add="addTravelTripConfirm"
+            @category-change="onTripCategoryChange"
+            @mode-change="onTripModeChange"
+          />
         </el-tab-pane>
         <!-- 汇总 -->
         <el-tab-pane v-if="permissions.tabs?.includes('summary')" label="汇总" name="summary">
@@ -1103,9 +712,14 @@ import QuotationViewCoefficientsTab from '@/components/QuotationViewCoefficients
 import QuotationViewFeesTab from '@/components/QuotationViewFeesTab.vue'
 import QuotationViewVersionsTab from '@/components/QuotationViewVersionsTab.vue'
 import QuotationViewExportTab from '@/components/QuotationViewExportTab.vue'
+import QuotationViewLaborTab from '@/components/QuotationViewLaborTab.vue'
+import QuotationViewTravelDaysTab from '@/components/QuotationViewTravelDaysTab.vue'
+import QuotationViewTravelTripsTab from '@/components/QuotationViewTravelTripsTab.vue'
+import QuotationViewModulesTab from '@/components/QuotationViewModulesTab.vue'
 import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
+import { HOURS_PER_DAY, LABOR_NAME_CHOICES, LABOR_TYPE_CHOICES, formatPersonDays } from '@/utils/labor.js'
 import { feesAPI, packingTypeAPI, travelCategoryAPI, travelModeAPI, travelPersonTripFeeAPI } from '../api'
 import { packingEntryAPI, travelPersonDaysAPI, travelPersonTripAPI } from '../api/travel_entries'
 
@@ -1546,24 +1160,8 @@ async function resetCoefficientsToDefault() {
 
 // 人力工时
 const laborDialogVisible = ref(false)
-// 8 工时 = 1 人天 (标准 1 天 8 小时)
-const HOURS_PER_DAY = 8
-// 7 个固定工时名称 (选择后自动匹配工时类型)
-const LABOR_NAME_CHOICES = [
-  { name: '机械设计',                     labor_type: 'design' },
-  { name: '电控编程设计（PLC&HMI）',         labor_type: 'design' },
-  { name: '软件编程设计（C#&Vision&robot）', labor_type: 'design' },
-  { name: '生产装配',                     labor_type: 'assembly' },
-  { name: '机械厂外调试',                 labor_type: 'debug' },
-  { name: '电控编程厂外调试（PLC&HMI）',      labor_type: 'debug' },
-  { name: '软件编程厂外调试（C#&Vision&robot）', labor_type: 'debug' },
-]
-
-const LABOR_TYPE_CHOICES = [
-  { value: 'design', label: '设计', color: '#3b82f6' },
-  { value: 'debug', label: '调试', color: '#f59e0b' },
-  { value: 'assembly', label: '装配', color: '#10b981' },
-]
+// HOURS_PER_DAY / LABOR_NAME_CHOICES / LABOR_TYPE_CHOICES / formatPersonDays
+// 已抽到 @/utils/labor.js (子组件 LaborTab 也 import 同一份)
 const laborForm = reactive({
   name: '',
   hours: 0,         // 工时 (实际存储)
@@ -1572,39 +1170,9 @@ const laborForm = reactive({
   labor_type: 'design',  // 默认设计
 })
 
-// 工时名称变化 → 自动设置 labor_type
-function onLaborNameChange(name) {
-  const choice = LABOR_NAME_CHOICES.find(n => n.name === name)
-  if (choice) {
-    laborForm.labor_type = choice.labor_type
-  }
-}
-
 const laborTotal = computed(() => {
   return laborHours.value.reduce((sum, item) => sum + (item.hours || 0) * (item.unit_price || 0), 0)
 })
-
-// 人天 ↔ 工时 双向换算
-function formatPersonDays(hours) {
-  if (!hours) return '0.00'
-  return (hours / HOURS_PER_DAY).toFixed(2)
-}
-function onHoursChange(val) {
-  if (val == null) val = 0
-  laborForm.person_days = +(val / HOURS_PER_DAY).toFixed(2)
-}
-function onPersonDaysChange(val) {
-  if (val == null) val = 0
-  laborForm.hours = +(val * HOURS_PER_DAY).toFixed(1)
-}
-function onRowHoursChange(row) {
-  if (row._hours == null) row._hours = 0
-  row._person_days = +(row._hours / HOURS_PER_DAY).toFixed(2)
-}
-function onRowPersonDaysChange(row) {
-  if (row._person_days == null) row._person_days = 0
-  row._hours = +(row._person_days * HOURS_PER_DAY).toFixed(1)
-}
 
 // ===== 运输包装 =====
 const packingDialogVisible = ref(false)
