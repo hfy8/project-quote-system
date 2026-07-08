@@ -208,8 +208,11 @@ def get_travel_person_trips(quotation_id: Optional[int] = Query(None), db=Depend
             is_active=True,
         ).first()
         if fee:
-            d['unit_price'] = float(fee.unit_price) if fee.unit_price else 0
-            d['visa_fee'] = float(fee.visa_fee) if fee.visa_fee else 0
+            # 项目层未自定义 (NULL/0) 时才用系统默认费率, 已自定义的优先保留
+            if not trip.unit_price:
+                d['unit_price'] = float(fee.unit_price) if fee.unit_price else 0
+            if not trip.visa_fee:
+                d['visa_fee'] = float(fee.visa_fee) if fee.visa_fee else 0
             d['subtotal'] = d['person_count'] * d['unit_price']
             cat = db.query(TravelCategory).get(trip.travel_category_id)
             if cat and cat.code != 'domestic':
@@ -259,13 +262,11 @@ def update_travel_person_trip(
     if not trip:
         raise HTTPException(status_code=404, detail="差旅人次条目不存在")
     data = body.model_dump(exclude_unset=True)
-    print(f"[PUT /travel-person-trips/{tid}] body={data} keys={[k for k in data]}")
     for key in ("person_count", "unit_price", "visa_fee", "remark"):
         if key in data:
             setattr(trip, key, data[key])
     db.commit()
     db.refresh(trip)
-    print(f"[PUT /travel-person-trips/{tid}] saved unit_price={trip.unit_price} visa_fee={trip.visa_fee}")
     return JSONResponse(content=trip.to_dict())
 
 

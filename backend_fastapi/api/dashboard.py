@@ -9,7 +9,12 @@ from fastapi import APIRouter, Depends
 from core.auth import get_db, get_current_user_id
 from core.models.quotation import Quotation, QuotationParticipant
 from core.models.material import Material
-from core.models.change_request import ChangeRequest
+try:
+    from core.models.change_request import ChangeRequest
+    _HAS_CHANGE_REQUEST = True
+except ImportError:
+    ChangeRequest = None
+    _HAS_CHANGE_REQUEST = False
 from core.models.archive_approval import ArchiveApproval
 from core.models.message import Message
 from core.models.user import User
@@ -101,17 +106,20 @@ def get_dashboard_stats(
         approver_id=uid, status='pending'
     ).count()
     # 待审变更申请 - leader 看全部,其他人看自己参与或自己提交的
-    if is_leader:
-        pending_changes = db.query(ChangeRequest).filter_by(status='pending').count()
+    if _HAS_CHANGE_REQUEST:
+        if is_leader:
+            pending_changes = db.query(ChangeRequest).filter_by(status='pending').count()
+        else:
+            # 我参与的报价单的变更
+            my_q_ids = db.query(QuotationParticipant.quotation_id).filter_by(
+                user_id=uid
+            ).subquery()
+            pending_changes = db.query(ChangeRequest).filter(
+                ChangeRequest.status == 'pending',
+                ChangeRequest.quotation_id.in_(my_q_ids)
+            ).count()
     else:
-        # 我参与的报价单的变更
-        my_q_ids = db.query(QuotationParticipant.quotation_id).filter_by(
-            user_id=uid
-        ).subquery()
-        pending_changes = db.query(ChangeRequest).filter(
-            ChangeRequest.status == 'pending',
-            ChangeRequest.quotation_id.in_(my_q_ids)
-        ).count()
+        pending_changes = 0
     unread_messages = db.query(Message).filter_by(
         recipient_id=uid, is_read=False
     ).count()

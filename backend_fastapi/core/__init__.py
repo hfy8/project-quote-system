@@ -9,7 +9,7 @@
 from core.models import (  # noqa: F401
     user, quotation, material, module, fee, fee_rate,
     labor_hour, travel, travel_entry, packing, version,
-    message, change_request, operation_log, exchange_rate,
+    message, operation_log, exchange_rate,
     permission, organization, department, position, employee,
     participant_type_permission, knowledge, ai_conversation,
 )

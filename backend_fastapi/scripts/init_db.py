@@ -39,7 +39,7 @@ def init_tables(engine):
         Material, ModuleMaterial,
         OtherFee, FeeType, FeeRate, LaborHour,
         ExchangeRate, LandingProject, Department, Position, Organization, Employee,
-        OperationLog, ChangeRequest, Message,
+        OperationLog, Message,
         PackingType, TravelCategory, TravelDayRate, TravelMode, TravelPersonTripFee,
         PackingEntry, TravelPersonDays, TravelPersonTrip, VersionSnapshot,
     )

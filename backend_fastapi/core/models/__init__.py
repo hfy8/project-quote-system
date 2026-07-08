@@ -16,7 +16,6 @@ from .position import Position
 from .organization import Organization
 from .employee import Employee
 from .operation_log import OperationLog
-from .change_request import ChangeRequest
 from .message import Message
 from .participant_type_permission import ParticipantTypePermission
 from .permission import Role, Permission
@@ -45,7 +44,6 @@ __all__ = [
     'Organization',
     'Employee',
     'OperationLog',
-    'ChangeRequest',
     'Message',
     'ParticipantTypePermission',
     'Role',
