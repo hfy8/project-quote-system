@@ -14,56 +14,13 @@
       <el-tabs v-model="activeTab">
         <!-- 基本信息 -->
         <el-tab-pane label="基本信息" name="basic">
-          <el-form :model="quotation" :rules="formRules" label-width="120px">
-            <el-form-item label="报价单名称">
-              <el-input v-model="quotation.name" placeholder="请输入报价单名称" :disabled="isEdit" />
-            </el-form-item>
-            <el-form-item label="项目类型">
-              <el-select v-model="quotation.type" placeholder="请选择类型" :disabled="isEdit">
-                <el-option label="单机 (single)" value="single" />
-                <el-option label="线体 (line)" value="line" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="方案编号" prop="scheme_no">
-              <el-input v-model="quotation.scheme_no" placeholder="请输入方案编号" :disabled="isEdit" />
-            </el-form-item>
-            <el-form-item label="状态">
-              <el-select v-model="quotation.status" placeholder="请选择状态" :disabled="isEdit">
-                <el-option label="草稿" value="draft" />
-                <el-option label="已提交" value="submitted" />
-                <el-option label="已批准" value="approved" />
-                <el-option label="已拒绝" value="rejected" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="业务负责人">
-              <span v-if="isEdit && quotation.business_owner_name">{{ quotation.business_owner_name }}</span>
-              <el-select v-else v-model="quotation.business_owner_id" placeholder="请选择业务负责人">
-                <el-option
-                  v-for="user in businessUsers"
-                  :key="user.id"
-                  :label="user.real_name"
-                  :value="user.id"
-                />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="币种">
-              <el-select v-model="quotation.currency" placeholder="请选择币种" :disabled="isEdit">
-                <el-option v-for="opt in currencyOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="税率">
-              <el-select v-model="quotation.tax_rate" placeholder="请选择税率" :disabled="isEdit">
-                <el-option label="不含税 (0%)" :value="0" />
-                <el-option label="3%" :value="0.03" />
-                <el-option label="6%" :value="0.06" />
-                <el-option label="13%" :value="0.13" />
-                <el-option label="17%" :value="0.17" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="isEdit">
-              <el-alert title="基本信息已保存，无法修改" type="info" :closable="false" show-icon />
-            </el-form-item>
-          </el-form>
+          <QuotationViewBasicTab
+            :quotation="quotation"
+            :form-rules="formRules"
+            :is-edit="isEdit"
+            :business-users="businessUsers"
+            :currency-options="currencyOptions"
+          />
         </el-tab-pane>
 
         <!-- 模块管理 -->
@@ -265,84 +222,35 @@
 
         <!-- 参与人员 -->
         <el-tab-pane v-if="permissions.tabs?.includes('participants')" label="参与人员" name="participants">
-          <el-table :data="quotationParticipants" border style="width: 100%;">
-            <el-table-column prop="user.real_name" label="姓名" />
-            <el-table-column prop="user.username" label="用户名" />
-            <el-table-column label="参与类型" width="150">
-              <template #default="{ row }">
-                <el-select v-model="row.participant_type" placeholder="选择类型" size="small" @change="updateParticipantType(row)">
-                  <el-option label="项目" value="project" />
-                  <el-option label="机构" value="agency" />
-                  <el-option label="电气" value="electrical" />
-                </el-select>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="100" align="center">
-              <template #default="{ row }">
-                <el-button size="small" type="danger" @click="removeQuotationParticipant(row.id)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <!-- 添加人员弹窗 -->
-          <el-dialog v-model="addParticipantDialogVisible" title="添加人员" width="500px">
-            <div class="add-participant-form">
-              <el-input v-model="participantSearch" placeholder="搜索人员姓名或用户名" clearable style="width: 100%; margin-bottom: 16px;" />
-              <el-table :data="filteredAvailableUsers" v-loading="participantLoading" border size="small" max-height="300" @selection-change="handleParticipantSelection">
-                <el-table-column type="selection" width="50" :selectable="checkParticipantSelectable"></el-table-column>
-                <el-table-column prop="real_name" label="姓名" />
-                <el-table-column prop="username" label="用户名" />
-              </el-table>
-            </div>
-            <template #footer>
-              <el-button @click="addParticipantDialogVisible = false">取消</el-button>
-              <el-button type="primary" :disabled="!selectedParticipantUsers.length" @click="addParticipantsConfirm">添加 ({{ selectedParticipantUsers.length }})</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewParticipantsTab
+            :participants="quotationParticipants"
+            :add-dialog-visible="addParticipantDialogVisible"
+            :search-keyword="participantSearch"
+            :filtered-users="filteredAvailableUsers"
+            :loading="participantLoading"
+            :selected-count="selectedParticipantUsers.length"
+            :check-selectable="checkParticipantSelectable"
+            @open-add-dialog="openAddParticipantDialog"
+            @update-type="updateParticipantType"
+            @remove="removeQuotationParticipant"
+            @update:add-dialog-visible="addParticipantDialogVisible = $event"
+            @update:search-keyword="participantSearch = $event"
+            @selection-change="handleParticipantSelection"
+            @cancel-add="addParticipantDialogVisible = false"
+            @confirm-add="addParticipantsConfirm"
+          />
         </el-tab-pane>
 
         <!-- 费用系数 -->
         <el-tab-pane v-if="permissions.tabs?.includes('coefficients')" label="费用系数" name="coefficients">
-          <div class="coefficient-card">
-            <div class="coefficient-header">
-              <div class="coefficient-title">
-                <span>费用系数配置</span>
-              </div>
-              <div class="coefficient-actions">
-                <el-button size="small" @click="resetCoefficientsToDefault">重置为系统默认</el-button>
-                <el-button type="primary" @click="saveCoefficients">保存配置</el-button>
-              </div>
-            </div>
-            <div class="coefficient-desc">
-              费用系数用于调整大件、核心部件、其他件的成本计算系数，仅影响当前报价单
-            </div>
-            <div class="coefficient-items">
-              <div class="coefficient-item">
-                <div class="coefficient-item-icon large"><span>大</span></div>
-                <div class="coefficient-item-content">
-                  <div class="coefficient-item-label">大件系数</div>
-                  <div class="coefficient-item-tip">大型设备/材料成本系数</div>
-                </div>
-                <el-input-number v-model="quotation.coefficients.large" :min="0" :max="10" :precision="2" style="width: 140px;" />
-              </div>
-              <div class="coefficient-item">
-                <div class="coefficient-item-icon standard"><span>通</span></div>
-                <div class="coefficient-item-content">
-                  <div class="coefficient-item-label">核心部件系数</div>
-                  <div class="coefficient-item-tip">标准常规材料成本系数</div>
-                </div>
-                <el-input-number v-model="quotation.coefficients.standard" :min="0" :max="10" :precision="2" style="width: 140px;" />
-              </div>
-              <div class="coefficient-item">
-                <div class="coefficient-item-icon other"><span>其</span></div>
-                <div class="coefficient-item-content">
-                  <div class="coefficient-item-label">其他件系数</div>
-                  <div class="coefficient-item-tip">配件耗材等材料成本系数</div>
-                </div>
-                <el-input-number v-model="quotation.coefficients.other" :min="0" :max="10" :precision="2" style="width: 140px;" />
-              </div>
-            </div>
-          </div>
+          <QuotationViewCoefficientsTab
+            :coefficients="quotation.coefficients"
+            @reset-default="resetCoefficientsToDefault"
+            @save="saveCoefficients"
+            @update-large="(v) => (quotation.coefficients.large = v)"
+            @update-standard="(v) => (quotation.coefficients.standard = v)"
+            @update-other="(v) => (quotation.coefficients.other = v)"
+          />
         </el-tab-pane>
 
         <!-- 物料清单 -->
@@ -546,54 +454,19 @@
 
         <!-- 费用 -->
         <el-tab-pane v-if="permissions.tabs?.includes('fees')" label="费用" name="fees">
-          <div class="fee-actions">
-            <el-button type="primary" @click="showAddFee">添加费用</el-button>
-          </div>
-
-          <el-table :data="fees" border style="width: 100%; margin-top: 16px;">
-            <el-table-column prop="fee_type" label="费用类型" />
-            <el-table-column prop="location" label="位置">
-              <template #default="{ row }">
-                {{ getLocationLabel(row.location) }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="amount" label="金额" />
-            <el-table-column prop="description" label="描述" />
-            <el-table-column label="操作" width="180">
-              <template #default="{ row }">
-                <el-button size="small" @click="editFee(row)">编辑</el-button>
-                <el-button size="small" type="danger" @click="deleteFee(row.id)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-
-          <!-- 添加/编辑费用弹窗 -->
-          <el-dialog v-model="feeDialogVisible" :title="feeDialogTitle" width="500px">
-            <el-form :model="feeForm" label-width="100px">
-              <el-form-item label="费用类型">
-                <el-select v-model="feeForm.fee_type" placeholder="请选择费用类型">
-                  <el-option v-for="ft in feeTypes" :key="ft.id" :label="ft.name" :value="ft.name" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="位置">
-                <el-select v-model="feeForm.location" placeholder="请选择位置" disabled>
-                  <el-option label="厂内" value="internal" />
-                  <el-option label="厂外" value="external" />
-                </el-select>
-                <div class="form-tip">位置由费用类型自动带出</div>
-              </el-form-item>
-              <el-form-item label="金额">
-                <el-input-number v-model="feeForm.amount" :min="0" :precision="2" />
-              </el-form-item>
-              <el-form-item label="描述">
-                <el-input v-model="feeForm.description" type="textarea" rows="3" placeholder="请输入描述" />
-              </el-form-item>
-            </el-form>
-            <template #footer>
-              <el-button @click="feeDialogVisible = false">取消</el-button>
-              <el-button type="primary" @click="saveFee">确定</el-button>
-            </template>
-          </el-dialog>
+          <QuotationViewFeesTab
+            :fees="fees"
+            :dialog-visible="feeDialogVisible"
+            :dialog-title="feeDialogTitle"
+            :form-data="feeForm"
+            :fee-types="feeTypes"
+            @show-add="showAddFee"
+            @edit="editFee"
+            @delete="deleteFee"
+            @save="saveFee"
+            @update:dialog-visible="feeDialogVisible = $event"
+            @update:fee-form="(v) => Object.assign(feeForm, v)"
+          />
         </el-tab-pane>
 
         <!-- 人力工时 -->
@@ -710,18 +583,7 @@
 
         <!-- 版本 -->
         <el-tab-pane v-if="permissions.tabs?.includes('versions')" label="版本" name="versions">
-          <el-table :data="versions" border style="width: 100%;">
-            <el-table-column prop="version_no" label="版本号" width="80" />
-            <el-table-column prop="created_at" label="创建时间" />
-            <el-table-column prop="creator_name" label="创建人" />
-            <el-table-column prop="operation_type" label="操作类型" />
-            <el-table-column prop="remark" label="备注" show-overflow-tooltip />
-            <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }">
-                <el-button size="small" type="warning" @click="exportVersion(row, 'pdf')">PDF</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
+          <QuotationViewVersionsTab :versions="versions" @export-version="exportVersion" />
         </el-tab-pane>
 
         <!-- 运输包装 -->
@@ -1219,24 +1081,10 @@
 
         <!-- 导出 -->
         <el-tab-pane v-if="permissions.tabs?.includes('export')" label="导出" name="export">
-          <div class="export-grid">
-            <div class="export-item" @click="exportFile('word')">
-              <span class="export-icon">📝</span>
-              <span class="export-label">导出 Word</span>
-            </div>
-            <div class="export-item" @click="exportFile('excel')">
-              <span class="export-icon">📊</span>
-              <span class="export-label">导出 Excel</span>
-            </div>
-            <div class="export-item" @click="exportFile('pdf')">
-              <span class="export-icon">📄</span>
-              <span class="export-label">导出 PDF</span>
-            </div>
-            <div class="export-item" @click="exportSummaryAsPDF">
-              <span class="export-icon">🖼️</span>
-              <span class="export-label">导出汇总 PDF（按网页）</span>
-            </div>
-          </div>
+          <QuotationViewExportTab
+            @export-file="exportFile"
+            @export-summary-pdf="exportSummaryAsPDF"
+          />
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -1249,6 +1097,12 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import request from '../api/request'
 import QuotationSummaryCards from '@/components/QuotationSummaryCards.vue'
+import QuotationViewBasicTab from '@/components/QuotationViewBasicTab.vue'
+import QuotationViewParticipantsTab from '@/components/QuotationViewParticipantsTab.vue'
+import QuotationViewCoefficientsTab from '@/components/QuotationViewCoefficientsTab.vue'
+import QuotationViewFeesTab from '@/components/QuotationViewFeesTab.vue'
+import QuotationViewVersionsTab from '@/components/QuotationViewVersionsTab.vue'
+import QuotationViewExportTab from '@/components/QuotationViewExportTab.vue'
 import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
