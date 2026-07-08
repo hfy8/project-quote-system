@@ -6,7 +6,7 @@
       </div>
       <div class="coefficient-actions">
         <el-button size="small" @click="emit('reset')">重置为系统默认</el-button>
-        <QuotationEditSaveBar label="费用系数" :saving="saving" @save="emit('save')" />
+        <el-button type="primary" size="small" :loading="saving" @click="emit('save')">保存</el-button>
       </div>
     </div>
     <div class="coefficient-desc">
@@ -42,8 +42,6 @@
 </template>
 
 <script setup>
-import QuotationEditSaveBar from './QuotationEditSaveBar.vue'
-
 const props = defineProps({
   coefficients: { type: Object, required: true },
   saving: { type: Boolean, default: false },

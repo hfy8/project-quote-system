@@ -8,7 +8,8 @@
         placeholder="请输入方案编号，输入字符后会从方案库推荐"
         :disabled="isEdit || !!parentId"
         clearable
-        :trigger-on-focus="false"
+        :trigger-on-focus="true"
+        :debounce="300"
         @select="handleSelectScheme"
         @input="onSchemeInput"
         @blur="validateSchemeLocally"
@@ -103,18 +104,24 @@ const props = defineProps({
   currencyOptions: { type: Array, default: () => [] },
   schemeHint: { type: String, default: '' },
   schemeHintType: { type: String, default: 'info' },
+  schemeSuggestions: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits([
   'save-basic',
   'save-profit-rate',
-  'query-scheme-suggestions',
   'select-scheme',
   'scheme-input',
   'validate-scheme',
 ])
 
-const querySchemeSuggestions = (cb, prefix) => emit('query-scheme-suggestions', cb, prefix)
+const querySchemeSuggestions = (queryString, callback) => {
+  // el-autocomplete fetch-suggestions 标准签名: (queryString, callback)
+  // 直接返回父级缓存的方案建议 (父级 onSchemeInput 触发时已异步 fetch)
+  callback(props.schemeSuggestions || [])
+  // 同时通知父级触发一次查询 (保证下次 fetch-suggestions 有最新数据)
+  emit('scheme-input', queryString || '')
+}
 const handleSelectScheme = (item) => emit('select-scheme', item)
 const onSchemeInput = (val) => emit('scheme-input', val)
 const validateSchemeLocally = () => emit('validate-scheme')

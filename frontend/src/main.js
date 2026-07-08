@@ -6,6 +6,7 @@ import 'element-plus/dist/index.css'
 import App from './App.vue'
 import router from './router'
 import './styles/variables.css'
+import './styles/quotation-edit-tabs.css'
 
 const app = createApp(App)
 const pinia = createPinia()

@@ -24,9 +24,9 @@
             :currency-options="currencyOptions"
             :scheme-hint="schemeHint"
             :scheme-hint-type="schemeHintType"
+            :scheme-suggestions="schemeSuggestions"
             @save-basic="saveBasic"
             @save-profit-rate="saveProfitRate"
-            @query-scheme-suggestions="handleQuerySchemeSuggestions"
             @select-scheme="handleSelectScheme"
             @scheme-input="onSchemeInput"
             @validate-scheme="validateSchemeLocally"
@@ -48,6 +48,7 @@
             @save-module="saveModule"
             @infer-type="inferModuleType"
             @cancel-dialog="moduleDialogVisible = false"
+            @update:dialog-visible="moduleDialogVisible = $event"
           />
         </el-tab-pane>
 
@@ -58,10 +59,11 @@
             :participant-types="participantTypes"
             :dialog-visible="addParticipantDialogVisible"
             :loading="participantLoading"
-            :available-users="availableUsers"
+            :available-users="users"
             :participant-search="participantSearch"
             :selected-participant-type="selectedParticipantType"
             :selected-count="selectedParticipantUsers.length"
+            :check-selectable="checkParticipantSelectable"
             @add-participant="showAddParticipantDialog"
             @remove-participant="removeQuotationParticipant"
             @confirm-add="addParticipantsConfirm"
@@ -124,6 +126,7 @@
             @delete-fee="deleteFee"
             @save-fee="saveFee"
             @cancel-dialog="feeDialogVisible = false"
+            @update:visible="feeDialogVisible = $event"
           />
         </el-tab-pane>
 
@@ -144,6 +147,7 @@
             @delete-row="deleteLabor"
             @confirm-add="addLaborConfirm"
             @cancel-dialog="laborDialogVisible = false"
+            @update:visible="laborDialogVisible = $event"
             @row-name-change="onRowNameChange"
             @row-hours-change="onRowHoursChange"
             @row-person-days-change="onRowPersonDaysChange"
@@ -170,6 +174,7 @@
             @delete-entry="deletePackingEntry"
             @confirm-add="addPackingConfirm"
             @cancel-dialog="packingDialogVisible = false"
+            @update:visible="packingDialogVisible = $event"
             @type-change="onPackingTypeChange"
             @quantity-change="(v) => packingForm.quantity = v"
             @remark-change="(v) => packingForm.remark = v"
@@ -193,6 +198,7 @@
             @delete-entry="deleteTravelDaysEntry"
             @confirm-add="addTravelDaysConfirm"
             @cancel-dialog="travelDaysDialogVisible = false"
+            @update:visible="travelDaysDialogVisible = $event"
             @category-change="onTravelCategoryChange"
             @person-days-change="(v) => travelDaysForm.person_days = v"
             @remark-change="(v) => travelDaysForm.remark = v"
@@ -217,6 +223,7 @@
             @delete-entry="deleteTravelTripEntry"
             @confirm-add="addTravelTripConfirm"
             @cancel-dialog="travelTripDialogVisible = false"
+            @update:visible="travelTripDialogVisible = $event"
             @category-change="onTripCategoryChange"
             @mode-change="onTripModeChange"
             @person-count-change="(v) => travelTripForm.person_count = v"
@@ -451,6 +458,8 @@ const users = ref([])
 const businessUsers = ref([])
 const feeTypes = ref([])
 const availableMaterials = ref([])
+// 汇总 tab 组件引用 (用于刷新汇总数据 + 导出 PDF)
+const summaryCompRef = ref(null)
 // 分页状态 (服务端分页)
 const materialPage = ref(1)
 const materialPageSize = ref(50)
@@ -1273,6 +1282,7 @@ const laborForm = reactive({
 
 // 工时名称变化 → 自动设置 labor_type
 function onLaborNameChange(name) {
+  laborForm.name = name
   const choice = LABOR_NAME_CHOICES.find(n => n.name === name)
   if (choice) {
     laborForm.labor_type = choice.labor_type
@@ -1350,6 +1360,7 @@ async function loadPackingEntries() {
 }
 
 function onPackingTypeChange(id) {
+  packingForm.packing_type_id = id
   const pt = packingTypes.value.find(p => p.id === id)
   packingForm.unit_price = pt ? (pt.unit_price || 0) : 0
 }
@@ -1373,10 +1384,27 @@ function editPackingRow(row) { row._editing = true; row._quantity = row.quantity
 function cancelPackingEdit(row) { row._editing = false }
 async function savePackingRow(row) {
   try {
-    await packingEntryAPI.upsert({ quotation_id: quotationId.value, packing_type_id: row.packing_type_id, quantity: row._quantity, unit_price: row._unit_price, remark: row.remark })
+    if (row.id) {
+      await packingEntryAPI.update(row.id, {
+        packing_type_id: row.packing_type_id,
+        quantity: Number(row._quantity || row.quantity || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        remark: row.remark || '',
+      })
+    } else {
+      await packingEntryAPI.create(quotationId.value, {
+        packing_type_id: row.packing_type_id,
+        quantity: Number(row._quantity || row.quantity || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        remark: row.remark || '',
+      })
+    }
+    row._editing = false
     ElMessage.success('保存成功')
-    loadPackingEntries()
-  } catch (e) { ElMessage.error('保存失败') }
+    await loadPackingEntries()
+  } catch (e) {
+    ElMessage.error('保存失败: ' + (e?.response?.data?.detail || e?.message || '未知错误'))
+  }
 }
 async function deletePackingEntry(id) {
   try { await packingEntryAPI.delete(id); ElMessage.success('删除成功'); loadPackingEntries() } catch (e) { ElMessage.error('删除失败') }
@@ -1402,6 +1430,7 @@ async function loadTravelDayRates() {
 }
 
 function onTravelCategoryChange(id) {
+  travelDaysForm.category_id = id
   // 从已加载的人天单价列表中找对应分类的单价
   travelDaysForm.unit_price = 0
 }
@@ -1433,10 +1462,27 @@ function editTravelDaysRow(row) { row._editing = true; row._person_days = row.pe
 function cancelTravelDaysEdit(row) { row._editing = false }
 async function saveTravelDaysRow(row) {
   try {
-    await travelPersonDaysAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, person_days: row._person_days, unit_price: row._unit_price, remark: row.remark })
+    if (row.id) {
+      await travelPersonDaysAPI.update(row.id, {
+        travel_category_id: row.travel_category_id,
+        person_days: Number(row._person_days || row.person_days || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        remark: row.remark || '',
+      })
+    } else {
+      await travelPersonDaysAPI.create(quotationId.value, {
+        travel_category_id: row.travel_category_id,
+        person_days: Number(row._person_days || row.person_days || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        remark: row.remark || '',
+      })
+    }
+    row._editing = false
     ElMessage.success('保存成功')
-    loadTravelPersonDays()
-  } catch (e) { ElMessage.error('保存失败') }
+    await loadTravelPersonDays()
+  } catch (e) {
+    ElMessage.error('保存失败: ' + (e?.response?.data?.detail || e?.message || '未知错误'))
+  }
 }
 async function deleteTravelDaysEntry(id) {
   try { await travelPersonDaysAPI.delete(id); ElMessage.success('删除成功'); loadTravelPersonDays() } catch (e) { ElMessage.error('删除失败') }
@@ -1486,13 +1532,15 @@ function getDefaultModeId(categoryId) {
   return travelModes.value[0]?.id || null
 }
 
-function onTripCategoryChange() {
+function onTripCategoryChange(id) {
+  travelTripForm.travel_category_id = id
   // 选分类后: 自动推荐默认出行方式, 并按 (cat, mode) 填单价
   travelTripForm.travel_mode_id = getDefaultModeId(travelTripForm.travel_category_id)
   applyTripDefaultsFromFee()
 }
 
-function onTripModeChange() {
+function onTripModeChange(id) {
+  travelTripForm.travel_mode_id = id
   applyTripDefaultsFromFee()
 }
 
@@ -1549,10 +1597,33 @@ function editTravelTripRow(row) { row._editing = true; row._person_count = row.p
 function cancelTravelTripEdit(row) { row._editing = false }
 async function saveTravelTripRow(row) {
   try {
-    await travelPersonTripAPI.upsert({ quotation_id: quotationId.value, travel_category_id: row.travel_category_id, travel_mode_id: row.travel_mode_id, person_count: row._person_count, unit_price: row._unit_price, visa_fee: row._visa_fee, remark: row.remark })
+    if (row.id) {
+      // 更新已有记录
+      await travelPersonTripAPI.update(row.id, {
+        travel_category_id: row.travel_category_id,
+        travel_mode_id: row.travel_mode_id,
+        person_count: Number(row._person_count || row.person_count || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        visa_fee: Number(row._visa_fee || row.visa_fee || 0),
+        remark: row.remark || '',
+      })
+    } else {
+      // 新增 (从弹窗确认后不会走到这里, 走 addTravelTripConfirm)
+      await travelPersonTripAPI.create(quotationId.value, {
+        travel_category_id: row.travel_category_id,
+        travel_mode_id: row.travel_mode_id,
+        person_count: Number(row._person_count || row.person_count || 0),
+        unit_price: Number(row._unit_price || row.unit_price || 0),
+        visa_fee: Number(row._visa_fee || row.visa_fee || 0),
+        remark: row.remark || '',
+      })
+    }
+    row._editing = false
     ElMessage.success('保存成功')
-    loadTravelPersonTrips()
-  } catch (e) { ElMessage.error('保存失败') }
+    await loadTravelPersonTrips()
+  } catch (e) {
+    ElMessage.error('保存失败: ' + (e?.response?.data?.detail || e?.message || '未知错误'))
+  }
 }
 async function deleteTravelTripEntry(id) {
   try { await travelPersonTripAPI.delete(id); ElMessage.success('删除成功'); loadTravelPersonTrips() } catch (e) { ElMessage.error('删除失败') }
@@ -1977,6 +2048,49 @@ async function loadAvailableMaterials() {
     materialTotal.value = data.total || 0
   } catch (error) {
     ElMessage.error('加载物料列表失败')
+  }
+}
+
+// QuotationEditMaterials 子组件事件处理
+async function handleLoadMaterials({ page, pageSize, keyword, category, brand }) {
+  if (page) materialPage.value = page
+  if (pageSize) materialPageSize.value = pageSize
+  materialFilter.keyword = keyword || ''
+  materialFilter.category = category || ''
+  materialFilter.brand = brand || ''
+  await loadAvailableMaterials()
+}
+
+async function handleAddMaterials(moduleId, materials) {
+  if (!moduleId) return
+  try {
+    // 后端接口是单条添加 /modules/{id}/materials, 循环调
+    for (const m of materials) {
+      await api.post(`/modules/${moduleId}/materials`, {
+        material_id: m.material_id,
+        quantity: m.quantity || 1,
+      })
+    }
+    ElMessage.success('已添加物料')
+    await loadModuleMaterials()
+    await summaryCompRef.value?.refresh?.()
+  } catch (error) {
+    ElMessage.error('添加物料失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))
+  }
+}
+
+async function handleSaveOtherPrice(form) {
+  try {
+    // 后端 PUT /module_materials/{id} 接口接受 unit_price_override
+    await api.put(`/module_materials/${form.id}`, {
+      unit_price_override: form.unit_price_override,
+    })
+    ElMessage.success('已更新其他物料单价')
+    otherPriceDialogVisible.value = false
+    await loadModuleMaterials()
+    await summaryCompRef.value?.refresh?.()
+  } catch (error) {
+    ElMessage.error('更新失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))
   }
 }
 

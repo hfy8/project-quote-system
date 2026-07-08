@@ -90,6 +90,7 @@ const emit = defineEmits([
   'cancel-dialog',
   'close-dialog',
   'infer-type',
+  'update:dialogVisible',
 ])
 
 const dialogVisibleProxy = computed({

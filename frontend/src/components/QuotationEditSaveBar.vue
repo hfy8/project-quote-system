@@ -23,7 +23,7 @@ function handleSave() {
 }
 </script>
 
-<style scoped>
+<style>
 .save-bar {
   display: flex;
   align-items: center;

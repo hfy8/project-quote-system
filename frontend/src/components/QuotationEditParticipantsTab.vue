@@ -1,12 +1,12 @@
 <template>
-  <div class="participant-actions">
+  <div class="section-actions">
     <el-button type="primary" @click="emit('add-participant')">+ 添加人员</el-button>
   </div>
 
   <el-table :data="participants" border style="width: 100%; margin-top: 16px;">
     <el-table-column prop="user.real_name" label="姓名" />
     <el-table-column prop="user.username" label="用户名" />
-    <el-table-column label="参与类型" width="150">
+    <el-table-column label="参与类型" width="180">
       <template #default="{ row }">
         <el-select :model-value="row.participant_type" placeholder="选择类型" size="small" @change="(v) => onTypeChange(row, v)">
           <el-option v-for="t in participantTypes" :key="t.type" :label="t.type_name + ' (' + t.type + ')'" :value="t.type" />
@@ -21,19 +21,35 @@
   </el-table>
 
   <!-- 添加人员弹窗 -->
-  <el-dialog :model-value="dialogVisible" title="添加人员" width="500px" @update:model-value="(v) => emit('update:visible', v)" @close="emit('close-dialog')">
-    <div class="add-participant-form">
-      <el-form-item label="参与类型" style="margin-bottom: 16px;">
+  <el-dialog v-model="dialogVisibleProxy" title="添加人员" width="560px" @close="emit('close-dialog')">
+    <div class="add-participant-dialog">
+      <div class="add-participant-row">
+        <label class="add-participant-label">参与类型</label>
         <el-select :model-value="selectedParticipantType" placeholder="请选择参与类型" style="width: 100%;" @update:model-value="(v) => emit('update:type', v)">
           <el-option v-for="t in participantTypes" :key="t.type" :label="t.type_name + ' (' + t.type + ')'" :value="t.type" />
         </el-select>
-      </el-form-item>
-      <el-input :model-value="participantSearch" placeholder="搜索人员姓名或用户名" clearable style="width: 100%; margin-bottom: 16px;" @update:model-value="(v) => emit('update:search', v)" />
-      <el-table :data="filteredUsers" v-loading="loading" border size="small" max-height="300" :row-key="(r) => r.id" @selection-change="(rows) => emit('update:selected', rows)">
-        <el-table-column type="selection" width="50" :selectable="checkSelectable"></el-table-column>
-        <el-table-column prop="real_name" label="姓名" />
-        <el-table-column prop="username" label="用户名" />
-      </el-table>
+      </div>
+      <div class="add-participant-row">
+        <label class="add-participant-label">搜索</label>
+        <el-input :model-value="participantSearch" placeholder="搜索人员姓名或用户名" clearable @update:model-value="(v) => emit('update:search', v)" />
+      </div>
+      <div class="add-participant-row">
+        <label class="add-participant-label">选择人员</label>
+        <el-table
+          :data="filteredUsers"
+          v-loading="loading"
+          border
+          size="small"
+          max-height="320"
+          :row-key="(r) => r.id"
+          @selection-change="(rows) => emit('update:selected', rows)"
+          style="width: 100%;"
+        >
+          <el-table-column type="selection" width="55" :selectable="checkSelectable" />
+          <el-table-column prop="real_name" label="姓名" />
+          <el-table-column prop="username" label="用户名" />
+        </el-table>
+      </div>
     </div>
     <template #footer>
       <el-button @click="emit('cancel-dialog')">取消</el-button>
@@ -54,6 +70,7 @@ const props = defineProps({
   participantSearch: { type: String, default: '' },
   selectedParticipantType: { type: String, default: '' },
   selectedCount: { type: Number, default: 0 },
+  checkSelectable: { type: Function, default: () => true },
 })
 
 const emit = defineEmits([
@@ -78,6 +95,29 @@ const filteredUsers = computed(() => {
   )
 })
 
-const checkSelectable = () => true
+const checkSelectable = (row) => props.checkSelectable(row)
 const onTypeChange = (row, v) => emit('type-change', row, v)
+
+const dialogVisibleProxy = computed({
+  get: () => props.dialogVisible,
+  set: (v) => emit('update:visible', v),
+})
 </script>
+
+<style scoped>
+.add-participant-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.add-participant-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.add-participant-label {
+  font-size: 13px;
+  color: #606266;
+  font-weight: 500;
+}
+</style>

@@ -1,0 +1,443 @@
+/* ============================================================
+ * quotation-edit-tabs.css
+ * 全局样式 (非 scoped) - 供 QuotationEdit 子组件 tab 使用
+ * 父级 QuotationEdit.vue 的 <style scoped> 作用不到子组件内部元素,
+ * 所以各 tab 子组件用到的 class 提到这里.
+ * ============================================================ */
+
+/* ====== ModulesTab ====== */
+.module-actions {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+}
+.module-group {
+  margin-bottom: 24px;
+  border: 1px solid var(--color-border-light, #f1f5f9);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+}
+.module-group-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--color-bg-hover, #f8fafc);
+  border-bottom: 1px solid var(--color-border-light, #f1f5f9);
+}
+.module-name {
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+}
+.module-material-count {
+  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+}
+.module-total {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--color-primary, #3b82f6);
+}
+
+/* ====== ParticipantsTab ====== */
+.participant-actions {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+}
+.add-participant-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+.participant-manager {
+  padding: 8px 0;
+}
+.participant-section {
+  margin-bottom: 8px;
+}
+.participant-section h4 {
+  margin: 0 0 12px 0;
+  color: var(--color-text-primary, #1e293b);
+  font-size: 14px;
+}
+.participant-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.user-list {
+  max-height: 250px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+}
+.user-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+}
+.user-item:last-child { border-bottom: none; }
+.user-item:hover { background: var(--color-bg-hover, #f8fafc); }
+.empty-text {
+  color: var(--color-text-secondary, #64748b);
+  text-align: center;
+  padding: 20px;
+}
+.form-tip {
+  color: #94a3b8;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+/* ====== CoefficientsTab ====== */
+.coefficient-card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 24px;
+  max-width: 560px;
+}
+.coefficient-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.coefficient-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.coefficient-actions {
+  display: flex;
+  gap: 8px;
+}
+.coefficient-desc {
+  color: #6b7280;
+  font-size: 13px;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.coefficient-items {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.coefficient-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+.coefficient-item-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.coefficient-item-tip {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+.coefficient-item-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+  background: #d1d5db;
+}
+.coefficient-item-icon.large { background: linear-gradient(135deg, #f97316, #ea580c); }
+.coefficient-item-icon.standard { background: linear-gradient(135deg, #0D9488, #0f766e); }
+.coefficient-item-icon.other { background: linear-gradient(135deg, #6366f1, #4f46e5); }
+
+/* ====== FeesTab ====== */
+.fee-actions {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+}
+.fee-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.fee-form .form-row-full {
+  grid-column: 1 / -1;
+}
+.fee-total-card {
+  margin-top: 16px;
+  padding: 14px 18px;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  color: #92400e;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ====== LaborTab ====== */
+.labor-header,
+.labor-actions {
+  display: flex;
+  gap: 8px;
+}
+.labor-total {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 14px;
+}
+.labor-total-days {
+  margin-left: 8px;
+  color: #15803d;
+  font-weight: 500;
+}
+.form-hint {
+  margin-left: 12px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+/* ====== PackingTab + TravelDaysTab + TravelTripsTab ====== */
+.packing-header {
+  display: flex;
+  gap: 8px;
+}
+.packing-total {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  color: #1e40af;
+  font-size: 14px;
+  font-weight: 500;
+}
+.money {
+  font-weight: 600;
+  color: var(--color-primary, #3b82f6);
+}
+
+/* ============================================================
+ * QuotationEditSaveBar 内部样式 (原 scoped, 现全局)
+ * ============================================================ */
+.save-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 24px;
+  background: var(--color-bg-primary, #fff);
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  margin: 16px -24px -24px;
+}
+.save-bar-label {
+  font-size: 14px;
+  color: var(--color-text-muted, #6b7280);
+}
+.save-bar-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ====== 通用: 行内编辑数字输入 ====== */
+.inline-number {
+  width: 100%;
+}
+
+/* ====== MaterialsTab ====== */
+.material-actions {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+}
+.material-filter-bar {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+  flex-wrap: wrap;
+  align-items: center;
+}
+.material-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--spacing-md, 16px);
+}
+.material-summary {
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--color-primary-light, #dbeafe);
+  border-radius: var(--radius-md, 8px);
+  text-align: right;
+  font-weight: 600;
+  color: var(--color-primary, #3b82f6);
+}
+.material-summary.total {
+  background: var(--color-primary, #3b82f6);
+  color: white;
+}
+.empty-icon {
+  font-size: 48px;
+  opacity: 0.5;
+  margin-bottom: var(--spacing-md, 16px);
+  display: block;
+}
+.module-type-group {
+  margin-bottom: 24px;
+  border: 1px solid var(--color-border-light, #f1f5f9);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--color-bg-card, #ffffff);
+}
+.module-type-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--color-bg-hover, #f8fafc);
+  border-bottom: 2px solid var(--color-border-light, #f1f5f9);
+}
+.module-type-header.type-mechanical { border-bottom-color: #3b82f6; }
+.module-type-header.type-electrical { border-bottom-color: #f59e0b; }
+.module-type-header.type-other { border-bottom-color: #94a3b8; }
+.module-type-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #fff;
+}
+.module-type-icon.type-mechanical { background: #3b82f6; }
+.module-type-icon.type-electrical { background: #f59e0b; }
+.module-type-icon.type-other { background: #94a3b8; }
+.module-type-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+}
+.module-type-count {
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--color-bg-hover, #f8fafc);
+  color: var(--color-text-secondary, #64748b);
+  font-size: 12px;
+  font-weight: 500;
+}
+.module-type-body {
+  padding: 0;
+}
+.module-type-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-secondary, #64748b);
+  font-size: 13px;
+  font-style: italic;
+}
+.module-type-body .module-group {
+  margin-bottom: 0;
+  border: none;
+  border-radius: 0;
+  border-bottom: 1px solid var(--color-border-light, #f1f5f9);
+}
+.module-type-body .module-group:last-child {
+  border-bottom: none;
+}
+.module-type-stat {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-size: 13px;
+  color: var(--color-text-secondary, #64748b);
+}
+.module-type-total {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--color-primary, #3b82f6);
+}
+.cell-name-wrap {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+.cell-module-name {
+  font-weight: 600;
+  color: var(--color-text-primary, #1e293b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.cell-amount {
+  font-family: monospace;
+  font-weight: 500;
+  color: var(--color-text-primary, #1e293b);
+}
+.cell-amount.highlight {
+  color: var(--color-primary, #3b82f6);
+  font-weight: 700;
+}
+
+/* ====== ExportTab ====== */
+.export-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-top: 16px;
+}
+.export-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.export-item:hover {
+  border-color: var(--color-primary, #3b82f6);
+  background: var(--color-primary-light, #eff6ff);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+}
+.export-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+.export-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary, #1e293b);
+}
+.export-actions {
+  display: flex;
+  gap: var(--spacing-sm, 8px);
+}
+@media (max-width: 900px) {
+  .export-grid { grid-template-columns: repeat(2, 1fr); }
+}
