@@ -259,10 +259,13 @@ def update_travel_person_trip(
     if not trip:
         raise HTTPException(status_code=404, detail="差旅人次条目不存在")
     data = body.model_dump(exclude_unset=True)
+    print(f"[PUT /travel-person-trips/{tid}] body={data} keys={[k for k in data]}")
     for key in ("person_count", "unit_price", "visa_fee", "remark"):
         if key in data:
             setattr(trip, key, data[key])
     db.commit()
+    db.refresh(trip)
+    print(f"[PUT /travel-person-trips/{tid}] saved unit_price={trip.unit_price} visa_fee={trip.visa_fee}")
     return JSONResponse(content=trip.to_dict())
 
 
