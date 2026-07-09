@@ -32,9 +32,13 @@
             :dialog-title="moduleDialogTitle"
             :form-data="moduleForm"
             :copy-dialog-visible="copyModuleDialogVisible"
-            :copy-source-id="copyModuleSourceId"
-            :copy-source-quotations="copyModuleQuotations"
             :copy-loading="copyModuleLoading"
+            :copy-modules="copyModuleList"
+            :copy-total="copyModuleTotal"
+            :copy-page="copyModulePage"
+            :copy-page-size="copyModulePageSize"
+            :copy-keyword="copyModuleKeyword"
+            :copy-selected-id="copyModuleSelectedId"
             :module-types="MODULE_TYPES"
             :current-participants-count="currentParticipants.length"
             :infer-hint="inferModuleTypeHint"
@@ -47,7 +51,11 @@
             @update:form-data="(v) => Object.assign(moduleForm, v)"
             @confirm-save="saveModule"
             @update:copy-dialog-visible="copyModuleDialogVisible = $event"
-            @update:copy-source-id="copyModuleSourceId = $event"
+            @update:copy-keyword="onCopyKeywordChange"
+            @update:copy-page="onCopyPageChange"
+            @update:copy-page-size="onCopyPageSizeChange"
+            @update:copy-selected-id="(v) => (copyModuleSelectedId = v)"
+            @copy-search="searchCopyModules"
             @confirm-copy="confirmCopyModule"
           />
         </el-tab-pane>
@@ -86,20 +94,23 @@
 
         <!-- 物料清单 -->
         <el-tab-pane v-if="permissions.tabs?.includes('materials')" label="物料清单" name="materials">
-          <!-- 已归档警告 -->
-          <el-alert v-if="isArchived" title="报价单已归档，物料不可编辑" type="warning" :closable="false" show-icon style="margin-bottom: 16px;" />
-          <QuotationViewMaterialsTab
-            :module-materials="moduleMaterials"
-            :grouped-materials="filteredModuleGroups"
-            :all-materials-total="allMaterialsTotal"
+          <QuotationEditMaterials
+            :is-edit="false"
+            :is-archived="isArchived"
+            :module-materials="moduleMaterials || []"
+            :grouped-materials="groupedViewMaterialsByType"
+            :all-materials-total="allMaterialsTotal || 0"
             :selected-currency="selectedCurrency"
             :exchange-rates="exchangeRates"
-            :modules="modules"
-            :available-materials="availableMaterials"
-            :material-total="materialTotal"
+            :modules="modules || []"
+            :available-materials="availableMaterials || []"
+            :material-total="materialTotal || 0"
             :has-key-fields="hasKeyFields"
             :material-has-key-params="materialHasKeyParams"
             :selected-module-filter="selectedModuleFilter"
+            :module-types="MODULE_TYPES"
+            :dispatch-group-info="{}"
+            :pending-review-count="0"
             @update:selected-module-filter="selectedModuleFilter = $event"
             @update-quantity="updateMaterialQuantity"
             @delete-material="deleteModuleMaterial"
@@ -253,7 +264,7 @@ import QuotationViewLaborTab from '@/components/QuotationViewLaborTab.vue'
 import QuotationViewTravelDaysTab from '@/components/QuotationViewTravelDaysTab.vue'
 import QuotationViewTravelTripsTab from '@/components/QuotationViewTravelTripsTab.vue'
 import QuotationViewModulesTab from '@/components/QuotationViewModulesTab.vue'
-import QuotationViewMaterialsTab from '@/components/QuotationViewMaterialsTab.vue'
+import QuotationEditMaterials from '@/components/QuotationEditMaterials.vue'
 import QuotationViewSummaryTab from '@/components/QuotationViewSummaryTab.vue'
 import { openDownload } from '../utils/download'
 import html2canvas from 'html2canvas'
@@ -435,6 +446,27 @@ const groupedViewModulesByType = computed(() => {
   }))
 })
 
+// 物料清单按类型分组 - 用于 materials tab (匹配 QuotationEditMaterials 预期格式)
+const groupedViewMaterialsByType = computed(() => {
+  const groups = {}
+  for (const t of MODULE_TYPES) {
+    groups[t.value] = []
+  }
+  for (const modGroup of filteredModuleGroups.value) {
+    const mod = modules.value.find(m => m.id === modGroup.id)
+    const t = (mod?.module_type) || 'other'
+    if (!groups[t]) groups[t] = []
+    groups[t].push(modGroup)
+  }
+  return MODULE_TYPES.map(t => ({
+    ...t,
+    module_list: groups[t.value] || [],
+    group_total: (groups[t.value] || []).reduce((sum, m) => sum + m.total, 0),
+    group_materials_count: (groups[t.value] || []).reduce((sum, m) => sum + m.materials.length, 0),
+    group_module_count: (groups[t.value] || []).length
+  }))
+})
+
 // 汇总模块按类型分组 - 用于汇总 tab
 const groupedViewSummaryModulesByType = computed(() => {
   const groups = {}
@@ -464,17 +496,17 @@ const moduleForm = reactive({
   module_type: 'other',
 })
 
-// ============== 复制模块弹窗 ==============
+// ============== 复制模块弹窗（分页 table 选择一项）==============
 const copyModuleDialogVisible = ref(false)
-const copyForm = reactive({
-  sourceQuotationId: null,
-  quotationOptions: [],   // 远程搜索结果
-  availableModules: [],   // 源报价单的模块列表
-  selectedModuleIds: [],  // 选中的模块 ID
-  searching: false,        // 搜索报价单中
-  loadingModules: false,   // 加载模块中
-  submitting: false,       // 提交复制中
-})
+const copyModuleLoading = ref(false)
+const copyModuleList = ref([])
+const copyModuleTotal = ref(0)
+const copyModulePage = ref(1)
+const copyModulePageSize = ref(15)
+const copyModuleKeyword = ref('')
+const copyModuleSelectedId = ref(null)
+// 选中的模块信息（提交复制时要用到 source_quotation_id）
+const copyModuleSelectedRow = ref(null)
 
 // 物料弹窗
 const materialDialogVisible = ref(false)
@@ -1294,91 +1326,94 @@ async function saveModule() {
   }
 }
 
-// ============== 复制模块 ==============
-// 打开弹窗
+// ============== 复制模块（分页 table 选择一项）==============
+// 打开弹窗：默认第 1 页，无关键词
 function showCopyModuleDialog() {
-  copyForm.sourceQuotationId = null
-  copyForm.quotationOptions = []
-  copyForm.availableModules = []
-  copyForm.selectedModuleIds = []
+  copyModuleSelectedId.value = null
+  copyModuleSelectedRow.value = null
+  copyModuleKeyword.value = ''
+  copyModulePage.value = 1
   copyModuleDialogVisible.value = true
-  // 预加载: 默认列出前 20 个草稿
-  searchQuotationsForCopy('')
+  searchCopyModules()
 }
 
-// 远程搜索报价单
-async function searchQuotationsForCopy(keyword) {
-  if (!keyword || keyword.length < 1) {
-    // 默认加载前 20 个草稿
-    keyword = ''
-  }
-  copyForm.searching = true
+// 拉取全局模块列表（跨报价单分页）
+async function searchCopyModules() {
+  copyModuleLoading.value = true
   try {
-    const r = await api.get('/quotations', {
-      params: { keyword, page: 1, page_size: 20, status: 'draft' }
+    const r = await api.get('/quotations/all-modules', {
+      params: {
+        exclude_quotation_id: quotationId.value,
+        keyword: copyModuleKeyword.value || undefined,
+        page: copyModulePage.value,
+        page_size: copyModulePageSize.value,
+      }
     })
-    // 过滤掉当前报价单
-    copyForm.quotationOptions = (r.items || []).filter(q => q.id !== quotationId.value)
+    copyModuleList.value = r.items || []
+    copyModuleTotal.value = r.total || 0
+    // 如果当前选中的行不在新数据里 → 清掉选中
+    if (copyModuleSelectedId.value && !copyModuleList.value.find(m => m.id === copyModuleSelectedId.value)) {
+      copyModuleSelectedId.value = null
+      copyModuleSelectedRow.value = null
+    }
   } catch (e) {
-    ElMessage.error('搜索报价单失败')
+    ElMessage.error('搜索模块失败：' + (e?.response?.data?.detail || e?.message || '未知错误'))
+    copyModuleList.value = []
+    copyModuleTotal.value = 0
   } finally {
-    copyForm.searching = false
+    copyModuleLoading.value = false
   }
 }
 
-// 源报价单改变 → 加载它的模块
-async function onCopySourceChange(quotationId) {
-  copyForm.availableModules = []
-  copyForm.selectedModuleIds = []
-  if (!quotationId) return
-  copyForm.loadingModules = true
-  try {
-    const modules = await api.get(`/quotations/${quotationId}/modules`)
-    // 过滤掉 0 物料的（避免空模块）
-    copyForm.availableModules = modules
-  } catch (e) {
-    ElMessage.error('加载源报价单模块失败')
-  } finally {
-    copyForm.loadingModules = false
+// 搜索框输入：重置到第 1 页并刷新
+function onCopyKeywordChange(v) {
+  copyModuleKeyword.value = v || ''
+  copyModulePage.value = 1
+  // 简化：每次输入都触发搜索（debounce 在生产环境可加）
+  searchCopyModules()
+}
+
+function onCopyPageChange(p) {
+  copyModulePage.value = p
+  searchCopyModules()
+}
+
+function onCopyPageSizeChange(sz) {
+  copyModulePageSize.value = sz
+  copyModulePage.value = 1
+  searchCopyModules()
+}
+
+// 同步选中行（同时记录整行，便于提交时拿到 source_quotation_id）
+watch(copyModuleSelectedId, (newId) => {
+  copyModuleSelectedRow.value = copyModuleList.value.find(m => m.id === newId) || null
+})
+
+// 确认复制（提交后端 API）
+async function confirmCopyModule() {
+  if (!copyModuleSelectedRow.value) {
+    ElMessage.warning('请先选中一个要复制的模块')
+    return
   }
-}
-
-// 选择变化
-function handleCopyModuleSelection(selections) {
-  copyForm.selectedModuleIds = selections.map(m => m.id)
-}
-
-// 全选
-function selectAllCopyModules() {
-  copyForm.selectedModuleIds = copyForm.availableModules.map(m => m.id)
-}
-
-// 全不选
-function deselectAllCopyModules() {
-  copyForm.selectedModuleIds = []
-}
-
-// 提交复制
-async function submitCopyModules() {
-  if (!copyForm.sourceQuotationId || !copyForm.selectedModuleIds.length) return
-  copyForm.submitting = true
+  const row = copyModuleSelectedRow.value
+  copyModuleLoading.value = true
   try {
     const r = await api.post(`/quotations/${quotationId.value}/copy-modules`, {
-      source_quotation_id: copyForm.sourceQuotationId,
-      module_ids: copyForm.selectedModuleIds,
+      source_quotation_id: row.quotation_id,
+      module_ids: [row.id],
     })
-    const totalModules = r.total_copied
-    const totalMaterials = r.total_materials
-    ElMessage.success(`成功复制 ${totalModules} 个模块（含 ${totalMaterials} 项物料）`)
+    const totalModules = r.copied?.length ?? r.total_copied ?? 1
+    const totalMaterials = r.total_materials ?? 0
+    ElMessage.success(`成功从「${row.quotation_name || '报价单' + row.quotation_id}」复制模块「${row.name}」（${totalMaterials} 项物料）`)
     copyModuleDialogVisible.value = false
-    // 刷新模块列表 + 物料列表 (filteredModuleGroups 用 moduleMaterials)
+    // 刷新模块列表 + 物料列表
     await loadModules()
     await loadModuleMaterials()
   } catch (e) {
-    const msg = e?.response?.data?.error || e?.response?.data?.detail || '复制失败'
+    const msg = e?.response?.data?.detail || e?.response?.data?.error || '复制失败'
     ElMessage.error(msg)
   } finally {
-    copyForm.submitting = false
+    copyModuleLoading.value = false
   }
 }
 
@@ -2137,7 +2172,7 @@ function resetTargetHardwareRatio() {
 
 // 导出汇总 tab 内容为 PDF（按网页显示样式截图）
 async function exportSummaryAsPDF() {
-  if (!summaryRef.value) {
+  if (!summaryRef.value?.summaryRef) {
     ElMessage.error('汇总内容未加载，请先切换到汇总 tab')
     return
   }
@@ -2160,8 +2195,9 @@ async function exportSummaryAsPDF() {
   })
 
   try {
+    const summaryEl = summaryRef.value.summaryRef
     // 截图前临时隐藏不需要导出的元素（如货币切换器）
-    const hideElements = summaryRef.value.querySelectorAll('.no-export')
+    const hideElements = summaryEl.querySelectorAll('.no-export')
     const prevDisplays = []
     hideElements.forEach((el) => {
       prevDisplays.push(el.style.display)
@@ -2169,13 +2205,13 @@ async function exportSummaryAsPDF() {
     })
 
     // 截图：使用完整 DOM 高度（包含滚动不可见部分）
-    const canvas = await html2canvas(summaryRef.value, {
+    const canvas = await html2canvas(summaryEl, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
-      windowWidth: summaryRef.value.scrollWidth,
-      windowHeight: summaryRef.value.scrollHeight
+      windowWidth: summaryEl.scrollWidth,
+      windowHeight: summaryEl.scrollHeight
     })
 
     // 恢复隐藏元素

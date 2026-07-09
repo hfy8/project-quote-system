@@ -90,12 +90,28 @@ const filteredAssignments = computed(() => {
 })
 
 function getStatusTag(status) {
-  const map = { draft: 'info', submitted: 'warning', approved: 'success', archived: 'success', cancelled: 'danger', rejected: 'danger' }
+  const map = {
+    draft: 'info',
+    submitted: 'warning',
+    approved_pending: 'warning',
+    approved: 'success',
+    archived: 'success',
+    cancelled: 'danger',
+    rejected: 'danger'
+  }
   return map[status] || 'info'
 }
 
 function formatStatus(status) {
-  const map = { draft: '草稿', submitted: '待审核', approved: '已审批', archived: '已归档', cancelled: '已取消', rejected: '已驳回' }
+  const map = {
+    draft: '草稿',
+    submitted: '已提交',
+    approved_pending: '审批中',
+    approved: '已审批',
+    archived: '已归档',
+    cancelled: '已取消',
+    rejected: '已驳回'
+  }
   return map[status] || status
 }
 

@@ -12,6 +12,7 @@
 
 FastAPI 用 include_router prefix='/api' + 完整路径
 """
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -352,6 +353,88 @@ def get_module_summary(
         "total_amount": total_amount,
         "materials": [m.to_dict() for m in materials],
     }
+
+
+@router.get("/quotations/all-modules", summary="全局模块列表（分页，跨报价单）")
+def get_all_modules_paginated(
+    user_id: str = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+    exclude_quotation_id: Optional[int] = Query(None, description="排除的报价单 ID（一般是当前正在编辑的）"),
+    quotation_id: Optional[int] = Query(None, description="兼容旧调用：等同于 exclude_quotation_id"),
+    keyword: Optional[str] = Query(None, description="按模块名/报价单名模糊搜索"),
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(15, ge=1, le=100, description="每页条数"),
+):
+    """跨报价单全局模块列表（供"从其他报价单复制模块"弹窗使用）
+
+    权限规则: 任何登录用户都可调用。
+    返回的模块来自 "用户有权限看到的报价单" 范围内的模块（按 admin 看到所有，普通用户仅看参与的）。
+    排除 exclude_quotation_id（当前正在编辑的报价单）。
+    按 module 字段、报价单 name 字段做模糊搜索。
+    """
+    from core.models import Module, Quotation, QuotationParticipant, User
+    from sqlalchemy import or_
+
+    excluded = exclude_quotation_id if exclude_quotation_id is not None else quotation_id
+    uid = int(user_id)
+    user = db.query(User).get(uid)
+    if not user:
+        raise HTTPException(status_code=401, detail='用户不存在')
+
+    # admin: 全部报价单的模块
+    # 普通用户: 仅其参与或 business_owner 的报价单的模块
+    base_query = db.query(Module).join(Quotation, Module.quotation_id == Quotation.id)
+    if user.role != 'admin':
+        base_query = base_query.outerjoin(
+            QuotationParticipant,
+            (QuotationParticipant.quotation_id == Quotation.id) &
+            (QuotationParticipant.user_id == uid)
+        ).filter(
+            or_(
+                QuotationParticipant.user_id == uid,
+                Quotation.business_owner_id == uid,
+            )
+        )
+
+    if excluded is not None:
+        base_query = base_query.filter(Module.quotation_id != excluded)
+
+    if keyword:
+        kw = f"%{keyword.strip()}%"
+        base_query = base_query.filter(
+            or_(
+                Module.name.like(kw),
+                Module.name_en.like(kw),
+                Module.code.like(kw),
+                Quotation.name.like(kw),
+                Quotation.scheme_no.like(kw),
+            )
+        )
+
+    total = base_query.count()
+    modules = base_query.order_by(Module.created_at.desc()) \
+        .offset((page - 1) * page_size) \
+        .limit(page_size) \
+        .all()
+
+    # 批量取 quotation 信息（避免 N+1）
+    q_ids = list({m.quotation_id for m in modules})
+    quotations = {q.id: q for q in db.query(Quotation).filter(Quotation.id.in_(q_ids)).all()} if q_ids else {}
+
+    items = []
+    for mod in modules:
+        mod_dict = mod.to_dict()
+        q = quotations.get(mod.quotation_id)
+        mod_dict['quotation_name'] = q.name if q else f"报价单{mod.quotation_id}"
+        mod_dict['quotation_scheme_no'] = q.scheme_no if q else None
+        items.append(mod_dict)
+
+    return JSONResponse(content={
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }, status_code=200)
 
 
 @router.get("/quotations/{quotation_id}/all-modules", summary="线体报价单的所有子模块")

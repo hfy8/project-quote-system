@@ -105,23 +105,76 @@
     </template>
   </el-dialog>
 
-  <!-- 复制模块弹窗 -->
+  <!-- 复制模块弹窗（分页 table 选择一项） -->
   <el-dialog
     :model-value="copyDialogVisible"
     title="从其他报价单复制模块"
-    width="500px"
+    width="900px"
     @update:model-value="$emit('update:copy-dialog-visible', $event)"
   >
-    <el-form label-width="100px">
-      <el-form-item label="源报价单">
-        <el-select :model-value="copySourceId" placeholder="请选择源报价单" filterable style="width: 100%;" @update:model-value="$emit('update:copy-source-id', $event)">
-          <el-option v-for="q in copySourceQuotations" :key="q.id" :label="q.name" :value="q.id" />
-        </el-select>
-      </el-form-item>
-    </el-form>
+    <div class="copy-search-bar">
+      <el-input
+        :model-value="copyKeyword"
+        placeholder="搜索模块名 / 报价单名 / 方案号"
+        clearable
+        @update:model-value="$emit('update:copy-keyword', $event)"
+        @keyup.enter="$emit('copy-search')"
+      >
+        <template #append>
+          <el-button @click="$emit('copy-search')">搜索</el-button>
+        </template>
+      </el-input>
+    </div>
+    <el-table
+      :data="copyModules"
+      v-loading="copyLoading"
+      highlight-current-row
+      :current-row-key="copySelectedId"
+      row-key="id"
+      @current-change="$emit('update:copy-selected-id', ($event?.id ?? null))"
+      style="width: 100%; cursor: pointer;"
+      empty-text="暂无可复制模块"
+    >
+      <el-table-column type="index" label="#" width="60" :index="(i) => (copyPage - 1) * copyPageSize + i + 1" />
+      <el-table-column prop="name" label="模块名称" min-width="160" show-overflow-tooltip />
+      <el-table-column label="所属报价单" min-width="200" show-overflow-tooltip>
+        <template #default="{ row }">
+          {{ row.quotation_name || '—' }}
+          <span v-if="row.quotation_scheme_no" class="scheme-no">({{ row.quotation_scheme_no }})</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="类型" width="90">
+        <template #default="{ row }">
+          <el-tag :type="row.module_type === 'mechanical' ? 'primary' : row.module_type === 'electrical' ? 'warning' : 'info'" size="small" disable-transitions>
+            {{ row.module_type_label || '其他' }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="物料数" width="90" align="right">
+        <template #default="{ row }">
+          {{ (row.materials || []).length }}
+        </template>
+      </el-table-column>
+      <el-table-column label="报价单 ID" prop="quotation_id" width="100" />
+    </el-table>
+    <div class="copy-pagination">
+      <el-pagination
+        :current-page="copyPage"
+        :page-size="copyPageSize"
+        :total="copyTotal"
+        :page-sizes="[10, 15, 30, 50]"
+        layout="total, sizes, prev, pager, next"
+        background
+        @current-change="$emit('update:copy-page', $event)"
+        @size-change="$emit('update:copy-page-size', $event)"
+      />
+    </div>
     <template #footer>
+      <span class="copy-hint">选中一行后点击"复制选中模块"</span>
       <el-button @click="$emit('update:copy-dialog-visible', false)">取消</el-button>
-      <el-button type="primary" :loading="copyLoading" @click="$emit('confirm-copy')">确定</el-button>
+      <el-button type="primary" :disabled="!copySelectedId" :loading="copyLoading" @click="$emit('confirm-copy')">
+        复制选中模块
+      </el-button>
     </template>
   </el-dialog>
 </template>
@@ -134,9 +187,13 @@ const props = defineProps({
   dialogTitle: { type: String, default: '添加模块' },
   formData: { type: Object, default: () => ({ id: null, name: '', name_en: '', module_type: '', description: '' }) },
   copyDialogVisible: { type: Boolean, default: false },
-  copySourceId: { type: [Number, String, null], default: null },
-  copySourceQuotations: { type: Array, default: () => [] },
   copyLoading: { type: Boolean, default: false },
+  copyModules: { type: Array, default: () => [] },
+  copyTotal: { type: Number, default: 0 },
+  copyPage: { type: Number, default: 1 },
+  copyPageSize: { type: Number, default: 15 },
+  copyKeyword: { type: String, default: '' },
+  copySelectedId: { type: [Number, null], default: null },
   moduleTypes: { type: Array, default: () => [] },
   currentParticipantsCount: { type: Number, default: 0 },
   inferHint: { type: String, default: '' },
@@ -146,10 +203,121 @@ const emit = defineEmits([
   'show-add', 'show-copy-dialog',
   'edit', 'delete', 'infer-type',
   'update:dialog-visible', 'update:form-data', 'confirm-save',
-  'update:copy-dialog-visible', 'update:copy-source-id', 'confirm-copy',
+  'update:copy-dialog-visible',
+  'update:copy-keyword', 'update:copy-page', 'update:copy-page-size',
+  'update:copy-selected-id',
+  'copy-search',
+  'confirm-copy',
 ])
 
 function updateField(field, value) {
   emit('update:form-data', { ...props.formData, [field]: value })
 }
 </script>
+
+<style scoped>
+.copy-search-bar {
+  margin-bottom: 12px;
+}
+.copy-pagination {
+  margin-top: 16px;
+  display: flex;
+  justify-content: flex-end;
+}
+.copy-hint {
+  margin-right: 12px;
+  color: var(--color-text-secondary, #909399);
+  font-size: 12px;
+}
+.scheme-no {
+  color: var(--color-text-secondary, #909399);
+  font-size: 12px;
+  margin-left: 4px;
+}
+.module-type-group {
+  margin-bottom: 24px;
+  border: 1px solid var(--color-border-light, #ebeef5);
+  border-radius: var(--radius-md, 8px);
+  overflow: hidden;
+  background: var(--color-bg-card, #fff);
+}
+.module-type-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--color-bg-hover, #f5f7fa);
+  border-bottom: 2px solid var(--color-border-light, #ebeef5);
+}
+.module-type-header.type-mechanical { border-bottom-color: #3b82f6; }
+.module-type-header.type-electrical { border-bottom-color: #f59e0b; }
+.module-type-header.type-other { border-bottom-color: #94a3b8; }
+.module-type-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.module-type-icon.type-mechanical { background: #3b82f6; }
+.module-type-icon.type-electrical { background: #f59e0b; }
+.module-type-icon.type-other { background: #94a3b8; }
+.module-type-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-primary, #303133);
+}
+.module-type-count {
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: var(--color-bg-hover, #f5f7fa);
+  color: var(--color-text-secondary, #606266);
+  font-size: 12px;
+  font-weight: 500;
+}
+.module-type-body { padding: 0; }
+.module-type-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--color-text-secondary, #606266);
+  font-size: 13px;
+  font-style: italic;
+}
+.module-type-body .module-card-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-border-light, #ebeef5);
+  transition: background 0.2s;
+}
+.module-type-body .module-card-item:hover {
+  background: var(--color-bg-hover, #f5f7fa);
+}
+.module-type-body .module-card-item:last-child { border-bottom: none; }
+.module-card-info { flex: 1; min-width: 0; }
+.module-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary, #303133);
+  margin-bottom: 4px;
+}
+.module-card-meta {
+  font-size: 12px;
+  color: var(--color-text-secondary, #606266);
+}
+.module-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: 12px;
+}
+.module-actions {
+  margin-bottom: 16px;
+  display: flex;
+  gap: 8px;
+}
+</style>

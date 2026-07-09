@@ -2415,8 +2415,9 @@ async function exportSummaryAsPDF() {
   })
 
   try {
+    const summaryEl = summaryCompRef.value.summaryRef
     // 截图前临时隐藏不需要导出的元素（如货币切换器）
-    const hideElements = summaryRef.value.querySelectorAll('.no-export')
+    const hideElements = summaryEl.querySelectorAll('.no-export')
     const prevDisplays = []
     hideElements.forEach((el) => {
       prevDisplays.push(el.style.display)
@@ -2424,13 +2425,13 @@ async function exportSummaryAsPDF() {
     })
 
     // 截图：使用完整 DOM 高度（包含滚动不可见部分）
-    const canvas = await html2canvas(summaryRef.value, {
+    const canvas = await html2canvas(summaryEl, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
-      windowWidth: summaryRef.value.scrollWidth,
-      windowHeight: summaryRef.value.scrollHeight
+      windowWidth: summaryEl.scrollWidth,
+      windowHeight: summaryEl.scrollHeight
     })
 
     // 恢复隐藏元素
