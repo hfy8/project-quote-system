@@ -77,43 +77,6 @@
     <div v-if="summary" class="breakdown-section">
       <h3 class="section-title">📊 占比分析（基于含利润小计）</h3>
 
-      <!-- 硬件成本结构 -->
-      <div v-if="summary.rate_details && summary.rate_details.length > 0" class="hardware-structure">
-        <h4 class="section-subtitle">🔩 硬件成本结构</h4>
-        <div class="hardware-cards">
-          <div
-            v-for="row in summary.rate_details"
-            :key="row.category"
-            class="hardware-card"
-            :class="'cat-' + row.category"
-          >
-            <div class="hardware-label">
-              <span class="dot"></span>
-              {{ getCategoryLabel(row.category) }}
-            </div>
-            <div class="hardware-amount">¥{{ row.with_rate?.toFixed(2) || '0.00' }}</div>
-            <div class="hardware-percent">
-              {{ getMaterialCategoryRatio(row.with_rate) }}% <span class="ratio-of">of 硬件</span>
-            </div>
-            <div class="hardware-bar">
-              <div class="hardware-bar-fill" :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"></div>
-            </div>
-            <div class="hardware-meta">系数 {{ row.rate }}x · 原价 ¥{{ row.base?.toFixed(2) }}</div>
-          </div>
-        </div>
-        <!-- 堆叠条 -->
-        <div class="hardware-stacked-bar">
-          <div
-            v-for="row in summary.rate_details"
-            :key="'stack-' + row.category"
-            class="stacked-segment"
-            :class="'cat-' + row.category"
-            :style="{ width: getMaterialCategoryRatio(row.with_rate) + '%' }"
-            :title="`${getCategoryLabel(row.category)}: ¥${row.with_rate?.toFixed(2)} (${getMaterialCategoryRatio(row.with_rate)}%)`"
-          ></div>
-        </div>
-      </div>
-
       <!-- 目标调价: 5 张卡片 -->
       <h4 class="section-subtitle" style="margin-top: 24px;">🎯 目标调价</h4>
       <div class="target-price-cards">
@@ -306,13 +269,13 @@
       </el-table-column>
     </el-table>
 
-    <!-- 费用明细参数 -->
-    <h3 style="margin-top: 32px;">📋 费用明细参数</h3>
+    <!-- 报价单系数明细 -->
+    <h3 style="margin-top: 32px;">📋 报价单系数明细</h3>
     <div v-if="summary" class="coefficient-detail-section">
-      <!-- 卡片 1: 单价 + 系数 -->
+      <!-- 卡片 1: 单价 + 系数 (销售) -->
       <div class="detail-card">
         <div class="detail-card-header">
-          <h4>📋 单价/系数</h4>
+          <h4>📋 单价/系数（销售）</h4>
         </div>
         <el-table :data="detailPriceRows" border size="small">
           <el-table-column prop="group" label="类别" width="140" />
@@ -325,10 +288,10 @@
         </el-table>
       </div>
 
-      <!-- 卡片 2: 数量 -->
+      <!-- 卡片 2: 数量 (项目) -->
       <div class="detail-card">
         <div class="detail-card-header">
-          <h4>📊 数量</h4>
+          <h4>📊 数量（项目）</h4>
         </div>
         <el-table :data="detailQuantityRows" border size="small">
           <el-table-column prop="group" label="类别" width="140" />
