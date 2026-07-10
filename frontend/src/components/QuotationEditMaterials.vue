@@ -72,17 +72,18 @@
           <span class="module-total">小计: {{ mod.total.toFixed(2) }} 元</span>
           <el-button type="primary" size="small" @click="openAddMaterialDialog(mod.id)">+ 添加物料</el-button>
         </div>
-        <el-table :data="mod.materials" border style="width: 100%;" show-overflow-tooltip>
-          <el-table-column prop="material_name" label="物料名称" min-width="100">
+        <el-table :data="getSortedMaterials(mod)" border style="width: 100%;" show-overflow-tooltip
+          @sort-change="(sort) => onSortChange(mod.id, sort)">
+          <el-table-column prop="material_name" label="物料名称" min-width="100" sortable="custom">
             <template #default="{ row }">{{ row.material_name || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="item_no" label="品号" min-width="110">
+          <el-table-column prop="item_no" label="品号" min-width="110" sortable="custom">
             <template #default="{ row }">
               <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
               <span v-else style="color: #c0c4cc;">-</span>
             </template>
           </el-table-column>
-          <el-table-column prop="specification" label="规格" min-width="80">
+          <el-table-column prop="specification" label="规格" min-width="80" sortable="custom">
             <template #default="{ row }">{{ row.specification || '-' }}</template>
           </el-table-column>
           <el-table-column prop="brand" label="品牌" width="70">
@@ -100,10 +101,10 @@
           <el-table-column prop="unit" label="单位" width="60">
             <template #default="{ row }">{{ row.unit || '-' }}</template>
           </el-table-column>
-          <el-table-column prop="unit_price" label="单价" width="90">
+          <el-table-column prop="unit_price" label="单价" width="90" sortable="custom">
             <template #default="{ row }">{{ (row.unit_price || 0).toFixed(2) }}</template>
           </el-table-column>
-          <el-table-column label="数量" width="130">
+          <el-table-column prop="quantity" label="数量" width="130" sortable="custom">
             <template #default="{ row }">
               <span v-if="row.is_other === true">{{ row.quantity }} {{ row.unit }} <span style="color:#999;font-size:12px">(不可改)</span></span>
               <el-input-number
@@ -116,7 +117,7 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="小计" width="100">
+          <el-table-column prop="subtotal" label="小计" width="100" sortable="custom">
             <template #default="{ row }">
               {{ ((row.unit_price || 0) * row.quantity).toFixed(2) }}
             </template>
@@ -303,6 +304,53 @@ watch(() => props.selectedModuleFilter, (val) => {
 function onModuleFilterChange(val) {
   emit('update:selectedModuleFilter', val)
 }
+
+// ---------------------------------------------------------------------------
+// 物料表格排序 (per-module 状态, 默认按物料名+规格升序)
+// ---------------------------------------------------------------------------
+// 每模块独立维护: { moduleId: { prop, order } }
+// 默认无前端排序, 用后端默认 ORDER BY (物料名 + 规格 + id)
+const moduleSortState = ref({})
+
+function onSortChange(modId, sort) {
+  // sort = { prop, order } 其中 order 为 ascending/descending
+  if (!sort.order) {
+    // element-ui 循环 asc → desc → asc, 这里 null 不会出现, 兜底清除
+    delete moduleSortState.value[modId]
+  } else {
+    moduleSortState.value[modId] = { prop: sort.prop, order: sort.order }
+  }
+}
+
+function getSortedMaterials(mod) {
+  const st = moduleSortState.value[mod.id]
+  const list = [...mod.materials]
+  if (!st || !st.order) return list  // 用 backend default
+  const dir = st.order === 'descending' ? -1 : 1
+  list.sort((a, b) => {
+    let va, vb
+    if (st.prop === 'subtotal') {
+      va = (a.unit_price || 0) * a.quantity
+      vb = (b.unit_price || 0) * b.quantity
+    } else {
+      va = a[st.prop]
+      vb = b[st.prop]
+    }
+    // 字符串 vs 数字比较
+    if (typeof va === 'string' || typeof vb === 'string') {
+      const sa = (va || '').toString()
+      const sb = (vb || '').toString()
+      return dir * sa.localeCompare(sb, 'zh-CN')
+    }
+    return dir * ((va || 0) - (vb || 0))
+  })
+  return list
+}
+
+// 当 props.moduleMaterials 变化时清除该模块的 sort 状态 (避免引用过期)
+watch(() => props.moduleMaterials, () => {
+  moduleSortState.value = {}
+})
 
 // ---------------------------------------------------------------------------
 // Add material dialog

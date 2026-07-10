@@ -231,12 +231,35 @@ def get_module_materials(
     module_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(200, ge=1, le=500),
+    sort_by: Optional[str] = Query(None, description="排序字段: material_name | specification | quantity | subtotal"),
+    sort_order: Optional[str] = Query("asc", pattern="^(asc|desc)$", description="asc / desc"),
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    from core.models import ModuleMaterial
+    from core.models import ModuleMaterial, Material
     query = db.query(ModuleMaterial).filter_by(module_id=module_id)
     total = query.count()
+
+    # 默认 + 显式排序: 物料名 → 规格 → id (稳定排序)
+    if sort_by:
+        col = {
+            'material_name': Material.name,
+            'specification': Material.spec,
+            'quantity': ModuleMaterial.quantity,
+            'subtotal': None,  # subtotal 是 to_dict 计算字段, 见下方
+        }.get(sort_by)
+        if col is not None:
+            if sort_order == 'desc':
+                col = col.desc()
+            query = query.join(Material, ModuleMaterial.material_id == Material.id).order_by(col, ModuleMaterial.id)
+    else:
+        # 默认: 物料名升序 + 规格升序 + id (稳定排序)
+        query = query.join(Material, ModuleMaterial.material_id == Material.id).order_by(
+            Material.name.asc(),
+            Material.spec.asc(),
+            ModuleMaterial.id.asc()
+        )
+
     materials = query.offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [m.to_dict() for m in materials],
