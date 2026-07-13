@@ -9,6 +9,7 @@ from core.models.labor_hour import LaborHour
 from core.models.quotation import Quotation
 from core.auth import get_db, get_current_user_id
 from api.quotations import _check_permission
+from utils.log_helpers import record_crud, record_diff_update
 
 router = APIRouter()
 
@@ -71,6 +72,11 @@ def create_labor_hour(
     )
     db.add(item)
     db.commit()
+    record_crud(
+        int(user_id), 'labor_hours', 'create',
+        f'创建 人力工时 "{item.name or labor_type}" (类型={labor_type}, 工时={body.hours}, 单价={body.unit_price}, 小计={total})',
+        resource_type='labor_hour', resource_id=str(item.id),
+    )
     return JSONResponse(content=item.to_dict(), status_code=201)
 
 
@@ -107,6 +113,15 @@ def update_labor_hour(
         item.labor_type = body.labor_type
     item.total = item.hours * item.unit_price
     db.commit()
+    changed = [
+        k for k in ('name', 'hours', 'unit_price', 'labor_type')
+        if getattr(body, k) is not None
+    ]
+    record_diff_update(
+        int(user_id), 'labor_hours', f'人力工时 "{item.name}"', changed,
+        resource_type='labor_hour', resource_id=str(item.id),
+        detail_suffix=f' (工时={item.hours}, 单价={item.unit_price}, 小计={item.total})',
+    )
     return JSONResponse(content=item.to_dict())
 
 
@@ -119,6 +134,13 @@ def delete_labor_hour(
     item = _query_labor_item(db, quotation_id, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Not found")
+    _name, _hours, _price, _total = item.name, item.hours, item.unit_price, item.total
+    _rid = str(item.id)
     db.delete(item)
     db.commit()
+    record_crud(
+        int(user_id), 'labor_hours', 'delete',
+        f'删除 人力工时 "{_name}" (工时={_hours}, 单价={_price}, 小计={_total})',
+        resource_type='labor_hour', resource_id=_rid,
+    )
     return JSONResponse(content={"message": "Deleted"})

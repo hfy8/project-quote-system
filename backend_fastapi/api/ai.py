@@ -31,6 +31,7 @@ from core.auth import get_current_user_id, get_db
 from core.services.ai_agent import run_agent
 from api.quotations import _check_permission
 from core.models.ai_conversation import AiConversation, AiMessage
+from utils.log_helpers import record_crud, record_diff_update
 
 import logging
 logger = logging.getLogger(__name__)
@@ -126,7 +127,7 @@ def _save_history(
 # ============== 请求 / 响应 schema ==============
 class AskRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=2000, description="用户问题")
-    max_steps: int = Field(20, ge=1, le=40, description="Agent 最大步数（防失控）")
+    max_steps: int = Field(30, ge=1, le=60, description="Agent 最大步数（防失控）"),
     conversation_id: Optional[str] = Field(None, description="会话 ID（多轮对话用，不传则新建）")
 
 
@@ -162,6 +163,18 @@ def ask(
 
     conv_id = req.conversation_id or str(uuid.uuid4())
     logger.info(f"AI ask from user {user_id} (conv={conv_id[:8]}): {req.query[:50]}...")
+
+    # 操作日志: AI 提问 (统一在入口记录一次, 不论成功失败)
+    try:
+        brief_question = (req.query[:80] + ('...' if len(req.query) > 80 else '')).replace('\n', ' ')
+        record_crud(
+            user_id, 'ai', 'view',
+            f'AI 咨询: {brief_question} (报价单=无)',
+            resource_type='ai_query',
+            resource_id=conv_id[:16],
+        )
+    except Exception:
+        pass
 
     try:
         from core.services.ai_agent import build_agent
@@ -251,6 +264,18 @@ def ask_stream(
     conv_id = req.conversation_id or str(uuid.uuid4())
     logger.info(f"AI stream from user {user_id} (conv={conv_id[:8]}): {req.query[:50]}...")
 
+    # 操作日志: AI 流式提问
+    try:
+        brief_question = (req.query[:80] + ('...' if len(req.query) > 80 else '')).replace('\n', ' ')
+        record_crud(
+            user_id, 'ai', 'view',
+            f'AI 咨询: {brief_question} (报价单=无)',
+            resource_type='ai_query',
+            resource_id=conv_id[:16],
+        )
+    except Exception:
+        pass
+
     def event_generator():
         from core.services.ai_stream import run_agent_stream
         history = _get_history(conv_id, db=db)
@@ -331,6 +356,14 @@ def create_conversation(
     db.refresh(conversation)
 
     logger.info(f"Created conversation {conv_id[:8]} for user {user_id}")
+
+    record_crud(
+        user_id, 'ai', 'create',
+        f'创建 AI 会话 "{title or "新对话"}"',
+        resource_type='ai_conversation',
+        resource_id=conv_id[:16],
+    )
+
     return {
         "conversation": conversation.to_dict(),
         "message": "对话创建成功",
@@ -358,6 +391,15 @@ def update_conversation(
     db.commit()
     db.refresh(conversation)
 
+    record_diff_fields = ['title']
+    record_diff_update(
+        user_id, 'ai',
+        f'AI 会话 "{conversation.title}"',
+        record_diff_fields,
+        resource_type='ai_conversation',
+        resource_id=str(conversation_id)[:16],
+    )
+
     return {
         "conversation": conversation.to_dict(),
         "message": "标题已更新",
@@ -379,6 +421,8 @@ def delete_conversation(
     if not conversation:
         raise HTTPException(status_code=404, detail="对话不存在")
 
+    conv_title = conversation.title or conversation_id[:8]
+
     # 级联删除消息
     db.query(AiMessage).filter(
         AiMessage.conversation_id == conversation_id,
@@ -387,6 +431,13 @@ def delete_conversation(
     # 也清理内存
     _CONVERSATIONS.pop(conversation_id, None)
     db.commit()
+
+    record_crud(
+        user_id, 'ai', 'delete',
+        f'删除 AI 会话 "{conv_title}"',
+        resource_type='ai_conversation',
+        resource_id=str(conversation_id)[:16],
+    )
 
     return {"status": "ok", "message": f"已删除对话 {conversation_id[:8]}"}
 

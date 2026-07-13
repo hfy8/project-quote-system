@@ -115,6 +115,7 @@ def set_base_currency(rate_id: int, db=Depends(get_db), user_id: str = Depends(g
 def update_exchange_rate(rate_id: int, body: ExchangeRateUpdate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """更新汇率配置"""
     from utils.logger import log_operation
+    from utils.log_helpers import record_diff_update
 
     rate = db.query(ExchangeRate).get(rate_id)
     if not rate:
@@ -131,10 +132,20 @@ def update_exchange_rate(rate_id: int, body: ExchangeRateUpdate, db=Depends(get_
 
     # 普通更新
     data = body.model_dump(exclude_unset=True)
+    changed_fields = []
     for key in ("rate", "description"):
-        if key in data:
+        if key in data and getattr(rate, key) != data[key]:
             setattr(rate, key, data[key])
+            changed_fields.append(key)
     db.commit()
+    record_diff_update(
+        user_id,
+        'exchange_rate',
+        f'汇率 "{rate.currency}"',
+        changed_fields,
+        resource_type='exchange_rate',
+        resource_id=str(rate_id),
+    )
     return JSONResponse(content=rate.to_dict())
 
 
@@ -200,4 +211,13 @@ def trigger_sync_exchange_rates(db=Depends(get_db), user_id: str = Depends(get_c
 
     from core.tasks.exchange_rate_sync import sync_exchange_rates
     result = sync_exchange_rates(base_ccy="CNY", create_missing=True)
+    if "error" not in result:
+        from utils.log_helpers import record_crud
+        record_crud(
+            user_id,
+            'exchange_rate',
+            'import',
+            f'从外部 API 导入汇率（新增 {result.get("created", 0)} 条，更新 {result.get("updated", 0)} 条）',
+            resource_type='exchange_rate',
+        )
     return JSONResponse(content=result, status_code=200 if "error" not in result else 500)

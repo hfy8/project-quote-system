@@ -17,8 +17,41 @@ from sqlalchemy.orm import Session
 
 from core.auth import get_db, get_current_user_id
 from api.quotations import _check_permission
+from utils.log_helpers import record_crud
 
 router = APIRouter(prefix='/api/modules')
+
+
+def _resolve_participant_label(user_id: int, db: Session) -> str:
+    """解析模块参与人显示标签: user_name + 类型 (机构/电气/项目).
+
+    模块参与人本身的 participant_type 字段不存储在 ModuleParticipant 表上,
+    需要从 QuotationParticipant 表里取该用户在该报价单中的参与类型。
+    """
+    try:
+        from core.models.user import User
+        from core.models.quotation import QuotationParticipant
+
+        user = db.query(User).get(user_id)
+        user_name = user.real_name if user else f'用户#{user_id}'
+
+        # 取最新一条 QuotationParticipant 记录作为类型来源
+        qp = (
+            db.query(QuotationParticipant)
+            .filter(QuotationParticipant.user_id == user_id)
+            .order_by(QuotationParticipant.id.desc())
+            .first()
+        )
+        type_label_map = {
+            'project': '项目',
+            'agency': '机构',
+            'electrical': '电气',
+        }
+        ptype = qp.participant_type if qp else None
+        type_zh = type_label_map.get(ptype, ptype or '其他')
+        return f'{user_name} ({type_zh})'
+    except Exception:
+        return f'用户#{user_id} (其他)'
 
 
 # ============== Pydantic 模型 ==============
@@ -84,6 +117,18 @@ def add_module_participants(
             )
 
     db.commit()
+
+    # 操作日志: 每个成功添加的人员记录一条
+    for uid in added:
+        record_crud(
+            user_id,
+            'quotation',
+            'create',
+            f'添加 模块参与人 {_resolve_participant_label(uid, db)}',
+            resource_type='module_participant',
+            resource_id=str(uid),
+        )
+
     return JSONResponse(content={
         "message": f"已添加 {len(added)} 名人员",
         "added": added,
@@ -109,4 +154,14 @@ def remove_module_participant(
 
     db.delete(p)
     db.commit()
+
+    record_crud(
+        user_id,
+        'quotation',
+        'delete',
+        f'移除 模块参与人 {_resolve_participant_label(p.user_id, db)}',
+        resource_type='module_participant',
+        resource_id=str(p.id),
+    )
+
     return JSONResponse(content={"message": "已移除"})

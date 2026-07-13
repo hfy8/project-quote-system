@@ -133,6 +133,13 @@ def create_user(
     db.commit()
     db.refresh(user)
 
+    from utils.log_helpers import record_crud
+    record_crud(
+        current_user_id, 'user', 'create',
+        f'创建用户 {user.username} (角色={user.role})',
+        resource_type='user', resource_id=str(user.id),
+    )
+
     return JSONResponse(content=user.to_dict(), status_code=201)
 
 
@@ -149,6 +156,7 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
+    changed = []
     if body.username is not None:
         # 检查新用户名是否被其他用户占用
         conflict = (
@@ -158,18 +166,30 @@ def update_user(
         )
         if conflict:
             raise HTTPException(status_code=400, detail="用户名已被其他用户使用")
-        user.username = body.username
-    if body.real_name is not None:
+        if user.username != body.username:
+            changed.append('username')
+            user.username = body.username
+    if body.real_name is not None and user.real_name != body.real_name:
+        changed.append('real_name')
         user.real_name = body.real_name
-    if body.role is not None:
+    if body.role is not None and user.role != body.role:
+        changed.append('role')
         user.role = body.role
-    if body.dept_id is not None:
+    if body.dept_id is not None and user.dept_id != body.dept_id:
+        changed.append('dept_id')
         user.dept_id = body.dept_id
     if body.password:
+        changed.append('password')
         user.set_password(body.password)
 
     db.commit()
     db.refresh(user)
+
+    from utils.log_helpers import record_diff_update
+    record_diff_update(
+        current_user_id, 'user', f'用户 {user.username}', changed,
+        resource_type='user', resource_id=str(user.id),
+    )
 
     return JSONResponse(content=user.to_dict())
 
@@ -186,8 +206,16 @@ def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
+    username = user.username
     db.delete(user)
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        current_user_id, 'user', 'delete',
+        f'删除用户 {username}',
+        resource_type='user', resource_id=str(user_id),
+    )
 
     return JSONResponse(content={"message": "删除成功"})
 
@@ -208,6 +236,9 @@ def reset_own_password(
 
     user.set_password(body.new_password)
     db.commit()
+
+    from utils.log_helpers import record_password_change
+    record_password_change(current_user_id, user.username, is_self=True)
 
     return JSONResponse(content={"message": "密码修改成功"})
 
@@ -230,6 +261,9 @@ def admin_reset_password(
 
     target.set_password(body.new_password)
     db.commit()
+
+    from utils.log_helpers import record_password_change
+    record_password_change(current_user_id, admin.username, is_self=False, target_username=target.username)
 
     return JSONResponse(
         content={"message": f"用户 '{target.username}' 的密码已重置"}
@@ -254,6 +288,15 @@ def toggle_user_status(
     db.refresh(user)
 
     status_text = "启用" if body.is_active else "禁用"
+
+    from utils.log_helpers import record_status_change
+    record_status_change(
+        current_user_id, 'user', f'用户 {user.username}',
+        old_status='禁用' if not body.is_active else '启用',
+        new_status=status_text,
+        resource_type='user', resource_id=str(user.id),
+    )
+
     return JSONResponse(
         content={
             "message": f"用户 '{user.username}' 已{status_text}",

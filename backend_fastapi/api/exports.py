@@ -21,6 +21,7 @@ from core.models.labor_hour import LaborHour
 from core.models.travel_entry import PackingEntry, TravelPersonDays, TravelPersonTrip
 from core.models.travel import TravelPersonTripFee
 from core.auth import get_db, get_current_user_id
+from utils.log_helpers import record_crud
 
 
 def _check_export_permission(db, quotation, user_id: int) -> bool:
@@ -418,6 +419,12 @@ def export_word(
     doc.save(buffer)
     buffer.seek(0)
 
+    record_crud(
+        user_id, 'quotation', 'export',
+        f'导出 {quotation.name or quotation.scheme_no or quotation_id} Word 报表',
+        resource_type='export', resource_id=str(quotation_id),
+    )
+
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.docx'
     return StreamingResponse(
         buffer,
@@ -640,6 +647,12 @@ def export_excel(
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
+
+    record_crud(
+        user_id, 'quotation', 'export',
+        f'导出 {quotation.name or quotation.scheme_no or quotation_id} Excel 报表',
+        resource_type='export', resource_id=str(quotation_id),
+    )
 
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.xlsx'
     return StreamingResponse(
@@ -1085,6 +1098,13 @@ def export_pdf(
     )
 
     buffer = BytesIO(pdf_bytes)
+
+    record_crud(
+        user_id, 'quotation', 'export',
+        f'导出 {quotation.name or quotation.scheme_no or quotation_id} PDF 报表',
+        resource_type='export', resource_id=str(quotation_id),
+    )
+
     filename = f'quotation_{quotation_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.pdf'
     return StreamingResponse(
         buffer,
@@ -1105,6 +1125,7 @@ def export_version(
     fmt: str,
     lang: str = Query('zh'),
     db=Depends(get_db),
+    user_id: str = Depends(get_current_user_id),
 ):
     """导出版本文件：从数据库 pdf_file/word_file 字段读取真实路径"""
     import json as _json
@@ -1143,6 +1164,19 @@ def export_version(
             status_code=404,
             detail=f'文件已被清理或归档路径失效，请重新归档生成（路径: {filepath}）'
         )
+
+    # 操作日志
+    qname = None
+    try:
+        quotation = db.query(Quotation).get(quotation_id)
+        qname = quotation.name if quotation else None
+    except Exception:
+        pass
+    record_crud(
+        user_id, 'quotation', 'export',
+        f'导出版本 v{version_no} {fmt.upper()} ({qname or quotation_id})',
+        resource_type='export', resource_id=str(quotation_id),
+    )
 
     return FileResponse(
         filepath,

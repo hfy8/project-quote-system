@@ -99,6 +99,16 @@ def create_version(
     )
     db.add(version)
     db.commit()
+    # 记录操作日志
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id,
+        'version',
+        'create',
+        f'手动创建版本快照: 报价单 #{quotation_id} v{next_version} (备注={body.remark})',
+        resource_type='version',
+        resource_id=str(version.id),
+    )
     return JSONResponse(content=version.to_dict(), status_code=201)
 
 # ──────────────────────────────────────────────

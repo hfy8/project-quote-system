@@ -10,6 +10,7 @@ from sqlalchemy import or_
 from core.schemas import MaterialCreate, MaterialUpdate
 from core.auth import get_db, get_current_user_id
 from api.quotations import _check_permission
+from utils.log_helpers import record_crud, record_diff_update, record_status_change
 
 
 router = APIRouter()
@@ -96,6 +97,11 @@ def create_material(
     )
     db.add(material)
     db.commit()
+    record_crud(
+        user_id, 'material', 'create',
+        f'创建物料 {material.name} (编码={material.item_no or "-"}, 分类={material.category or "-"})',
+        resource_type='material', resource_id=str(material.id),
+    )
     return material.to_dict()
 
 
@@ -119,10 +125,42 @@ def update_material(
     # 品号空字符串归一为 None (允许没有品号)
     if 'item_no' in update_data and update_data['item_no'] is not None:
         update_data['item_no'] = (update_data['item_no'] or '').strip() or None
+
+    # 计算字段变更 (只跟踪任务指定的 5 个核心字段)
+    tracked_fields = {'unit_price': 'price', 'name': 'name', 'category': 'category', 'spec': 'spec', 'unit': 'unit'}
+    changed = []
+    old_values = {}
+    for field in tracked_fields:
+        if field in update_data:
+            new_val = update_data[field]
+            old_val = getattr(material, field, None)
+            if field == 'unit_price':
+                # Numeric 比较
+                old_cmp = float(old_val) if old_val is not None else 0
+                new_cmp = float(new_val) if new_val is not None else 0
+            else:
+                old_cmp = old_val
+                new_cmp = new_val
+            if old_cmp != new_cmp:
+                changed.append(tracked_fields[field])
+                old_values[field] = (old_val, new_val)
+
     for field, value in update_data.items():
         setattr(material, field, value)
 
     db.commit()
+
+    # 记录字段变更日志 (价格变更附带上价格前后值, 便于审计)
+    detail_suffix = ''
+    if 'unit_price' in changed and 'unit_price' in old_values:
+        old_p, new_p = old_values['unit_price']
+        detail_suffix = f': 价格 {old_p}→{new_p}'
+    record_diff_update(
+        user_id, 'material', f'物料 {material.name} (编码={material.item_no or "-"}, ID={material.id})',
+        changed,
+        resource_type='material', resource_id=str(material_id),
+        detail_suffix=detail_suffix,
+    )
     return material.to_dict()
 
 
@@ -143,8 +181,17 @@ def delete_material(
     # 先删除关联的 module_materials 记录
     db.query(ModuleMaterial).filter_by(material_id=material_id).delete()
 
+    # 记录物料信息 (delete 后对象会被 expire, 提前捕获)
+    material_name = material.name
+    material_item_no = material.item_no or "-"
+
     db.delete(material)
     db.commit()
+    record_crud(
+        user_id, 'material', 'delete',
+        f'删除物料 {material_name} (编码={material_item_no})',
+        resource_type='material', resource_id=str(material_id),
+    )
     return {"message": "删除成功"}
 
 
@@ -164,6 +211,13 @@ def toggle_material(
 
     material.status = "inactive" if material.status == "active" else "active"
     db.commit()
+    record_status_change(
+        user_id, 'material',
+        f'物料 {material.name} (编码={material.item_no or "-"}, ID={material.id})',
+        old_status='active' if material.status == 'inactive' else 'inactive',
+        new_status=material.status,
+        resource_type='material', resource_id=str(material_id),
+    )
     return material.to_dict()
 
 
@@ -254,6 +308,17 @@ def import_materials(
             continue
 
     db.commit()
+
+    # 操作日志: 记录批量导入结果
+    total_count = created + updated
+    success_count = total_count
+    fail_count = len(errors)
+    record_crud(
+        user_id, 'material', 'import',
+        f'导入物料 {success_count}/{total_count} 条 (创建 {created}, 更新 {updated}, 失败 {fail_count})',
+        resource_type='material',
+    )
+
     return {
         "created": created,
         "updated": updated,
@@ -295,6 +360,16 @@ def sync_prices_endpoint(
     from core.tasks.material_price_sync import sync_material_prices
     logger.info(f"Manual sync triggered by user_id={current_user_id}, dry_run={dry_run}")
     result = sync_material_prices(batch_size=batch_size, dry_run=dry_run)
+
+    # 操作日志: 记录手动触发的价格同步
+    n = result.get('total', 0) if isinstance(result, dict) else 0
+    updated_n = result.get('updated', 0) if isinstance(result, dict) else 0
+    failed_n = result.get('failed', 0) if isinstance(result, dict) else 0
+    record_crud(
+        current_user_id, 'material', 'update',
+        f'触发物料价格同步 (dry_run={dry_run}, 范围={n}条, 更新={updated_n}, 失败={failed_n})',
+        resource_type='material',
+    )
     return result
 
 

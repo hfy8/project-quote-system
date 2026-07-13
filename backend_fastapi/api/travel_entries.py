@@ -9,6 +9,7 @@ from core.models.travel_entry import PackingEntry, TravelPersonDays, TravelPerso
 from core.models.travel import TravelPersonTripFee, TravelCategory
 from core.auth import get_db, get_current_user_id
 from api.quotations import _check_permission
+from utils.log_helpers import record_crud
 
 router = APIRouter()
 
@@ -47,10 +48,12 @@ def upsert_packing_entry(
         quotation_id=body.quotation_id, packing_type_id=body.packing_type_id
     ).first()
     if entry:
+        _action = 'update'
         entry.quantity = body.quantity
         entry.unit_price = body.unit_price
         entry.remark = body.remark
     else:
+        _action = 'create'
         entry = PackingEntry(
             quotation_id=body.quotation_id,
             packing_type_id=body.packing_type_id,
@@ -60,6 +63,11 @@ def upsert_packing_entry(
         )
         db.add(entry)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', _action,
+        f'{"更新" if _action == "update" else "添加"} 运输包装 (报价单#{body.quotation_id}, 包装类型#{body.packing_type_id}, 数量={body.quantity}, 单价={body.unit_price})',
+        resource_type='travel_packing', resource_id=str(entry.id),
+    )
     return JSONResponse(content=entry.to_dict())
 
 
@@ -77,6 +85,11 @@ def update_packing_entry(
         if key in data:
             setattr(entry, key, data[key])
     db.commit()
+    record_crud(
+        int(user_id), 'travel', 'update',
+        f'更新 运输包装 #{entry.id} (数量={entry.quantity}, 单价={entry.unit_price})',
+        resource_type='travel_packing', resource_id=str(entry.id),
+    )
     return JSONResponse(content=entry.to_dict())
 
 
@@ -89,8 +102,15 @@ def delete_packing_entry(
     entry = db.query(PackingEntry).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="包装条目不存在")
+    _rid = str(entry.id)
+    _qty = entry.quantity
     db.delete(entry)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', 'delete',
+        f'删除 运输包装 #{_rid} (数量={_qty})',
+        resource_type='travel_packing', resource_id=_rid,
+    )
     return JSONResponse(content={"message": "删除成功"})
 
 
@@ -128,10 +148,12 @@ def upsert_travel_person_days(
         quotation_id=body.quotation_id, travel_category_id=body.travel_category_id
     ).first()
     if entry:
+        _action = 'update'
         entry.person_days = body.person_days
         entry.unit_price = body.unit_price
         entry.remark = body.remark
     else:
+        _action = 'create'
         entry = TravelPersonDays(
             quotation_id=body.quotation_id,
             travel_category_id=body.travel_category_id,
@@ -141,6 +163,11 @@ def upsert_travel_person_days(
         )
         db.add(entry)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', _action,
+        f'{"更新" if _action == "update" else "添加"} 差旅人天 (报价单#{body.quotation_id}, 差旅类别#{body.travel_category_id}, 人天={body.person_days}, 单价={body.unit_price})',
+        resource_type='person_days', resource_id=str(entry.id),
+    )
     return JSONResponse(content=entry.to_dict())
 
 
@@ -158,6 +185,11 @@ def update_travel_person_days(
         if key in data:
             setattr(entry, key, data[key])
     db.commit()
+    record_crud(
+        int(user_id), 'travel', 'update',
+        f'更新 差旅人天 #{entry.id} (人天={entry.person_days}, 单价={entry.unit_price})',
+        resource_type='person_days', resource_id=str(entry.id),
+    )
     return JSONResponse(content=entry.to_dict())
 
 
@@ -170,8 +202,15 @@ def delete_travel_person_days(
     entry = db.query(TravelPersonDays).get(eid)
     if not entry:
         raise HTTPException(status_code=404, detail="差旅人天条目不存在")
+    _rid = str(entry.id)
+    _pd = entry.person_days
     db.delete(entry)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', 'delete',
+        f'删除 差旅人天 #{_rid} (人天={_pd})',
+        resource_type='person_days', resource_id=_rid,
+    )
     return JSONResponse(content={"message": "删除成功"})
 
 
@@ -233,11 +272,13 @@ def upsert_travel_person_trip(
         travel_mode_id=body.travel_mode_id,
     ).first()
     if trip:
+        _action = 'update'
         trip.person_count = body.person_count
         trip.unit_price = body.unit_price
         trip.visa_fee = body.visa_fee
         trip.remark = body.remark
     else:
+        _action = 'create'
         trip = TravelPersonTrip(
             quotation_id=body.quotation_id,
             travel_category_id=body.travel_category_id,
@@ -249,6 +290,11 @@ def upsert_travel_person_trip(
         )
         db.add(trip)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', _action,
+        f'{"更新" if _action == "update" else "添加"} 差旅人次 (报价单#{body.quotation_id}, 差旅类别#{body.travel_category_id}, 出行方式#{body.travel_mode_id}, 人次={body.person_count}, 单价={body.unit_price}, 签证费={body.visa_fee})',
+        resource_type='person_trips', resource_id=str(trip.id),
+    )
     return JSONResponse(content=trip.to_dict())
 
 
@@ -267,6 +313,11 @@ def update_travel_person_trip(
             setattr(trip, key, data[key])
     db.commit()
     db.refresh(trip)
+    record_crud(
+        int(user_id), 'travel', 'update',
+        f'更新 差旅人次 #{trip.id} (人次={trip.person_count}, 单价={trip.unit_price}, 签证费={trip.visa_fee})',
+        resource_type='person_trips', resource_id=str(trip.id),
+    )
     return JSONResponse(content=trip.to_dict())
 
 
@@ -279,6 +330,13 @@ def delete_travel_person_trip(
     trip = db.query(TravelPersonTrip).get(tid)
     if not trip:
         raise HTTPException(status_code=404, detail="差旅人次条目不存在")
+    _rid = str(trip.id)
+    _pc = trip.person_count
     db.delete(trip)
     db.commit()
+    record_crud(
+        int(user_id), 'travel', 'delete',
+        f'删除 差旅人次 #{_rid} (人次={_pc})',
+        resource_type='person_trips', resource_id=_rid,
+    )
     return JSONResponse(content={"message": "删除成功"})

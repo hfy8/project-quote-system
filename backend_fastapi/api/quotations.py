@@ -64,17 +64,50 @@ router = APIRouter()
 def _log_op(db, user_id, action, module, resource_type=None, resource_id=None, detail=None,
             username=None):
     """记录操作日志（兼容版，使用传入的 db session）"""
-    log_entry = OperationLog(
-        user_id=int(user_id),
-        username=username or str(user_id),
-        action=action.value if hasattr(action, 'value') else action,
-        module=module.value if hasattr(module, 'value') else module,
-        resource_type=resource_type,
-        resource_id=resource_id,
-        detail=detail,
-        created_at=datetime.utcnow(),
-    )
-    db.add(log_entry)
+    try:
+        log_entry = OperationLog(
+            user_id=int(user_id) if user_id else 0,
+            username=username or str(user_id),
+            action=action.value if hasattr(action, 'value') else action,
+            module=module.value if hasattr(module, 'value') else module,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            detail=detail,
+            ip_address=_get_client_ip(),
+            user_agent=_get_user_agent()[:200] if _get_user_agent() else 'system',
+            created_at=datetime.utcnow(),
+        )
+        db.add(log_entry)
+        db.commit()
+    except Exception as e:
+        # 日志失败不影响主业务, 打印到 stderr
+        import sys
+        print(f'[operation_log] failed to log: {e}', file=sys.stderr)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+
+def _get_client_ip() -> str:
+    """获取当前请求的客户端 IP (委托 utils.logger)"""
+    try:
+        from utils.logger import get_client_ip
+        return get_client_ip()
+    except Exception:
+        return '127.0.0.1'
+
+
+def _get_user_agent() -> str:
+    """获取当前请求的 User-Agent (委托 utils.logger)"""
+    try:
+        from utils.logger import _get_request
+        req = _get_request()
+        if req:
+            return req.headers.get('User-Agent', '')
+        return ''
+    except Exception:
+        return ''
 
 
 def _send_message(db, recipient_id, title, content, msg_type, related_id=None, related_type=None,
@@ -1139,19 +1172,27 @@ def update_quotation(
                     status_code=400,
                     detail=f'方案号 "{new_sn}" 已被非子报价单 "{existing.name}" 使用，不能重复使用'
                 )
-    if 'name' in data:
+    changed = []
+    if 'name' in data and data['name'] != quotation.name:
+        changed.append('name')
         quotation.name = data['name']
-    if 'type' in data:
+    if 'type' in data and data['type'] != quotation.type:
+        changed.append('type')
         quotation.type = data['type']
-    if 'scheme_no' in data:
+    if 'scheme_no' in data and data['scheme_no'] != quotation.scheme_no:
+        changed.append('scheme_no')
         quotation.scheme_no = data['scheme_no']
-    if 'business_owner_id' in data:
+    if 'business_owner_id' in data and data['business_owner_id'] != quotation.business_owner_id:
+        changed.append('business_owner_id')
         quotation.business_owner_id = data['business_owner_id']
-    if 'tax_rate' in data:
+    if 'tax_rate' in data and data['tax_rate'] != quotation.tax_rate:
+        changed.append('tax_rate')
         quotation.tax_rate = data['tax_rate']
-    if 'profit_rate' in data:
+    if 'profit_rate' in data and data['profit_rate'] != quotation.profit_rate:
+        changed.append('profit_rate')
         quotation.profit_rate = data['profit_rate']
-    if 'currency' in data:
+    if 'currency' in data and data['currency'] != quotation.currency:
+        changed.append('currency')
         quotation.currency = data['currency']
     if 'coefficients' in data:
         # B2: 子报价单不允许单独修改 coefficients, 必须改父单
@@ -1160,11 +1201,21 @@ def update_quotation(
                 status_code=400,
                 detail='子报价单不能修改费用系数, 请修改父报价单'
             )
+        if data['coefficients'] != (quotation.coefficients or {}):
+            changed.append('coefficients')
         quotation.coefficients = data['coefficients']
-    if 'parent_id' in data:
+    if 'parent_id' in data and data['parent_id'] != quotation.parent_id:
+        changed.append('parent_id')
         quotation.parent_id = data['parent_id']
 
     db.commit()
+
+    if changed:
+        from utils.log_helpers import record_diff_update
+        record_diff_update(
+            user_id, 'quotation', f'报价单 {quotation.scheme_no or quotation.id}', changed,
+            resource_type='quotation', resource_id=str(quotation_id),
+        )
 
     # 失效报价单列表缓存
     from core.services.cache import cache_invalidate_prefix
@@ -1588,6 +1639,14 @@ def approve_archive(
     # 走核心归档逻辑
     version = _execute_archive_core(db, quotation, int(user_id), body.remark or '部门领导审批通过', via='approval')
 
+    _log_op(db, int(user_id),
+        action=Action.APPROVE,
+        module=LogModule.QUOTATION,
+        resource_type='quotation',
+        resource_id=str(quotation.id),
+        detail=f'审批通过 \"{quotation.name}\" (备注={body.remark or "无"})'
+    )
+
     # 通知发起人
     _notify_users(db, [approval.requested_by],
         title='报价单归档已通过',
@@ -1633,6 +1692,14 @@ def reject_archive(
     quotation.status = 'draft'  # ← 你的决策: 驳回后回到草稿
     db.commit()
 
+    _log_op(db, int(user_id),
+        action=Action.REJECT,
+        module=LogModule.QUOTATION,
+        resource_type='quotation',
+        resource_id=str(quotation.id),
+        detail=f'驳回归档申请 \"{quotation.name}\" (原因: {body.reason})'
+    )
+
     # 通知发起人
     user = db.query(User).get(int(user_id))
     _notify_users(db, [approval.requested_by],
@@ -1676,6 +1743,14 @@ def cancel_archive(
     approval.approved_at = datetime.utcnow()
     quotation.status = 'draft'
     db.commit()
+
+    _log_op(db, int(user_id),
+        action=Action.CANCEL,
+        module=LogModule.QUOTATION,
+        resource_type='quotation',
+        resource_id=str(quotation.id),
+        detail=f'撤回归档申请 \"{quotation.name}\"'
+    )
 
     # 通知部门领导
     user = db.query(User).get(int(user_id))
@@ -1792,6 +1867,15 @@ def archive_quotation(
         )
         db.add(approval)
         db.commit()
+
+        _log_op(db, int(user_id),
+            action=Action.SUBMIT,
+            module=LogModule.QUOTATION,
+            resource_type='quotation',
+            resource_id=str(quotation.id),
+            detail=f'管理员直接归档 \"{quotation.name}\" (备注={body.remark or "无"})'
+        )
+
         return {
             'message': '归档成功',
             'quotation': quotation.to_dict(),
@@ -1831,6 +1915,14 @@ def archive_quotation(
     quotation.status = 'approved_pending'
     db.add(approval)
     db.commit()
+
+    _log_op(db, int(user_id),
+        action=Action.SUBMIT,
+        module=LogModule.QUOTATION,
+        resource_type='quotation',
+        resource_id=str(quotation.id),
+        detail=f'提交归档申请 \"{quotation.name}\" (审批人: {leader.get("real_name") or leader["id"]})'
+    )
 
     # 通知部门领导
     _notify_users(db, [leader['id']],
@@ -1945,6 +2037,15 @@ def add_participant(
             'project': '项目', 'agency': '机构', 'electrical': '电气', 'engineer': '工程师'
         }
         type_label = type_map.get(body.participant_type, body.participant_type)
+
+        _log_op(db, int(user_id),
+            action=Action.CREATE,
+            module=LogModule.QUOTATION,
+            resource_type='quotation_participant',
+            resource_id=str(quotation_id),
+            detail=f'添加报价单参与人 {added_user.username} 为 {type_label} 角色 (报价单: {quotation.name})'
+        )
+
         _send_message(db, recipient_id=added_user.id,
             title='你已被添加为报价单参与人',
             content=f'你已被添加为"{quotation.name}"的{type_label}参与人，由{current_user.real_name}添加',
@@ -1971,8 +2072,21 @@ def update_participant_type(
     ).first()
     if not participant:
         raise HTTPException(status_code=404, detail='参与人员不存在')
+    old_type = participant.participant_type
     participant.participant_type = body.participant_type
     db.commit()
+
+    type_map = {
+        'project': '项目', 'agency': '机构', 'electrical': '电气', 'engineer': '工程师'
+    }
+    _log_op(db, int(user_id),
+        action=Action.UPDATE,
+        module=LogModule.QUOTATION,
+        resource_type='quotation_participant',
+        resource_id=str(quotation_id),
+        detail=f'修改报价单参与人角色: {type_map.get(old_type, old_type)} → {type_map.get(body.participant_type, body.participant_type)}'
+    )
+
     return JSONResponse(content=participant.to_dict(), status_code=200)
 
 
@@ -1990,8 +2104,23 @@ def remove_participant(
     ).first()
     if not participant:
         raise HTTPException(status_code=404, detail='参与人员不存在')
+    removed_user = db.query(User).get(participant_user_id)
+    removed_name = removed_user.username if removed_user else str(participant_user_id)
+    removed_type = participant.participant_type
     db.delete(participant)
     db.commit()
+
+    type_map = {
+        'project': '项目', 'agency': '机构', 'electrical': '电气', 'engineer': '工程师'
+    }
+    _log_op(db, int(user_id),
+        action=Action.DELETE,
+        module=LogModule.QUOTATION,
+        resource_type='quotation_participant',
+        resource_id=str(quotation_id),
+        detail=f'移除报价单参与人 {removed_name} ({type_map.get(removed_type, removed_type)} 角色)'
+    )
+
     return JSONResponse(content={'message': '移除成功'}, status_code=200)
 
 
@@ -2057,6 +2186,14 @@ def copy_quotation(
         db.add(new_fee)
 
     db.commit()
+
+    _log_op(db, uid,
+        action=Action.CREATE,
+        module=LogModule.QUOTATION,
+        resource_type='quotation',
+        resource_id=str(new_quotation.id),
+        detail=f'复制报价单: 从 "{original.name}" → "{new_quotation.name}" (新ID={new_quotation.id}, 模块={len(original_modules)}个)'
+    )
 
     # 失效报价单列表缓存
     from core.services.cache import cache_invalidate_prefix

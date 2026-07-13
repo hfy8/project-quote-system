@@ -18,11 +18,58 @@
       <div class="filter-item">
         <select v-model="filters.action" class="filter-select">
           <option value="">全部操作</option>
+          <option value="login">登录</option>
+          <option value="logout">登出</option>
           <option value="create">创建</option>
           <option value="update">更新</option>
           <option value="delete">删除</option>
-          <option value="login">登录</option>
           <option value="export">导出</option>
+          <option value="import">导入</option>
+          <option value="submit">提交</option>
+          <option value="approve">审批通过</option>
+          <option value="reject">驳回</option>
+          <option value="cancel">撤回</option>
+          <option value="view">查看</option>
+          <option value="reset_password">重置密码</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <select v-model="filters.module" class="filter-select">
+          <option value="">全部模块</option>
+          <option value="auth">认证</option>
+          <option value="quotation">报价单</option>
+          <option value="module">模块</option>
+          <option value="material">物料</option>
+          <option value="user">用户</option>
+          <option value="fee">费用</option>
+          <option value="exchange_rate">汇率</option>
+          <option value="role">角色</option>
+          <option value="labor_hours">人力工时</option>
+          <option value="travel">差旅</option>
+        </select>
+      </div>
+      <div class="filter-item">
+        <select v-model="filters.resource_type" class="filter-select">
+          <option value="">全部资源类型</option>
+          <option value="other_fee">其他费用</option>
+          <option value="fee_type">费用类型</option>
+          <option value="fee_rate">费用系数</option>
+          <option value="module_participant">模块参与人</option>
+          <option value="quotation_participant">报价单参与人</option>
+          <option value="travel_packing">差旅打包</option>
+          <option value="person_days">人天</option>
+          <option value="person_trips">人趟</option>
+          <option value="export">导出</option>
+          <option value="ai_query">AI查询</option>
+          <option value="packing_type">打包类型</option>
+          <option value="travel_category">差旅类别</option>
+          <option value="travel_day_rate">差旅日费率</option>
+          <option value="travel_mode">差旅方式</option>
+          <option value="travel_person_trip_fee">差旅人趟费用</option>
+          <option value="participant_type">参与人类型</option>
+          <option value="participant_type_permission">参与人类型权限</option>
+          <option value="version">版本</option>
+          <option value="sync">同步</option>
         </select>
       </div>
       <div class="filter-item">
@@ -79,6 +126,11 @@
             {{ getModuleText(row.module) }}
           </template>
         </el-table-column>
+        <el-table-column prop="resource_type" label="资源类型" width="120">
+          <template #default="{ row }">
+            {{ getResourceTypeText(row.resource_type) }}
+          </template>
+        </el-table-column>
         <el-table-column prop="detail" label="操作内容" min-width="300">
           <template #default="{ row }">
             <span class="description">{{ row.detail || '-' }}</span>
@@ -129,6 +181,8 @@ const pagination = reactive({
 
 const filters = reactive({
   action: '',
+  module: '',
+  resource_type: '',
   user: '',
   keyword: ''
 })
@@ -146,12 +200,18 @@ const formatTime = (date) => {
 
 const getActionText = (action) => {
   const map = {
+    login: '登录',
+    logout: '登出',
     create: '创建',
     update: '更新',
     delete: '删除',
-    login: '登录',
-    logout: '登出',
     export: '导出',
+    import: '导入',
+    submit: '提交',
+    approve: '审批通过',
+    reject: '驳回',
+    cancel: '撤回',
+    view: '查看',
     reset_password: '重置密码'
   }
   return map[action] || action
@@ -162,13 +222,40 @@ const getModuleText = (module) => {
     auth: '认证',
     quotation: '报价单',
     module: '模块',
-    material: '原材料',
-    user: '用户管理',
+    material: '物料',
+    user: '用户',
     fee: '费用',
     exchange_rate: '汇率',
-    fee_rate: '费用系数'
+    role: '角色',
+    labor_hours: '人力工时',
+    travel: '差旅'
   }
   return map[module] || module
+}
+
+const getResourceTypeText = (resourceType) => {
+  const map = {
+    other_fee: '其他费用',
+    fee_type: '费用类型',
+    fee_rate: '费用系数',
+    module_participant: '模块参与人',
+    quotation_participant: '报价单参与人',
+    travel_packing: '差旅打包',
+    person_days: '人天',
+    person_trips: '人趟',
+    export: '导出',
+    ai_query: 'AI查询',
+    packing_type: '打包类型',
+    travel_category: '差旅类别',
+    travel_day_rate: '差旅日费率',
+    travel_mode: '差旅方式',
+    travel_person_trip_fee: '差旅人趟费用',
+    participant_type: '参与人类型',
+    participant_type_permission: '参与人类型权限',
+    version: '版本',
+    sync: '同步'
+  }
+  return map[resourceType] || resourceType
 }
 
 const fetchData = async () => {
@@ -178,6 +265,8 @@ const fetchData = async () => {
       page: pagination.page,
       page_size: pagination.pageSize,
       action: filters.action || undefined,
+      module: filters.module || undefined,
+      resource_type: filters.resource_type || undefined,
       user_id: filters.user || undefined,
       keyword: filters.keyword || undefined
     })

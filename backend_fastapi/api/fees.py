@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from core.models.fee import OtherFee, FeeType
 from core.auth import get_db, get_current_user_id
 from api.quotations import _check_permission
+from utils.log_helpers import record_crud, record_diff_update
 
 router = APIRouter()
 
@@ -94,6 +95,12 @@ def create_fee(
     )
     db.add(fee)
     db.commit()
+
+    record_crud(
+        user_id, 'fee', 'create',
+        f'创建费用 {fee.amount}元 ({fee_type_name})',
+        resource_type='other_fee', resource_id=str(fee.id),
+    )
     return JSONResponse(content=fee.to_dict(), status_code=201)
 
 
@@ -116,6 +123,12 @@ def update_fee(
         if key in data:
             setattr(fee, key, data[key])
     db.commit()
+
+    record_diff_update(
+        user_id, 'fee', f'费用 #{fee.id} ({fee.fee_type})',
+        list(data.keys()),
+        resource_type='other_fee', resource_id=str(fee_id),
+    )
     return JSONResponse(content=fee.to_dict())
 
 
@@ -128,8 +141,17 @@ def delete_fee(
     fee = db.query(OtherFee).get(fee_id)
     if not fee:
         raise HTTPException(status_code=404, detail="费用不存在")
+    # 删除前快照 (delete 后对象会 expire)
+    fee_amount = fee.amount
+    fee_type_name = fee.fee_type
     db.delete(fee)
     db.commit()
+
+    record_crud(
+        user_id, 'fee', 'delete',
+        f'删除费用 {fee_amount}元 ({fee_type_name})',
+        resource_type='other_fee', resource_id=str(fee_id),
+    )
     return JSONResponse(content={"message": "删除成功"})
 
 
@@ -150,6 +172,12 @@ def create_fee_type(
     ft = FeeType(name=body.name, name_en=body.name_en, location=body.location, is_active=True)
     db.add(ft)
     db.commit()
+
+    record_crud(
+        user_id, 'fee', 'create',
+        f'创建费用类型 {ft.name}',
+        resource_type='fee_type', resource_id=str(ft.id),
+    )
     return JSONResponse(content=ft.to_dict(), status_code=201)
 
 
@@ -167,6 +195,12 @@ def update_fee_type(
         if key in data:
             setattr(ft, key, data[key])
     db.commit()
+
+    record_diff_update(
+        user_id, 'fee', f'费用类型 {ft.name} (ID={ft.id})',
+        list(data.keys()),
+        resource_type='fee_type', resource_id=str(fee_type_id),
+    )
     return JSONResponse(content=ft.to_dict())
 
 
@@ -179,6 +213,14 @@ def delete_fee_type(
     ft = db.query(FeeType).get(fee_type_id)
     if not ft:
         raise HTTPException(status_code=404, detail="费用类型不存在")
+    # 删除前快照
+    ft_name = ft.name
     db.delete(ft)
     db.commit()
+
+    record_crud(
+        user_id, 'fee', 'delete',
+        f'删除费用类型 {ft_name}',
+        resource_type='fee_type', resource_id=str(fee_type_id),
+    )
     return JSONResponse(content={"message": "删除成功"})

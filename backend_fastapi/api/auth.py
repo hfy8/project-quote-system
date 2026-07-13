@@ -154,6 +154,10 @@ def change_password(
             raise AuthError('旧密码错误')
         user.set_password(body.new_password)
         flask_db.session.commit()
+
+        from utils.log_helpers import record_password_change
+        record_password_change(user_id, user.username, is_self=True)
+
         return {'message': '密码修改成功'}
     except (AuthError, NotFoundError, BadRequestError) as e:
         raise HTTPException(status_code=e.code, detail=e.message)

@@ -45,7 +45,7 @@ def get_all(
 
 
 @router.post("", status_code=201)
-def create(body: PtpCreate, db=Depends(get_db)):
+def create(body: PtpCreate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """添加一条 Tab 权限记录"""
     if not body.participant_type or not body.tab_name:
         raise HTTPException(status_code=400, detail="participant_type 和 tab_name 不能为空")
@@ -60,31 +60,58 @@ def create(body: PtpCreate, db=Depends(get_db)):
     )
     db.add(p)
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'create',
+        f'配置参与类型权限: {body.participant_type}.{body.tab_name}',
+        resource_type='participant_type_permission', resource_id=str(p.id),
+    )
+
     return JSONResponse(content=p.to_dict(), status_code=201)
 
 
 @router.put("/{id}")
-def update(id: int, body: PtpUpdate, db=Depends(get_db)):
+def update(id: int, body: PtpUpdate, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """更新权限配置"""
     p = db.query(ParticipantTypePermission).get(id)
     if not p:
         raise HTTPException(status_code=404, detail="记录不存在")
     data = body.model_dump(exclude_unset=True)
+    changed = []
     for key in ("tab_label", "description", "type_name", "sort_order", "is_disabled"):
-        if key in data:
+        if key in data and getattr(p, key) != data[key]:
+            changed.append(key)
             setattr(p, key, data[key])
     db.commit()
+
+    if changed:
+        from utils.log_helpers import record_diff_update
+        record_diff_update(
+            user_id, 'role', f'参与类型权限 {p.participant_type}.{p.tab_name}', changed,
+            resource_type='participant_type_permission', resource_id=str(id),
+        )
+
     return JSONResponse(content=p.to_dict())
 
 
 @router.delete("/{id}")
-def delete(id: int, db=Depends(get_db)):
+def delete(id: int, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """删除单条权限配置"""
     p = db.query(ParticipantTypePermission).get(id)
     if not p:
         raise HTTPException(status_code=404, detail="记录不存在")
+    label = f'{p.participant_type}.{p.tab_name}'
     db.delete(p)
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'delete',
+        f'删除参与类型权限: {label}',
+        resource_type='participant_type_permission', resource_id=str(id),
+    )
+
     return JSONResponse(content={"message": "删除成功"})
 
 
@@ -94,7 +121,7 @@ class PtpCreateType(BaseModel):
 
 
 @router.post("/types", status_code=201)
-def create_type(body: PtpCreateType, db=Depends(get_db)):
+def create_type(body: PtpCreateType, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """创建新参与类型"""
     if not body.participant_type:
         raise HTTPException(status_code=400, detail="participant_type 不能为空")
@@ -112,13 +139,29 @@ def create_type(body: PtpCreateType, db=Depends(get_db)):
     )
     db.add(p)
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'create',
+        f'创建参与类型: {body.participant_type} (名称={body.type_name or body.participant_type})',
+        resource_type='participant_type', resource_id=body.participant_type,
+    )
+
     return {"message": "创建成功", "participant_type": body.participant_type}
 
 @router.delete("/types/{ptype}")
-def delete_type(ptype: str, db=Depends(get_db)):
+def delete_type(ptype: str, db=Depends(get_db), user_id: str = Depends(get_current_user_id)):
     """删除某类型的所有权限配置"""
-    db.query(ParticipantTypePermission).filter_by(participant_type=ptype).delete()
+    count = db.query(ParticipantTypePermission).filter_by(participant_type=ptype).delete()
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'delete',
+        f'删除参与类型: {ptype} (清理 {count} 条权限配置)',
+        resource_type='participant_type', resource_id=ptype,
+    )
+
     return {"message": "删除成功"}
 
 

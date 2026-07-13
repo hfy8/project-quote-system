@@ -99,6 +99,14 @@ def create_role(
             role.permissions.append(perm)
 
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'create',
+        f'创建角色 {role.name} (代码={role.code or "-"})',
+        resource_type='role', resource_id=str(role.id),
+    )
+
     return JSONResponse(content=role.to_dict(), status_code=201)
 
 
@@ -169,12 +177,16 @@ def update_role(
     if not role:
         raise HTTPException(status_code=404, detail="角色不存在")
 
-    if body.name is not None:
+    changed = []
+    if body.name is not None and role.name != body.name:
+        changed.append('name')
         role.name = body.name
-    if body.description is not None:
+    if body.description is not None and role.description != body.description:
+        changed.append('description')
         role.description = body.description
 
     # 更新权限
+    perm_changed = False
     if body.permissions is not None:
         perm_objs = []
         for perm_code in (body.permissions or []):
@@ -183,9 +195,24 @@ def update_role(
             perm = db.query(Permission).filter_by(code=perm_code).first()
             if perm:
                 perm_objs.append(perm)
+        # 检测权限是否变化
+        old_codes = {p.code for p in role.permissions}
+        new_codes = {p.code for p in perm_objs}
+        if old_codes != new_codes:
+            perm_changed = True
+            changed.append('permissions')
         role.permissions = perm_objs
 
     db.commit()
+
+    from utils.log_helpers import record_diff_update
+    suffix = f' (变更前 {len(role.permissions)} 项)' if perm_changed else ''
+    record_diff_update(
+        user_id, 'role', f'角色 {role.name}', changed,
+        resource_type='role', resource_id=str(role_id),
+        detail_suffix=suffix,
+    )
+
     return JSONResponse(content=role.to_dict())
 
 
@@ -211,8 +238,17 @@ def delete_role(
         raise HTTPException(status_code=400, detail="该角色下有用户，无法删除")
 
     role.permissions = []
+    role_name = role.name
     db.delete(role)
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'delete',
+        f'删除角色 {role_name}',
+        resource_type='role', resource_id=str(role_id),
+    )
+
     return JSONResponse(content={"message": "删除成功"})
 
 
@@ -265,6 +301,13 @@ def update_role_permissions(
 
     role.permissions = perm_objs
     db.commit()
+
+    from utils.log_helpers import record_crud
+    record_crud(
+        user_id, 'role', 'update',
+        f'角色 {role.name} 权限变更为 {len(perm_objs)} 项',
+        resource_type='role', resource_id=str(role_id),
+    )
 
     return JSONResponse(content={
         "role_id": role.id,

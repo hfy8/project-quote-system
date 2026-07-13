@@ -41,12 +41,14 @@ class Action:
     LOGOUT = 'logout'
     CREATE = 'create'
     UPDATE = 'update'
+    EDIT = 'update'  # 别名: edit 等同 update (兼容旧调用)
     DELETE = 'delete'
     EXPORT = 'export'
     IMPORT = 'import'
     SUBMIT = 'submit'
     APPROVE = 'approve'
     REJECT = 'reject'
+    CANCEL = 'cancel'
     VIEW = 'view'
     RESET_PASSWORD = 'reset_password'
 
