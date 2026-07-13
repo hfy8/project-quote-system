@@ -1,6 +1,29 @@
 """操作日志模型"""
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
 from db import db
+
+# 项目时区: 全部日志时间都按 +8 (Asia/Shanghai) 输出
+PROJECT_TZ = timezone(timedelta(hours=8))
+UTC_TZ = timezone.utc
+
+
+def _format_local(dt):
+    """把数据库返回的 naive 时间 (实际是 UTC) 转换为项目本地时区 ISO 8601 字符串
+
+    返回格式: '2026-07-13T10:35:41+08:00' (带 T 分隔符 + +08:00 偏移)
+    - 前端 split('T') 能正确拿到日期/时间两部分
+    - 带 +08:00 偏移, 浏览器/JS 解析后永远是北京时间, 不受客户端时区影响
+    """
+    if not dt:
+        return None
+    # 数据库存的是 naive datetime 但语义是 UTC (created_at default=datetime.utcnow)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC_TZ)
+    local = dt.astimezone(PROJECT_TZ)
+    # strftime %z 输出 +0800, 改为 +08:00 符合 ISO 8601
+    s = local.strftime('%Y-%m-%dT%H:%M:%S%z')
+    return s[:-2] + ':' + s[-2:]
 
 
 class OperationLog(db.Model):
@@ -31,7 +54,7 @@ class OperationLog(db.Model):
             'detail': self.detail,
             'ip_address': self.ip_address,
             'user_agent': self.user_agent,
-            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
+            'created_at': _format_local(self.created_at)
         }
 
 

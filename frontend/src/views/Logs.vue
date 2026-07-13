@@ -168,6 +168,7 @@
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { logsAPI, usersAPI } from '../api'
+import dayjs from 'dayjs'
 
 const loading = ref(false)
 const tableData = ref([])
@@ -189,13 +190,14 @@ const filters = reactive({
 
 const formatDate = (date) => {
   if (!date) return '-'
-  return date.split('T')[0]
+  // 后端返回 ISO 8601 字符串 (含 T 和 +08:00 偏移), dayjs 自动识别时区
+  return dayjs(date).format('YYYY-MM-DD')
 }
 
 const formatTime = (date) => {
   if (!date) return ''
-  const timePart = date.split('T')[1] || ''
-  return timePart.split(':').slice(0, 2).join(':')
+  // dayjs parse 后按 ISO 字符串里的 +08:00 偏移显示, 永远是项目时间, 不受客户端时区影响
+  return dayjs(date).format('HH:mm:ss')
 }
 
 const getActionText = (action) => {
