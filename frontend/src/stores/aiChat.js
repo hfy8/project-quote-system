@@ -27,13 +27,21 @@ export const useAIChatStore = defineStore('aiChat', {
     async loadSessions() {
       try {
         const res = await aiAPI.getConversations()
-        this.sessions = (res.data || []).map(s => ({
-          id: s.id,
-          title: s.title || '新对话',
-          messages: [],
-          createdAt: s.created_at,
-          updatedAt: s.updated_at,
-        }))
+        // 后端返回 { conversations: [...], total: N } (request 拦截器已解包)
+        const list = res?.conversations || []
+        // 保留现有会话的 messages 引用（避免覆盖流式期间已加载的消息）
+        const existingById = new Map(this.sessions.map(s => [s.id, s]))
+        const refreshed = list.map(s => {
+          const existing = existingById.get(s.id)
+          return {
+            id: s.id,
+            title: s.title || '新对话',
+            messages: existing?.messages || [],
+            createdAt: s.created_at,
+            updatedAt: s.updated_at,
+          }
+        })
+        this.sessions = refreshed
         this._loaded = true
       } catch (e) {
         console.warn('加载 AI 会话列表失败:', e)
@@ -45,12 +53,18 @@ export const useAIChatStore = defineStore('aiChat', {
     async createSession(title = '新对话') {
       try {
         const res = await aiAPI.createConversation(title)
+        // 后端返回 { conversation: {...}, message: "..." } (request 拦截器已解包)
+        const conv = res?.conversation || res
+        if (!conv || !conv.id) {
+          console.warn('创建会话响应无效:', res)
+          return null
+        }
         const session = {
-          id: res.data.id,
-          title: res.data.title || title,
+          id: conv.id,
+          title: conv.title || title,
           messages: [],
-          createdAt: res.data.created_at,
-          updatedAt: res.data.updated_at,
+          createdAt: conv.created_at,
+          updatedAt: conv.updated_at,
         }
         this.sessions.unshift(session)
         this.currentSessionId = session.id
@@ -77,7 +91,7 @@ export const useAIChatStore = defineStore('aiChat', {
     async _loadMessages(conversationId) {
       try {
         const res = await aiAPI.getMessages(conversationId)
-        const msgs = (res.data || []).map(m => ({
+        const msgs = (res?.messages || res || []).map(m => ({
           id: m.id,
           role: m.role,
           content: m.content,
@@ -133,7 +147,7 @@ export const useAIChatStore = defineStore('aiChat', {
     },
 
     /** 追加消息到当前会话 */
-    appendMessage(msg) {
+    addMessage(msg) {
       const session = this.sessions.find(s => s.id === this.currentSessionId)
       if (session) {
         session.messages.push({

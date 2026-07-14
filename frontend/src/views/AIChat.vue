@@ -444,7 +444,7 @@ async function sendMessage() {
 
   try {
     await aiAPI.askStream(
-      { query: text, conversation_id: conversationId.value },
+      { query: text, conversation_id: conversationId.value, max_steps: 40 },
       (event) => {
         if (abortController.value?.signal.aborted) return
         if (event.type === 'start' || event.type === 'done') {

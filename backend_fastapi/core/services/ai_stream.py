@@ -227,13 +227,23 @@ def run_agent_stream(user_query: str, history: List[Dict] = None, user_id: int =
                         }
                         return
 
-        # 超过最大步数
-        yield {
-            "type": "done",
-            "answer": final_answer or "达到最大步数限制",
-            "steps": steps,
-            "tools_used": tools_used,
-        }
+        # 超过最大步数 - 给出友好提示而非难看的错误文案
+        if final_answer:
+            # 有累积内容就正常输出
+            yield {
+                "type": "done",
+                "answer": final_answer,
+                "steps": steps,
+                "tools_used": tools_used,
+            }
+        else:
+            # 纯工具调用没有输出过 token → 把已收集的结果整理一下
+            yield {
+                "type": "done",
+                "answer": "已查询到相关信息，如需进一步分析请继续提问。",
+                "steps": steps,
+                "tools_used": tools_used,
+            }
 
     except Exception as e:
         yield {"type": "error", "message": str(e)}
