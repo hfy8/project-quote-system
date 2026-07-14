@@ -60,6 +60,8 @@ class User(db.Model):
             'role': self.role,
             'permissions': self.get_permissions(),
             'employee_id': self.employee_id,
+            'employee_no': self.employee.employee_no if self.employee else None,
+            'cn_name': self.employee.cn_name if self.employee else None,
             'dept_id': self.dept_id,
             'dept_name': self.department.name if self.department else None,
             'position_id': self.position_id,

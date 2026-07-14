@@ -186,17 +186,19 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 
 class RequestContextMiddleware(BaseHTTPMiddleware):
-    """每个请求把 Request 注入到线程本地，供 log_operation 获取 IP/UA"""
+    """每个请求把 Request 注入到 contextvars，供 log_operation 获取 IP/UA
+
+    v1.4.57: 改用 contextvars (asyncio task 继承，跨 sync/async 边界稳定)
+    """
     async def dispatch(self, request: Request, call_next):
         from utils.logger import set_request_context
         set_request_context(request)
         try:
             return await call_next(request)
         finally:
-            # 清理（防止 thread pool 复用）
-            from utils.logger import _local
-            if hasattr(_local, "request"):
-                delattr(_local, "request")
+            # 不需要手动清理 contextvars — FastAPI 每个请求是独立 asyncio Task，
+            # Task 结束后其 Context 自动销毁，避免污染下一个请求。
+            pass
 
 
 fastapi_app.add_middleware(RequestContextMiddleware)

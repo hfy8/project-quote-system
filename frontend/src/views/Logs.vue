@@ -108,11 +108,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="username" label="用户" width="120">
+        <el-table-column prop="username" label="用户" width="200">
           <template #default="{ row }">
             <div class="user-cell">
-              <span class="user-avatar">{{ (row.username || 'S').slice(0, 1).toUpperCase() }}</span>
-              <span class="username">{{ row.username }}</span>
+              <span class="user-avatar">{{ getUserInitial(row.username) }}</span>
+              <div class="user-info">
+                <span class="username">{{ row.username }}</span>
+                <span class="user-meta">{{ formatUserMeta(row) }}</span>
+              </div>
             </div>
           </template>
         </el-table-column>
@@ -274,17 +277,27 @@ const fetchData = async () => {
     })
     tableData.value = res.items || []
     total.value = res.total || tableData.value.length
-    // 加载用户列表
-    if (users.value.length === 0) {
-      const userRes = await usersAPI.getList({ page_size: 100 })
-      users.value = userRes.items || []
-    }
   } catch (error) {
     console.error('Failed to fetch logs:', error)
     ElMessage.error('加载日志失败')
   } finally {
     loading.value = false
   }
+}
+
+const getUserInitial = (username) => {
+  return (username || 'S').slice(0, 1).toUpperCase()
+}
+
+// 直接从后端返回的日志快照里读工号和姓名
+// （写日志时就快照到 employee_no / cn_name 字段，即使以后改用户名也不影响历史）
+const formatUserMeta = (row) => {
+  const no = row.employee_no || ''
+  const name = row.cn_name || ''
+  if (no && name) return `${no} · ${name}`
+  if (name) return name
+  if (no) return no
+  return ''
 }
 
 const handlePageChange = (page) => {
@@ -447,6 +460,18 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.user-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.user-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary, #6b7280);
 }
 
 .user-avatar {

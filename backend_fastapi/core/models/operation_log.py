@@ -33,6 +33,8 @@ class OperationLog(db.Model):
     id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
     user_id = db.Column(db.BigInteger, nullable=False, index=True)
     username = db.Column(db.String(50), nullable=False, index=True)
+    employee_no = db.Column(db.String(50), index=True)  # 工号（写日志时快照）
+    cn_name = db.Column(db.String(100))  # 中文姓名（写日志时快照）
     action = db.Column(db.String(20), nullable=False, index=True)  # login/logout/create/update/delete/export/submit/approve/reject
     module = db.Column(db.String(20), nullable=False, index=True)  # auth/quotation/material/fee/exchange_rate/user/role/system
     resource_type = db.Column(db.String(30))  # quotation/material/user/role等
@@ -47,6 +49,8 @@ class OperationLog(db.Model):
             'id': self.id,
             'user_id': self.user_id,
             'username': self.username,
+            'employee_no': self.employee_no,
+            'cn_name': self.cn_name,
             'action': self.action,
             'module': self.module,
             'resource_type': self.resource_type,
