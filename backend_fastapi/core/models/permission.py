@@ -21,7 +21,8 @@ class Role(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     permissions = db.relationship('Permission', secondary=role_permissions,
-                                 backref=db.backref('roles', lazy='dynamic'), lazy='dynamic')
+                                 backref=db.backref('roles', lazy='dynamic'),
+                                 lazy='select')
 
     def to_dict(self, include_permissions=True):
         from core.models import User

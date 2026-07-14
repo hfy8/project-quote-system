@@ -148,14 +148,26 @@ def seed_permissions_and_roles():
             db.session.add(role)
             db.session.flush()
 
-        # 直接重新赋值权限列表（替换而非 clear）
-        perm_objs = []
+        # 显式 diff 同步权限（避免 dynamic relationship 赋值触发全删全插）
+        new_perm_objs = []
         for perm_code in r['permissions']:
             if perm_code == '*':
-                continue  # admin 特殊处理
+                continue
             perm = Permission.query.filter_by(code=perm_code).first()
             if perm:
-                perm_objs.append(perm)
-        role.permissions = perm_objs
+                new_perm_objs.append(perm)
+
+        new_codes = {p.code for p in new_perm_objs}
+        current_perms = list(role.permissions)
+
+        # 删除要废弃的
+        for p in current_perms:
+            if p.code not in new_codes:
+                role.permissions.remove(p)
+        # 新增缺失的
+        existing_codes = {p.code for p in role.permissions}
+        for p in new_perm_objs:
+            if p.code not in existing_codes:
+                role.permissions.append(p)
 
     db.session.commit()

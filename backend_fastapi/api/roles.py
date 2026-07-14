@@ -188,20 +188,31 @@ def update_role(
     # 更新权限
     perm_changed = False
     if body.permissions is not None:
-        perm_objs = []
+        # 解析新权限对象列表
+        new_perm_objs = []
         for perm_code in (body.permissions or []):
             if perm_code == "*":
                 continue
             perm = db.query(Permission).filter_by(code=perm_code).first()
             if perm:
-                perm_objs.append(perm)
-        # 检测权限是否变化
-        old_codes = {p.code for p in role.permissions}
-        new_codes = {p.code for p in perm_objs}
-        if old_codes != new_codes:
+                new_perm_objs.append(perm)
+
+        # 取当前权限快照（lazy='select' 直接是 list）
+        current_codes = {p.code for p in role.permissions}
+        new_codes = {p.code for p in new_perm_objs}
+        if current_codes != new_codes:
             perm_changed = True
             changed.append('permissions')
-        role.permissions = perm_objs
+
+        # 显式 diff 应用：只 DELETE 不存在的 + INSERT 新增的
+        current_perms = list(role.permissions)
+        to_remove = [p for p in current_perms if p.code not in new_codes]
+        to_add = [p for p in new_perm_objs if p.code not in current_codes]
+
+        for p in to_remove:
+            role.permissions.remove(p)
+        for p in to_add:
+            role.permissions.append(p)
 
     db.commit()
 
@@ -291,21 +302,32 @@ def update_role_permissions(
     if not role:
         raise HTTPException(status_code=404, detail="角色不存在")
 
-    perm_objs = []
+    # 解析新权限对象
+    new_perm_objs = []
     for perm_code in (body.permissions or []):
         if perm_code == "*":
             continue
         perm = db.query(Permission).filter_by(code=perm_code).first()
         if perm:
-            perm_objs.append(perm)
+            new_perm_objs.append(perm)
 
-    role.permissions = perm_objs
+    # 显式 diff 应用
+    new_codes = {p.code for p in new_perm_objs}
+    current_perms = list(role.permissions)
+    to_remove = [p for p in current_perms if p.code not in new_codes]
+    to_add = [p for p in new_perm_objs if p.code not in {pp.code for pp in current_perms}]
+
+    for p in to_remove:
+        role.permissions.remove(p)
+    for p in to_add:
+        role.permissions.append(p)
+
     db.commit()
 
     from utils.log_helpers import record_crud
     record_crud(
         user_id, 'role', 'update',
-        f'角色 {role.name} 权限变更为 {len(perm_objs)} 项',
+        f'角色 {role.name} 权限变更为 {len(new_perm_objs)} 项',
         resource_type='role', resource_id=str(role_id),
     )
 

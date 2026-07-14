@@ -345,36 +345,60 @@ def sync_employees():
 
 
 def sync_users_from_employees():
-    """从员工数据同步用户到 users 表，并关联员工ID"""
+    """从员工数据同步用户到 users 表，并关联员工ID
+
+    角色规则:
+      - 销售/业务/方案 部员工 (部门名称含"销售"/"业务"/"方案") -> 'business' 业务员
+      - 其他部门 -> 'viewer' 普通用户 (默认无业务权限)
+      - 手工创建的 admin 账号保留
+
+    注意: dept_type 字段在 SQL Server 同步数据里不规范 (出现"交付管理部"标 3 的情况),
+          所以本函数只信部门名称, 不信 dept_type。
+    """
     from db import db
-    from core.models import User, Employee
+    from core.models import User, Employee, Department
     from werkzeug.security import generate_password_hash
-    
+
     logger.info("开始同步用户数据...")
-    
+
     try:
         # 标记所有非admin用户为未同步
         User.query.filter(User.username != 'admin').update({User.sync_flag: False})
         db.session.commit()
-        
+
         # 找出所有有用户账号的员工
         employees = Employee.query.filter(
             Employee.employee_no.isnot(None),
             Employee.is_active == True
         ).all()
-        
+
+        # 一次性查出所有销售/业务/方案 部 (名称含关键字 + 激活)，缓存到 set 避免循环里反复查 DB
+        business_keywords = ('销售', '业务', '方案')
+        business_dept_ids = {
+            d.id for d in Department.query.filter(
+                db.or_(*[Department.name.like(f'%{kw}%') for kw in business_keywords]),
+                Department.is_active == True
+            ).all()
+        }
+
+        def is_business_dept(emp):
+            return emp.dept_id in business_dept_ids if emp.dept_id else False
+
         count = 0
         for emp in employees:
             # 查找是否已有用户账号
             user = User.query.filter_by(username=emp.employee_no).first()
-            
+
+            # 计算角色
+            role = 'business' if is_business_dept(emp) else 'viewer'
+
             if not user:
                 # 创建新用户
                 user = User(
                     username=emp.employee_no,
                     password_hash=generate_password_hash('123456'),  # 默认密码
                     real_name=emp.cn_name,
-                    role='business',  # 默认角色
+                    role=role,
                     employee_id=emp.id,
                     dept_id=emp.dept_id,
                     position_id=emp.position_id,
@@ -388,10 +412,11 @@ def sync_users_from_employees():
                 user.employee_id = emp.id
                 user.dept_id = emp.dept_id
                 user.position_id = emp.position_id
+                user.role = role
                 user.sync_flag = True
-            
+
             count += 1
-            
+
             if count % 200 == 0:
                 db.session.flush()
         
