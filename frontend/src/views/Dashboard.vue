@@ -75,35 +75,35 @@
     <section class="stats-row">
       <div class="stat-card stat-primary">
         <div class="stat-icon-wrap"><span>📋</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.quotations.total }}</span>
           <span class="stat-label">报价单总数</span>
         </div>
       </div>
       <div class="stat-card stat-warning">
         <div class="stat-icon-wrap"><span>⏳</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.quotations.by_status.approved_pending }}</span>
           <span class="stat-label">归档审批中</span>
         </div>
       </div>
       <div class="stat-card stat-info">
         <div class="stat-icon-wrap"><span>📝</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.quotations.by_status.draft }}</span>
           <span class="stat-label">草稿</span>
         </div>
       </div>
       <div class="stat-card stat-success">
         <div class="stat-icon-wrap"><span>✅</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.quotations.by_status.approved + stats.quotations.by_status.archived }}</span>
           <span class="stat-label">已通过/已归档</span>
         </div>
       </div>
       <div v-if="isLeader" class="stat-card stat-material">
         <div class="stat-icon-wrap"><span>📦</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.materials.total }}</span>
           <span class="stat-label">物料总数</span>
           <div class="stat-sub">
@@ -115,14 +115,14 @@
       </div>
       <div v-else class="stat-card stat-msg">
         <div class="stat-icon-wrap"><span>🔔</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.my_tasks.unread_messages }}</span>
           <span class="stat-label">未读消息</span>
         </div>
       </div>
       <div class="stat-card stat-trend">
         <div class="stat-icon-wrap"><span>📈</span></div>
-        <div class="stat-info">
+        <div class="stat-content">
           <span class="stat-value">{{ stats.quotations.monthly_new }}</span>
           <span class="stat-label">本月公司新增</span>
         </div>
@@ -611,7 +611,7 @@ onUnmounted(() => {
   font-size: 20px;
   flex-shrink: 0;
 }
-.stat-info { display: flex; flex-direction: column; min-width: 0; gap: 1px; flex: 1; }
+.stat-content { display: flex; flex-direction: column; min-width: 0; gap: 1px; flex: 1; }
 .stat-value { font-size: 22px; font-weight: 700; color: var(--color-text-primary); line-height: 1.1; }
 .stat-label { font-size: 12px; color: var(--color-text-secondary); line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stat-sub { font-size: 10.5px; color: var(--color-text-secondary); margin-top: 2px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; line-height: 1.3; }
