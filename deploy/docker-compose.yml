@@ -65,11 +65,21 @@ services:
       - UVICORN_WORKERS=${UVICORN_WORKERS:-2}
     volumes:
       - backend_logs:/app/logs
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - nfs_versions:/app/static/versions
+    deploy:
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+      resources:
+        limits:
+          memory: 1G
     networks:
       - quote-net
     healthcheck:
@@ -103,6 +113,12 @@ volumes:
   db_data:
   redis_data:
   backend_logs:
+  nfs_versions:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=10.60.100.2,rw
+      device: :/data/nfsdata/quote-system/versions
 
 networks:
   quote-net:
