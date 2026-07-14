@@ -84,11 +84,11 @@
         <div class="target-card">
           <div class="target-label">🔧 硬件（含系数）</div>
           <div class="target-value highlight">¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }}</div>
-          <div class="target-meta">占不含税报价 <strong>{{ actualHardwareRatioPercent.toFixed(2) }}%</strong></div>
+          <div class="target-meta">占最终含税报价 <strong>{{ actualHardwareRatioPercent.toFixed(2) }}%</strong></div>
           <div class="target-bar">
             <div class="target-bar-fill" :style="{ width: actualHardwareRatioPercent + '%' }"></div>
           </div>
-          <div class="target-sub-meta">不含税报价 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}</div>
+          <div class="target-sub-meta">最终含税报价 ¥{{ finalPriceWithTax?.toFixed(2) || '0.00' }}</div>
         </div>
 
         <!-- 2. 大件 (占硬件) -->
@@ -123,7 +123,7 @@
             <el-input-number
               :model-value="targetHardwareRatio"
               @update:modelValue="onTargetHardwareRatioInput"
-              :min="1" :max="100" :step="0.5" :precision="2"
+              :min="0.01" :max="99" :step="0.5" :precision="2"
               size="large"
               style="width: 100%;"
             >
@@ -133,7 +133,7 @@
           <el-slider
             :model-value="targetHardwareRatio"
             @update:modelValue="onTargetHardwareRatioInput"
-            :min="1" :max="100" :step="0.5"
+            :min="0.01" :max="99" :step="0.5"
             show-input
             :show-input-controls="false"
             style="margin-top: 8px;"
@@ -144,50 +144,73 @@
           </div>
         </div>
 
-        <!-- 5. 目标报价 (联动) -->
+        <!-- 5. 目标报价 (联动: 硬件不变反推最终含税报价) -->
         <div class="target-card target-card-highlight">
-          <div class="target-label">💰 目标报价（联动）</div>
-          <div class="target-value huge">¥{{ targetPrice?.toFixed(2) || '0.00' }}</div>
+          <div class="target-label">💰 目标最终含税报价（硬件不变·反推）</div>
+          <div class="target-value huge">
+            <template v-if="Number.isFinite(targetFinalPrice)">
+              ¥{{ targetFinalPrice?.toFixed(2) || '0.00' }}
+            </template>
+            <template v-else>
+              ∞
+            </template>
+          </div>
           <div class="target-meta">
-            vs 不含税 ¥{{ noTaxPrice?.toFixed(2) || '0.00' }}
+            当前最终含税 ¥{{ finalPriceWithTax?.toFixed(2) || '0.00' }}
             <span :class="['delta', targetPriceDelta >= 0 ? 'delta-pos' : 'delta-neg']">
               {{ targetPriceDelta >= 0 ? '+' : '' }}{{ targetPriceDelta.toFixed(2) }}
             </span>
           </div>
           <div class="target-bar">
-            <div class="target-bar-fill" :style="{ width: targetHardwareRatio + '%' }"></div>
+            <div class="target-bar-fill" :style="{ width: (Number.isFinite(targetFinalPrice) ? targetHardwareRatio : 100) + '%' }"></div>
           </div>
           <div class="target-sub-meta">
-            最终含税报价 ¥{{ finalPriceWithTax?.toFixed(2) || '0.00' }}
+            硬件不变 ¥{{ summary.material_total_with_rates?.toFixed(2) || '0.00' }} · 其他部分 ¥{{ targetOtherPartsTotal?.toFixed(2) || '0.00' }}
           </div>
         </div>
 
-        <!-- 6. 物料分类系数 -->
+        <!-- 6. 其他成本建议 (7 金额项按权重分配 + 利润/税额按比例联动) -->
         <div class="target-card target-card-editable target-card-wide">
-          <div class="target-label">⚙️ 物料分类建议系数 <span class="editable-tag">基数分配</span></div>
-          <el-table :data="categoryCoefficients" border size="small" style="margin-top: 4px;">
-            <el-table-column prop="label" label="分类" width="80" />
-            <el-table-column label="原价" width="90" align="right">
-              <template #default="{ row }">¥{{ row.base.toFixed(0) }}</template>
-            </el-table-column>
-            <el-table-column label="现系数" width="70" align="center">
-              <template #default="{ row }">{{ row.current_rate.toFixed(2) }}x</template>
-            </el-table-column>
-            <el-table-column label="建议系数" width="80" align="center">
+          <div class="target-label">
+            💡 其他成本建议
+            <span class="editable-tag">硬件不变·按权重分配</span>
+          </div>
+
+          <!-- 6a. 5 个金额项 (subtotal 中的非硬件部分) -->
+          <el-table :data="otherPartsSuggestions.amountItems" border size="small" style="margin-top: 6px;">
+            <el-table-column label="项目" width="130">
               <template #default="{ row }">
-                <strong :class="['coef-new', row.cat_class]">{{ row.new_rate.toFixed(2) }}x</strong>
+                <span style="font-size: 16px;">{{ row.icon }}</span>
+                <span style="margin-left: 6px;">{{ row.label }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="调整金额" align="right">
+            <el-table-column label="权重" width="70" align="center">
               <template #default="{ row }">
-                <span :class="['uplift-amt', row.uplift >= 0 ? 'uplift-pos' : 'uplift-neg']">
-                  {{ row.uplift >= 0 ? '+' : '' }}{{ row.uplift.toFixed(0) }}
+                <span :class="row.weight === 0 ? 'muted' : ''">{{ (row.weight * 100).toFixed(1) }}%</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="建议金额" width="110" align="right">
+              <template #default="{ row }">
+                <strong :class="row.current === 0 ? 'muted' : ''">¥{{ row.target.toFixed(2) }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column label="调整金额" width="100" align="right" :resizable="false">
+              <template #default="{ row }">
+                <span :class="['uplift-amt', row.delta >= 0 ? 'uplift-pos' : 'uplift-neg', row.current === 0 ? 'muted' : '']">
+                  {{ row.delta >= 0 ? '+' : '' }}{{ row.delta.toFixed(2) }}
                 </span>
               </template>
             </el-table-column>
           </el-table>
+
+          <!-- 6a-小计: 6 项金额项合计 (合并到一行) -->
           <div class="target-sub-meta">
-            按原价占比分配, 调高占比→各分类同比例上调
+            小计 ¥{{ otherPartsSuggestions.subCurrent.toFixed(2) }}
+            <span style="margin: 0 6px;">→</span>
+            ¥{{ otherPartsSuggestions.subTarget.toFixed(2) }}
+            <span :class="['delta', (otherPartsSuggestions.subTarget - otherPartsSuggestions.subCurrent) >= 0 ? 'delta-pos' : 'delta-neg']" style="margin-left: 6px;">
+              ({{ (otherPartsSuggestions.subTarget - otherPartsSuggestions.subCurrent) >= 0 ? '+' : '' }}{{ (otherPartsSuggestions.subTarget - otherPartsSuggestions.subCurrent).toFixed(2) }})
+            </span>
           </div>
         </div>
       </div>
@@ -361,7 +384,8 @@ const targetHardwareManuallySet = ref(false)
 const actualHardwareRatioPercent = computed(() => {
   if (!props.summary) return 0
   const hw = props.summary.material_total_with_rates || 0
-  const denom = (props.summary.subtotal || 0)
+  // 硬件占最终含税报价 (用户要求：硬件占比 = 硬件 / 最终含税报价)
+  const denom = (finalPriceWithTax.value || 0)
   if (denom === 0) return 0
   return (hw / denom) * 100
 })
@@ -374,7 +398,11 @@ watch(actualHardwareRatioPercent, (newVal) => {
 
 function onTargetHardwareRatioInput(val) {
   targetHardwareManuallySet.value = true
-  targetHardwareRatio.value = Number(val) || 0
+  let v = Number(val) || 0
+  // 边界保护: 占比应在 [0.01, 99] 区间, 否则反推公式会发散
+  if (v < 0.01) v = 0.01
+  if (v > 99) v = 99
+  targetHardwareRatio.value = v
 }
 
 function resetTargetHardwareRatio() {
@@ -417,61 +445,100 @@ const noTaxPrice = computed(() => {
   if (!props.summary) return 0
   return props.summary.subtotal || 0
 })
-
 const finalPriceWithTax = computed(() => {
+  // 最终含税报价 = grand_total (subtotal_with_profit + tax_amount)
   if (!props.summary) return 0
-  return props.summary.final_price_with_tax || props.summary.subtotal_with_profit_with_tax || 0
+  return props.summary.grand_total || 0
 })
 
-const targetPrice = computed(() => {
+const targetFinalPrice = computed(() => {
+  // 目标最终含税报价 (用户要求：保持硬件不变，按目标硬件占比反推)
+  // 公式: targetFinalPrice = hw / targetRatio
+  // 含义: 硬件 hw 固定, 调整"其他部分"(人力/运输/差旅/签证) 使最终含税报价刚好让硬件占比 = 目标占比
   const ratio = Number(targetHardwareRatio.value || 0)
   if (ratio <= 0 || !props.summary) return 0
-  if (ratio >= 100) return 0
+  if (ratio >= 100) return Infinity  // 占比 >= 100% 时无解
   const hw = props.summary.material_total_with_rates || 0
-  const sub = noTaxPrice.value || 0
-  if (sub <= 0) return 0
-  const other = sub - hw
-  return other / (1 - ratio / 100)
+  return hw / (ratio / 100)
+})
+
+// "其他部分"在目标最终含税报价下的总金额 (= 目标最终含税报价 - 硬件)
+const targetOtherPartsTotal = computed(() => {
+  const tp = targetFinalPrice.value
+  if (!isFinite(tp) || !props.summary) return 0
+  const hw = props.summary.material_total_with_rates || 0
+  return Math.max(0, tp - hw)
+})
+
+// "其他部分"在当前最终含税报价下的总金额 (= 当前最终含税报价 - 硬件)
+const currentOtherPartsTotal = computed(() => {
+  if (!props.summary) return 0
+  const fp = finalPriceWithTax.value || 0
+  const hw = props.summary.material_total_with_rates || 0
+  return Math.max(0, fp - hw)
+})
+
+// 其他部分调整金额 (目标 - 当前)
+const otherPartsDelta = computed(() => {
+  return targetOtherPartsTotal.value - currentOtherPartsTotal.value
 })
 
 const targetHardwareAtTarget = computed(() => {
-  const tp = targetPrice.value
-  const ratio = Number(targetHardwareRatio.value || 0)
-  return (tp * ratio / 100) || 0
+  // 硬件金额 (保持不变) = summary.material_total_with_rates
+  const hw = props.summary?.material_total_with_rates || 0
+  return hw
 })
 
-const categoryCoefficients = computed(() => {
-  if (!props.summary) return []
-  const rows = props.summary.rate_details || []
-  const totalBase = rows.reduce((sum, r) => sum + (r.base || 0), 0)
-  const totalCurrentWithRate = rows.reduce((sum, r) => sum + (r.with_rate || 0), 0)
-  if (totalBase <= 0) return []
+const otherPartsSuggestions = computed(() => {
+  // 其他成本建议: 5 个金额项按权重分配 (设计+调试+装配合并为人力工时, 认证/管理合并为"管理认证其他")
+  if (!props.summary) return { amountItems: [], subCurrent: 0, subTarget: 0 }
 
-  const targetHW = targetHardwareAtTarget.value
-  const adjustment = targetHW - totalCurrentWithRate
+  // ===== 5 个金额项 (subtotal 中的非硬件部分) =====
+  // 1. 人力工时 (设计 + 调试 + 装配)
+  const labor = (props.summary.labor_details || [])
+    .reduce((s, d) => s + (Number(d.total) || 0), 0)
+  // 2. 差旅人天
+  const travelDays = Number(props.summary.travel_person_days_total || 0)
+  // 3. 机票签证 (含签证)
+  const travelTrips = Number(props.summary.travel_person_trips_total || 0)
+  // 4. 包装运输
+  const packing = Number(props.summary.packing_total || 0)
+  // 5. 管理认证其他 = 费用 tab 中所有项的合计 (认证费+项目管理费+其他费用类型)
+  const mgmtCertOther = (props.summary.fees || [])
+    .reduce((s, f) => s + (Number(f.amount) || 0), 0)
 
-  const out = []
-  for (const r of rows) {
-    const cur_base = r.base || 0
-    const cur_with_rate = r.with_rate || 0
-    const cur_rate = r.rate || 1
-    const weight = cur_base / totalBase
-    const uplift = adjustment * weight
-    const new_with_rate = Math.max(0, cur_with_rate + uplift)
-    const new_rate = cur_base > 0 ? new_with_rate / cur_base : cur_rate
-    out.push({
-      category: r.category,
-      label: r.category === 'large' ? '大件' : r.category === 'standard' ? '核心部件' : '其他件',
-      cat_class: 'cat-' + r.category,
-      base: cur_base,
-      current_with_rate: cur_with_rate,
-      current_rate: cur_rate,
-      new_with_rate,
-      new_rate,
-      uplift,
-    })
+  const amountItems = [
+    { key: 'labor',         label: '人力工时',     icon: '👷', current: labor },
+    { key: 'travelDays',    label: '差旅人天',     icon: '🧳', current: travelDays },
+    { key: 'travelTrips',   label: '机票签证',     icon: '✈️', current: travelTrips },
+    { key: 'packing',       label: '包装运输',     icon: '📦', current: packing },
+    { key: 'mgmtCertOther', label: '管理认证其他', icon: '📋', current: mgmtCertOther },
+  ]
+
+  const subCurrent = amountItems.reduce((s, it) => s + it.current, 0)
+
+  // ===== 目标金额推导 (保持 R=profit×tax 比例不变) =====
+  const profitRate = Number(props.summary.profit_rate || 0)
+  const taxRate    = Number(props.summary.tax_rate || 0)
+  const R = (1 + profitRate) * (1 + taxRate)
+
+  const hw = props.summary.material_total_with_rates || 0
+  const T  = targetFinalPrice.value   // 目标最终含税报价
+  const targetSubtotal = (Number.isFinite(T) && R > 0) ? (T / R) : 0
+  const subTarget = Math.max(0, targetSubtotal - hw)
+
+  // ===== 6 项按权重分配 subTarget =====
+  const out = amountItems.map(it => {
+    const weight = subCurrent > 0 ? it.current / subCurrent : 0
+    const target = subCurrent > 0 ? subTarget * weight : 0
+    return { ...it, weight, target, delta: target - it.current }
+  })
+
+  return {
+    amountItems: out,
+    subCurrent,
+    subTarget,
   }
-  return out
 })
 
 // ====== 卡片汇总数据 ======
@@ -508,7 +575,10 @@ const profitAmount = computed(() => {
 })
 
 const targetPriceDelta = computed(() => {
-  return targetPrice.value - noTaxPrice.value
+  // 改为基于最终含税报价对比 (原来基于不含税)
+  const tp = targetFinalPrice.value
+  if (!isFinite(tp)) return 0
+  return tp - finalPriceWithTax.value
 })
 
 // ====== 费用明细参数 ======

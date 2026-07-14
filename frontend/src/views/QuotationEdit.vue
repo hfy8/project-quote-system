@@ -573,7 +573,8 @@ const targetHardwareManuallySet = ref(false)
 const actualHardwareRatioPercent = computed(() => {
   if (!summary.value) return 0
   const hw = summary.value.material_total_with_rates || 0
-  const denom = (summary.value.subtotal || 0)
+  // 硬件占最终含税报价 (用户要求：硬件占比 = 硬件 / 最终含税报价)
+  const denom = (finalPriceWithTax.value || 0)
   if (denom === 0) return 0
   return (hw / denom) * 100
 })
@@ -609,8 +610,9 @@ const noTaxPrice = computed(() => {
 })
 
 const finalPriceWithTax = computed(() => {
+  // 最终含税报价 = grand_total (subtotal_with_profit + tax_amount)
   if (!summary.value) return 0
-  return summary.value.final_price_with_tax || summary.value.subtotal_with_profit_with_tax || 0
+  return summary.value.grand_total || 0
 })
 
 watch(actualHardwareRatioPercent, (newVal) => {
@@ -619,27 +621,40 @@ watch(actualHardwareRatioPercent, (newVal) => {
   }
 }, { immediate: true })
 
-const targetPrice = computed(() => {
-  // 调整目标硬件占比后, 目标含税报价 (基于不含税小计反推):
-  // 假设: 人力 + 运输 + 差旅 (其他成本) 保持不变, 通过调整物料系数使硬件占比达到目标值。
-  // 设 other = 当前 subtotal - 当前物料含系数 (其他成本, 固定)
-  // 则: target_subtotal - other = target_subtotal × targetRatio
-  // 即: target_subtotal = other / (1 - targetRatio)
-  // 调高占比 → target_subtotal 增大 → targetPrice 升 ✅
+const targetFinalPrice = computed(() => {
+  // 目标最终含税报价 (用户要求：保持硬件不变，按目标硬件占比反推)
+  // 公式: targetFinalPrice = hw / targetRatio
   const ratio = Number(targetHardwareRatio.value || 0)
   if (ratio <= 0 || !summary.value) return 0
-  if (ratio >= 100) return 0
+  if (ratio >= 100) return Infinity
   const hw = summary.value.material_total_with_rates || 0
-  const sub = noTaxPrice.value || 0
-  if (sub <= 0) return 0
-  const other = sub - hw
-  return other / (1 - ratio / 100)
+  return hw / (ratio / 100)
+})
+
+// "其他部分"在目标最终含税报价下的总金额 (= 目标最终含税报价 - 硬件)
+const targetOtherPartsTotal = computed(() => {
+  const tp = targetFinalPrice.value
+  if (!isFinite(tp) || !summary.value) return 0
+  const hw = summary.value.material_total_with_rates || 0
+  return Math.max(0, tp - hw)
+})
+
+// "其他部分"在当前最终含税报价下的总金额 (= 当前最终含税报价 - 硬件)
+const currentOtherPartsTotal = computed(() => {
+  if (!summary.value) return 0
+  const fp = finalPriceWithTax.value || 0
+  const hw = summary.value.material_total_with_rates || 0
+  return Math.max(0, fp - hw)
+})
+
+// 其他部分调整金额 (目标 - 当前)
+const otherPartsDelta = computed(() => {
+  return targetOtherPartsTotal.value - currentOtherPartsTotal.value
 })
 
 const targetHardwareAtTarget = computed(() => {
-  const tp = targetPrice.value
-  const ratio = Number(targetHardwareRatio.value || 0)
-  return (tp * ratio / 100) || 0
+  // 硬件金额 (保持不变)
+  return summary.value?.material_total_with_rates || 0
 })
 
 const targetHardwareUplift = computed(() => {
@@ -648,39 +663,46 @@ const targetHardwareUplift = computed(() => {
   return targetHardwareAtTarget.value - cur
 })
 
-// 各分类 (大件/核心部件/其他件) 的建议系数 - 按现有 base 占比分配调整量
-const categoryCoefficients = computed(() => {
-  if (!summary.value) return []
-  const rows = summary.value.rate_details || []
-  const totalBase = rows.reduce((sum, r) => sum + (r.base || 0), 0)
-  const totalCurrentWithRate = rows.reduce((sum, r) => sum + (r.with_rate || 0), 0)
-  if (totalBase <= 0) return []
+// 其他成本建议: 5 个金额项按权重分配 (设计+调试+装配合并为人力工时, 认证/管理合并为"管理认证其他")
+const otherPartsSuggestions = computed(() => {
+  if (!summary.value) return { amountItems: [], subCurrent: 0, subTarget: 0 }
 
-  const targetHW = targetHardwareAtTarget.value
-  const adjustment = targetHW - totalCurrentWithRate
+  // ===== 5 个金额项 =====
+  const labor = (summary.value.labor_details || [])
+    .reduce((s, d) => s + (Number(d.total) || 0), 0)
+  const travelDays = Number(summary.value.travel_person_days_total || 0)
+  const travelTrips = Number(summary.value.travel_person_trips_total || 0)
+  const packing = Number(summary.value.packing_total || 0)
+  // 管理认证其他 = 费用 tab 中所有项的合计 (认证费+项目管理费+其他费用类型)
+  const mgmtCertOther = (summary.value.fees || [])
+    .reduce((s, f) => s + (Number(f.amount) || 0), 0)
 
-  const out = []
-  for (const r of rows) {
-    const cur_base = r.base || 0
-    const cur_with_rate = r.with_rate || 0
-    const cur_rate = r.rate || 1
-    const weight = cur_base / totalBase
-    const uplift = adjustment * weight
-    const new_with_rate = Math.max(0, cur_with_rate + uplift)
-    const new_rate = cur_base > 0 ? new_with_rate / cur_base : cur_rate
-    out.push({
-      category: r.category,
-      label: r.category === 'large' ? '大件' : r.category === 'standard' ? '核心部件' : '其他件',
-      cat_class: 'cat-' + r.category,
-      base: cur_base,
-      current_with_rate: cur_with_rate,
-      current_rate: cur_rate,
-      new_with_rate,
-      new_rate,
-      uplift,
-    })
-  }
-  return out
+  const amountItems = [
+    { key: 'labor',         label: '人力工时',     icon: '👷', current: labor },
+    { key: 'travelDays',    label: '差旅人天',     icon: '🧳', current: travelDays },
+    { key: 'travelTrips',   label: '机票签证',     icon: '✈️', current: travelTrips },
+    { key: 'packing',       label: '包装运输',     icon: '📦', current: packing },
+    { key: 'mgmtCertOther', label: '管理认证其他', icon: '📋', current: mgmtCertOther },
+  ]
+
+  const subCurrent = amountItems.reduce((s, it) => s + it.current, 0)
+
+  // ===== 目标推导 =====
+  const profitRate = Number(summary.value.profit_rate || 0)
+  const taxRate    = Number(summary.value.tax_rate || 0)
+  const R = (1 + profitRate) * (1 + taxRate)
+  const hw = summary.value.material_total_with_rates || 0
+  const T  = targetFinalPrice.value
+  const targetSubtotal = (Number.isFinite(T) && R > 0) ? (T / R) : 0
+  const subTarget = Math.max(0, targetSubtotal - hw)
+
+  const out = amountItems.map(it => {
+    const weight = subCurrent > 0 ? it.current / subCurrent : 0
+    const target = subCurrent > 0 ? subTarget * weight : 0
+    return { ...it, weight, target, delta: target - it.current }
+  })
+
+  return { amountItems: out, subCurrent, subTarget }
 })
 
 // ====== 汇总头部双行 10 卡片汇总数据 ======
@@ -726,7 +748,10 @@ const profitAmount = computed(() => {
 const fmtMoney = (v) => `¥${(Number(v) || 0).toFixed(2)}`
 
 const targetPriceDelta = computed(() => {
-  return targetPrice.value - noTaxPrice.value
+  // 改为基于最终含税报价对比 (保持硬件不变反推公式)
+  const tp = targetFinalPrice.value
+  if (!isFinite(tp)) return 0
+  return tp - finalPriceWithTax.value
 })
 
 function onTargetHardwareRatioInput(val) {
