@@ -63,11 +63,32 @@ router = APIRouter()
 
 def _log_op(db, user_id, action, module, resource_type=None, resource_id=None, detail=None,
             username=None):
-    """记录操作日志（兼容版，使用传入的 db session）"""
+    """记录操作日志（兼容版，使用传入的 db session）
+
+    自动从 user/employee 关联查询工号和姓名快照到日志里，
+    即使以后改名/转岗，历史日志仍保留当时的工号和姓名。
+    """
+    # 快照工号和姓名（即使 username 传入也再校正一次，避免不一致）
+    employee_no = None
+    cn_name = None
+    resolved_username = username or str(user_id)
+    if user_id:
+        try:
+            from core.models.user import User
+            u = User.query.get(int(user_id))
+            if u:
+                resolved_username = u.username
+                if u.employee:
+                    employee_no = u.employee.employee_no
+                    cn_name = u.employee.cn_name
+        except Exception:
+            pass
     try:
         log_entry = OperationLog(
             user_id=int(user_id) if user_id else 0,
-            username=username or str(user_id),
+            username=resolved_username,
+            employee_no=employee_no,
+            cn_name=cn_name,
             action=action.value if hasattr(action, 'value') else action,
             module=module.value if hasattr(module, 'value') else module,
             resource_type=resource_type,
@@ -160,6 +181,7 @@ class QuotationCreate(BaseModel):
     tax_rate: float = 0.13
     profit_rate: float = 0.0
     currency: str = "CNY"
+    coefficients: Optional[dict] = None
     parent_id: Optional[int] = None
 
 
@@ -1248,6 +1270,13 @@ def delete_quotation(
     detail = f'删除报价单 "{quotation.name}" ({quotation.scheme_no or quotation.id})'
     db.delete(quotation)
     db.commit()
+
+    # 失效列表缓存（避免删除后 30s 内仍能看到）
+    try:
+        from core.services.cache import cache_invalidate_prefix
+        cache_invalidate_prefix('quotations:list:')
+    except Exception:
+        pass
 
     _log_op(db, user_id,
         action=Action.DELETE,
