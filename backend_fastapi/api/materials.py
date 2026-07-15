@@ -88,6 +88,7 @@ def create_material(
     material = Material(
         item_no=(body.item_no or '').strip() or None,  # 品号, 空字符串转 None
         name=body.name,
+        product_name=(body.product_name or '').strip() or None if body.product_name else None,  # migration 018
         spec=body.spec,
         brand=body.brand,
         unit=body.unit,
@@ -271,9 +272,14 @@ def import_materials(
 
             if existing:
                 # UPDATE: 除 unit_price 外, 其他字段照常更新
-                for field in ["name", "spec", "brand", "unit", "category", "status", "param1", "param2", "param3", "material_type"]:
+                for field in ["name", "product_name", "spec", "brand", "unit", "category", "status", "param1", "param2", "param3", "material_type"]:  # migration 018: 加 product_name
                     if field in m_data and m_data[field] is not None:
-                        setattr(existing, field, m_data[field])
+                        # 空字符串归一为 None (允许不填产品名称)
+                        if field == "product_name":
+                            v = m_data["product_name"]
+                            setattr(existing, field, (v.strip() or None) if isinstance(v, str) else v)
+                        else:
+                            setattr(existing, field, m_data[field])
                 # 价格: 仅当 Excel 提供有效价格时才更新
                 if "unit_price" in m_data and m_data["unit_price"] is not None:
                     existing.unit_price = m_data["unit_price"]
@@ -284,8 +290,12 @@ def import_materials(
             else:
                 # INSERT: Excel 有价格用 Excel 的, 否则默认 0
                 price = m_data["unit_price"] if (m_data.get("unit_price") is not None) else 0
+                pn = m_data.get("product_name")
+                if isinstance(pn, str):
+                    pn = pn.strip() or None
                 material = Material(
                     name=m_data.get("name"),
+                    product_name=pn,  # migration 018
                     spec=m_data.get("spec"),
                     brand=m_data.get("brand"),
                     unit=m_data.get("unit"),
