@@ -1626,7 +1626,8 @@ async function addMaterialsToModule(moduleId, materials) {
     for (const material of materials) {
       await api.post(`/modules/${moduleId}/materials`, {
         material_id: material.material_id,
-        quantity: material.quantity || 1
+        quantity: material.quantity || 1,
+        material_type: material.material_type || undefined,  // migration 017
       })
     }
     ElMessage.success('添加成功')

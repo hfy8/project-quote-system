@@ -2090,10 +2090,12 @@ async function handleAddMaterials(moduleId, materials) {
   if (!moduleId) return
   try {
     // 后端接口是单条添加 /modules/{id}/materials, 循环调
+    // migration 017: 携带 material_type 快照 (从 material 对象带过来)
     for (const m of materials) {
       await api.post(`/modules/${moduleId}/materials`, {
         material_id: m.material_id,
         quantity: m.quantity || 1,
+        material_type: m.material_type || undefined,  // 后端有 fallback
       })
     }
     ElMessage.success('已添加物料')
@@ -2258,7 +2260,8 @@ async function addMaterialsToModule() {
       const qty = material._quantity || 1
       await api.post(`/modules/${selectedModuleId.value}/materials`, {
         material_id: material.id,
-        quantity: qty
+        quantity: qty,
+        material_type: material.material_type || undefined,  // migration 017
       })
     }
     ElMessage.success('添加成功')
