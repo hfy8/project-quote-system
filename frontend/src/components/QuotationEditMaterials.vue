@@ -617,14 +617,13 @@ function exportNoItemNoMaterials() {
   ]
 
   // === 样式 (用户要求 2026-07-15: 头固定+背景色, 1-2列固定+背景色, 字体加粗, 2-4列筛选) ===
-  // 浅灰色 (#D9D9D9) - 冻结列 (序号/类型) 数据底色
+  // 浅灰色 (#D9D9D9) - 表头+冻结列统一底色
   const FROZEN_COL_FILL = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } }
-  // 深蓝色 (#4472C4) - 表头底色 (Office 经典蓝)
-  const HEADER_FILL = { patternType: 'solid', fgColor: { rgb: 'FF4472C4' } }
-  // 白色字体 (深底色用白字)
-  const HEADER_FONT = { bold: true, color: { rgb: 'FFFFFFFF' }, name: '宋体', sz: 11 }
+  const HEADER_FILL = FROZEN_COL_FILL
+  // 表头字体 (浅灰底用黑色字)
+  const HEADER_FONT = { bold: true, color: { rgb: 'FF000000' }, name: '微软雅黑', sz: 11 }
   // 数据字体 (加粗)
-  const DATA_FONT = { bold: true, name: '宋体', sz: 11 }
+  const DATA_FONT = { bold: true, name: '微软雅黑', sz: 11 }
   // 边框
   const BORDER = {
     top: { style: 'thin', color: { rgb: 'FF000000' } },
