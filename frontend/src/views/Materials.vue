@@ -548,6 +548,12 @@ const parseExcel = (file) => {
         const name = String(cells[colIdx.name] || '').trim()
         const spec = String(cells[colIdx.spec] || '').trim()
 
+        // 跳过没有规格的物料 (规格为空 = 无意义数据, 用户要求过滤)
+        if (!spec) {
+          skipped++
+          continue
+        }
+
         // Excel 内去重 (同品号只保留首次; 无品号不算品号重复)
         if (itemNo && seenItemNos.has(itemNo)) {
           skipped++
