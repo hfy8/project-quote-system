@@ -303,7 +303,7 @@ const activeCategory = ref('all')
 
 const pagination = reactive({
   page: 1,
-  pageSize: 10,
+  pageSize: 20,
   total: 0
 })
 
