@@ -1628,6 +1628,8 @@ async function addMaterialsToModule(moduleId, materials) {
         material_id: material.material_id,
         quantity: material.quantity || 1,
         material_type: material.material_type || undefined,  // migration 017
+        product_name: material.product_name || undefined,  // migration 019
+        category: material.category || undefined,  // migration 019
       })
     }
     ElMessage.success('添加成功')

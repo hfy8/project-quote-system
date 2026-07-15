@@ -445,11 +445,13 @@ function confirmAddMaterials() {
   if (selectedMaterials.value.length === 0) {
     return
   }
-  // migration 017: 携带 material_type 快照, 后端 add_material_to_module 接收
+  // migration 017/019: 携带 material_type + product_name + category 快照, 后端 add_material_to_module 接收
   const materials = selectedMaterials.value.map(m => ({
     material_id: m.id,
     quantity: m._quantity || 1,
     material_type: m.material_type || 'other',
+    product_name: m.product_name || null,  // migration 019
+    category: m.category || null,  // migration 019
   }))
   emit('add-materials', materialDialogModuleId.value, materials)
   materialDialogVisible.value = false
@@ -553,10 +555,11 @@ function exportNoItemNoMaterials() {
         const remark = [m.brand, params].filter(Boolean).join(' | ')
         rows.push({
           '序号': serialNo,
-          // migration 017: 用物料自身 type 快照, 之前用 mod.module_type 推断是错的
+          // migration 017: 用 mm.material_type 快照 (后端 to_dict 优先 self.material_type)
           '类型': TYPE_TO_TEMPLATE[m.material_type] || m.material_type || '其他',
+          // migration 019: 部件分类用 mm.category 快照 (后端 to_dict 优先 self.category)
           '部件分类': getCategoryLabel(m.category),
-          // migration 018: 产品名称 (产品线) 用 m.product_name 物料自身字段, 之前用 mod.name 是错的
+          // migration 019: 产品名称用 mm.product_name 快照 (后端 to_dict 优先 self.product_name)
           '产品名称': m.product_name || '',
           '产品档次': '',  // 物料表无档次字段, 留空
           '选型关键因素1': m.param1 || '',
