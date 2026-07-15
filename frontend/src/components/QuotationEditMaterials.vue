@@ -37,6 +37,15 @@
         :value="mod.id"
       />
     </el-select>
+    <el-button
+      type="success"
+      :icon="Download"
+      :disabled="noItemNoMaterialsCount === 0"
+      style="margin-left: 12px;"
+      @click="exportNoItemNoMaterials"
+    >
+      导出无品号物料 ({{ noItemNoMaterialsCount }})
+    </el-button>
   </div>
 
   <!-- 按模块类型分组卡片展示 -->
@@ -262,6 +271,9 @@
 
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
+import { Download } from '@element-plus/icons-vue'
+import * as XLSX from 'xlsx'
+import { ElMessage } from 'element-plus'
 
 const props = defineProps({
   isEdit: Boolean,
@@ -468,5 +480,121 @@ const availableBrands = computed(() => {
 function getCategoryLabel(cat) {
   const map = { large: '大件', standard: '核心部件', other: '其他件' }
   return map[cat] || cat || '-'
+}
+
+// ---------------------------------------------------------------------------
+// 导出无品号物料 (优选清单汇总表格式)
+// ---------------------------------------------------------------------------
+// 模块类型 -> 模板"类型"列
+const MODULE_TYPE_TO_TEMPLATE = {
+  mechanical: '机械类',
+  electrical: '非机械类',
+  other: '非机械类',
+}
+
+// 遍历所有模块分组, 找出无品号物料 (item_no 为空/纯空白/null)
+const noItemNoMaterialsCount = computed(() => {
+  let count = 0
+  for (const group of props.groupedMaterials || []) {
+    for (const mod of group.module_list || []) {
+      for (const m of mod.materials || []) {
+        // is_other=true 的"其他类物料"也没品号, 一并导出
+        if (!m.item_no || String(m.item_no).trim() === '') {
+          count++
+        }
+      }
+    }
+  }
+  return count
+})
+
+function exportNoItemNoMaterials() {
+  // 按"类型 -> 部件分类 -> 产品名称"排序收集
+  const rows = []
+  let serialNo = 0
+  // 按 module_type 排序: 机械类先, 然后非机械类
+  const sortedGroups = [...(props.groupedMaterials || [])].sort((a, b) => {
+    const order = { mechanical: 0, electrical: 1, other: 2 }
+    return (order[a.value] ?? 99) - (order[b.value] ?? 99)
+  })
+
+  for (const group of sortedGroups) {
+    const typeLabel = MODULE_TYPE_TO_TEMPLATE[group.value] || '非机械类'
+    for (const mod of group.module_list || []) {
+      for (const m of mod.materials || []) {
+        if (m.item_no && String(m.item_no).trim() !== '') continue
+        serialNo++
+        // 备注: param1/2/3 + 品牌, 用"/"分隔
+        const params = [m.param1, m.param2, m.param3].filter(p => p && String(p).trim()).join(' / ')
+        const remark = [m.brand, params].filter(Boolean).join(' | ')
+        rows.push({
+          '序号': serialNo,
+          '类型': typeLabel,
+          '部件分类': getCategoryLabel(m.category),
+          '产品名称': mod.name || '',
+          '产品档次': '',  // 物料表无档次字段, 留空
+          '选型关键因素1': m.param1 || '',
+          '选型关键因素2': m.param2 || '',
+          '选型关键因素3': m.param3 || '',
+          '品号': '',  // 故意为空 - 这是"无品号物料"导出的核心目的
+          '品名': m.material_name || '',
+          '规格': m.specification || '',
+          '初次确认报价日期': '',
+          '价格更新周期\n（按照月计）': '',
+          '价格维护\n（无品号）': '',
+          '备注（机械规格）': remark,
+        })
+      }
+    }
+  }
+
+  if (rows.length === 0) {
+    ElMessage.warning('当前报价单所有物料都有品号, 无需导出')
+    return
+  }
+
+  // 构造 worksheet (按模板列顺序)
+  const headerOrder = [
+    '序号', '类型', '部件分类', '产品名称', '产品档次',
+    '选型关键因素1', '选型关键因素2', '选型关键因素3',
+    '品号', '品名', '规格',
+    '初次确认报价日期', '价格更新周期\n（按照月计）', '价格维护\n（无品号）',
+    '备注（机械规格）',
+  ]
+  const aoa = [headerOrder]
+  for (const r of rows) {
+    aoa.push(headerOrder.map(h => r[h] ?? ''))
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+
+  // 设置列宽 (参照模板风格, 让品号/品名/规格列更宽)
+  ws['!cols'] = [
+    { wch: 6 },   // 序号
+    { wch: 10 },  // 类型
+    { wch: 12 },  // 部件分类
+    { wch: 22 },  // 产品名称
+    { wch: 8 },   // 产品档次
+    { wch: 22 },  // 选型关键因素1
+    { wch: 22 },  // 选型关键因素2
+    { wch: 22 },  // 选型关键因素3
+    { wch: 14 },  // 品号
+    { wch: 24 },  // 品名
+    { wch: 28 },  // 规格
+    { wch: 14 },  // 初次确认报价日期
+    { wch: 14 },  // 价格更新周期
+    { wch: 14 },  // 价格维护
+    { wch: 28 },  // 备注
+  ]
+
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '无品号物料汇总')
+
+  // 文件名: 优选清单汇总表_报价单{id}_无品号_{YYYYMMDD_HHmm}.xlsx
+  const now = new Date()
+  const pad = n => String(n).padStart(2, '0')
+  const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
+  const filename = `优选清单汇总表_无品号_${ts}.xlsx`
+  XLSX.writeFile(wb, filename)
+  ElMessage.success(`已导出 ${rows.length} 条无品号物料`)
 }
 </script>

@@ -111,6 +111,13 @@
               </span>
             </template>
           </el-table-column>
+          <el-table-column prop="material_type" label="类型" width="100">
+            <template #default="{ row }">
+              <span class="material-type-tag" :class="row.material_type || 'other'">
+                {{ getMaterialTypeLabel(row.material_type) }}
+              </span>
+            </template>
+          </el-table-column>
           <el-table-column prop="unit" label="单位" width="80">
             <template #default="{ row }">
               <span class="unit-text">{{ row.unit }}</span>
@@ -175,6 +182,13 @@
             <el-option label="大件" value="large" />
             <el-option label="核心部件" value="standard" />
             <el-option label="其他件" value="other" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="类型" prop="material_type">
+          <el-select v-model="form.material_type" placeholder="请选择类型" style="width: 100%;">
+            <el-option label="机械类" value="mechanical" />
+            <el-option label="非机械类" value="electrical" />
+            <el-option label="其他" value="other" />
           </el-select>
         </el-form-item>
         <el-form-item label="单位" prop="unit">
@@ -303,6 +317,7 @@ const form = reactive({
   spec: '',
   brand: '',
   category: 'standard',
+  material_type: 'other',  // 机械类/非机械类 — migration 016
   unit: '',
   unit_price: 0,
   param1: '',
@@ -325,6 +340,12 @@ const getCategoryCount = (cat) => {
 const getCategoryLabel = (cat) => {
   const map = { large: '大件', standard: '核心部件', other: '其他件' }
   return map[cat] || cat || '-'
+}
+
+// 物料类型 (机械类/非机械类) — migration 016
+const getMaterialTypeLabel = (t) => {
+  const map = { mechanical: '机械类', electrical: '非机械类', other: '其他' }
+  return map[t] || t || '其他'
 }
 
 const handleCategoryChange = (val) => {
@@ -366,7 +387,7 @@ const handlePageChange = (page) => {
 
 const handleAdd = () => {
   dialogTitle.value = '新增物料'
-  Object.assign(form, { id: null, item_no: '', name: '', spec: '', brand: '', category: 'standard', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
+  Object.assign(form, { id: null, item_no: '', name: '', spec: '', brand: '', category: 'standard', material_type: 'other', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
   dialogVisible.value = true
 }
 
@@ -422,6 +443,15 @@ const importing = ref(false)
 const stats = reactive({ parsed: 0, created: 0, updated: 0, skipped: 0 })
 
 const CATEGORY_MAP = { '大件': 'large', '关键核心部件': 'standard' }
+// 模板"类型"列 (机械类/非机械类) → 枚举值, 兼容"非机械类（电控）"等带括号写法
+const MATERIAL_TYPE_MAP = {
+  '机械类': 'mechanical',
+  '非机械类': 'electrical',
+  '非机械类（电控）': 'electrical',
+  '非机械类(电控)': 'electrical',
+  '电控软件类': 'electrical',
+  '其他': 'other',
+}
 
 const handleImport = () => {
   resetImport()
@@ -479,7 +509,10 @@ const parseExcel = (file) => {
         name: headers.findIndex(h => h.includes('品名')),
         itemNo: headers.findIndex(h => h.includes('品号')),
         spec: headers.findIndex(h => h.includes('规格')),
-        partCat: headers.findIndex(h => h.includes('部件分类') || h.includes('分类')),
+        // 部件分类 (大件/关键核心部件/其他件) — 注意必须排除"类型"列
+        partCat: headers.findIndex(h => h === '部件分类' || h === '分类'),
+        // 类型 (机械类/非机械类) — 模板"汇总表"第一列
+        materialType: headers.findIndex(h => h === '类型' || h.includes('物料类型')),
         param1: headers.findIndex(h => h.includes('关键因素1') || h.includes('选型关键因素1') || h.includes('关键参数01')),
         param2: headers.findIndex(h => h.includes('关键因素2') || h.includes('选型关键因素2') || h.includes('关键参数02')),
         param3: headers.findIndex(h => h.includes('关键因素3') || h.includes('选型关键因素3') || h.includes('关键参数03')),
@@ -518,6 +551,9 @@ const parseExcel = (file) => {
 
         const partCatRaw = String(cells[colIdx.partCat] || '').trim()
         const category = CATEGORY_MAP[partCatRaw] || 'standard'
+        // 物料类型 (机械类/非机械类) — migration 016, 没匹配到默认 'other'
+        const typeRaw = String(cells[colIdx.materialType] || '').trim()
+        const material_type = MATERIAL_TYPE_MAP[typeRaw] || 'other'
         const param1 = String(cells[colIdx.param1] || '').trim()
         const param2 = String(cells[colIdx.param2] || '').trim()
         const param3 = String(cells[colIdx.param3] || '').trim()
@@ -534,6 +570,7 @@ const parseExcel = (file) => {
           unit: 'pcs',
           unit_price: priceNum, // null 表示"无价格"信号
           category,
+          material_type,  // migration 016 - 机械类/非机械类
           param1: param1 || undefined,
           param2: param2 || undefined,
           param3: param3 || undefined,
@@ -873,6 +910,28 @@ onMounted(() => {
 .category-tag.other {
   background: var(--color-secondary-light);
   color: var(--color-secondary);
+}
+
+/* 物料类型 (机械类/非机械类) — migration 016 */
+.material-type-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.material-type-tag.mechanical {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.material-type-tag.electrical {
+  background: #fff3e0;
+  color: #e65100;
+}
+.material-type-tag.other {
+  background: #f5f5f5;
+  color: #757575;
 }
 
 .price-text {
