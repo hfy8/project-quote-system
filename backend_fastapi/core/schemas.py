@@ -191,6 +191,7 @@ class MaterialCreate(BaseModel):
     unit: Optional[str] = None
     unit_price: float = Field(..., ge=0)
     category: str = Field("standard", pattern="^(large|standard|other|大件|核心部件|其他件)$")
+    material_type: str = Field("other", pattern="^(mechanical|electrical|other)$")  # migration 016
     param1: Optional[str] = None
     param2: Optional[str] = None
     param3: Optional[str] = None
@@ -205,6 +206,7 @@ class MaterialUpdate(BaseModel):
     unit: Optional[str] = None
     unit_price: Optional[float] = Field(None, ge=0)
     category: Optional[str] = None
+    material_type: Optional[str] = Field(None, pattern="^(mechanical|electrical|other)$")  # migration 016
     param1: Optional[str] = None
     param2: Optional[str] = None
     param3: Optional[str] = None

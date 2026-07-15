@@ -93,6 +93,7 @@ def create_material(
         unit=body.unit,
         unit_price=body.unit_price,
         category=body.category,
+        material_type=body.material_type or 'other',  # migration 016
         status=body.status or "active",
     )
     db.add(material)
@@ -270,7 +271,7 @@ def import_materials(
 
             if existing:
                 # UPDATE: 除 unit_price 外, 其他字段照常更新
-                for field in ["name", "spec", "brand", "unit", "category", "status", "param1", "param2", "param3"]:
+                for field in ["name", "spec", "brand", "unit", "category", "status", "param1", "param2", "param3", "material_type"]:
                     if field in m_data and m_data[field] is not None:
                         setattr(existing, field, m_data[field])
                 # 价格: 仅当 Excel 提供有效价格时才更新
@@ -290,6 +291,7 @@ def import_materials(
                     unit=m_data.get("unit"),
                     unit_price=price,
                     category=m_data.get("category", "standard"),
+                    material_type=m_data.get("material_type", "other"),  # migration 016
                     item_no=item_no or None,
                     param1=m_data.get("param1"),
                     param2=m_data.get("param2"),

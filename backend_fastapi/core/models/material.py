@@ -14,6 +14,10 @@ class Material(db.Model):
     unit = db.Column(db.String(20), nullable=True)
     unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0)
     category = db.Column(db.String(20), nullable=False, default='核心部件', index=True)  # 大件/核心部件/其他件
+    # 物料类型 (机械类/非机械类) — 与 category 是两个独立维度
+    # 取值: 'mechanical' (机械类), 'electrical' (非机械类-电控), 'other' (其他)
+    # migration 016
+    material_type = db.Column(db.String(20), nullable=False, default='other', index=True)
     # 三项关键参数（灵活字段，机构/电控选料参考）
     param1 = db.Column(db.String(100), nullable=True)   # 关键参数01
     param2 = db.Column(db.String(100), nullable=True)  # 关键参数02
@@ -36,6 +40,7 @@ class Material(db.Model):
             'unit': self.unit,
             'unit_price': float(self.unit_price) if self.unit_price else 0,
             'category': self.category,
+            'material_type': self.material_type,  # 机械类/非机械类 — migration 016
             'param1': self.param1,
             'param2': self.param2,
             'param3': self.param3,
