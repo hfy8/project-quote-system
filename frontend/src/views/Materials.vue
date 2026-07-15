@@ -514,22 +514,24 @@ const parseExcel = (file) => {
       }
 
       const headers = rows[headerIdx].map(h => String(h).trim())
-      // 列索引映射
+      // 列索引映射 (注意: 不能用 .includes('产品') 因为会误匹配'产品档次'!)
       const colIdx = {
-        name: headers.findIndex(h => h.includes('品名')),
-        // 产品名称 (产品线) — migration 018, 注意排除"品名"列 (因为 "品名" includes "品名" 误匹配)
-        productName: headers.findIndex(h => h === '产品名称' || h.includes('产品')),
-        itemNo: headers.findIndex(h => h.includes('品号')),
-        spec: headers.findIndex(h => h.includes('规格')),
+        name: headers.findIndex(h => h === '品名'),
+        // 产品名称 (产品线) — migration 018, 用 === 精确匹配 (排除'产品档次'/'产品档案'等)
+        productName: headers.findIndex(h => h === '产品名称'),
+        itemNo: headers.findIndex(h => h === '品号' || h.includes('品号')),
+        spec: headers.findIndex(h => h === '规格' || h.includes('规格')),
         // 部件分类 (大件/关键核心部件/其他件) — 注意必须排除"类型"列
         partCat: headers.findIndex(h => h === '部件分类' || h === '分类'),
-        // 类型 (机械类/非机械类) — 模板"汇总表"第一列
-        materialType: headers.findIndex(h => h === '类型' || h.includes('物料类型')),
-        param1: headers.findIndex(h => h.includes('关键因素1') || h.includes('选型关键因素1') || h.includes('关键参数01')),
-        param2: headers.findIndex(h => h.includes('关键因素2') || h.includes('选型关键因素2') || h.includes('关键参数02')),
-        param3: headers.findIndex(h => h.includes('关键因素3') || h.includes('选型关键因素3') || h.includes('关键参数03')),
+        // 类型 (机械类/非机械类) — 模板"汇总表"第一列 (序号之后)
+        materialType: headers.findIndex(h => h === '类型'),
+        param1: headers.findIndex(h => h === '选型关键因素1' || h.includes('关键因素1') || h.includes('关键参数01')),
+        param2: headers.findIndex(h => h === '选型关键因素2' || h.includes('关键因素2') || h.includes('关键参数02')),
+        param3: headers.findIndex(h => h === '选型关键因素3' || h.includes('关键因素3') || h.includes('关键参数03')),
         unitPrice: headers.findIndex(h => h.includes('价格维护')),
       }
+      console.log('[import] headers:', headers)
+      console.log('[import] colIdx:', colIdx)
 
       // 解析数据行 (Excel 内去重: 品号 OR 品名+规格 唯一, 后端会处理 upsert)
       const seenItemNos = new Set()
