@@ -356,6 +356,9 @@ def add_material_to_module(
         quantity=1 if is_other else body.quantity,
         unit_price_override=body.unit_price_override,
         selected_by_id=user_id,
+        # 快照物料类型 (机械类/非机械类) — migration 017
+        # 优先用前端传的, 没传则从 Material 表读, 都没有默认 'other'
+        material_type=(body.material_type or (material.material_type if material else 'other') or 'other'),
     )
     db.add(mm)
     db.commit()

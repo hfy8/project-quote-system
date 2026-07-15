@@ -9,6 +9,11 @@ class Material(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     item_no = db.Column(db.String(50), nullable=True, index=True)  # 品号 (跨系统同步用, 允许为空)
     name = db.Column(db.String(100), nullable=False, index=True)
+    # 产品名称 (产品线/分类) — migration 018
+    # 与 name (品名/具体型号) 是两个独立维度:
+    #   - product_name: 跨多个具体物料的产品线名 (如"四轴机械手"、"点激光检测")
+    #   - name: 单个物料的具体型号名
+    product_name = db.Column(db.String(100), nullable=True, index=True)
     spec = db.Column(db.String(100), nullable=True, index=True)
     brand = db.Column(db.String(50), nullable=True, index=True)
     unit = db.Column(db.String(20), nullable=True)
@@ -35,6 +40,7 @@ class Material(db.Model):
             'id': self.id,
             'item_no': self.item_no,
             'name': self.name,
+            'product_name': self.product_name,  # 产品名称 (产品线) — migration 018
             'spec': self.spec,
             'brand': self.brand,
             'unit': self.unit,
@@ -65,6 +71,10 @@ class ModuleMaterial(db.Model):
     quantity = db.Column(db.Integer, nullable=False, default=1)
     unit_price_override = db.Column(db.Numeric(10, 2), nullable=True)  # 仅material_id=24时使用
     selected_by_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # 快照物料类型 (机械类/非机械类) — migration 017
+    # 添加物料时从 materials.material_type 读一次写入, 后续物料 type 改了也不影响历史报价单
+    # 跟 operation_log 的 employee_no + cn_name 快照思路一致
+    material_type = db.Column(db.String(20), nullable=False, default='other', index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     material = db.relationship('Material', backref='module_materials')
@@ -97,6 +107,9 @@ class ModuleMaterial(db.Model):
             'is_other': self.is_other,
             'material_category': m.category if m else None,
             'material_status': m.status if m else None,
+            # 物料类型快照 (机械类/非机械类) — migration 017
+            # mm 自身存的 type, 跟 m.material_type 可能不同 (历史快照)
+            'material_type': self.material_type,
             # 关键参数
             'param1': m.param1 if m else None,
             'param2': m.param2 if m else None,

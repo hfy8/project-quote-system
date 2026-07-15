@@ -89,6 +89,9 @@ class ModuleMaterialAdd(BaseModel):
     quantity: int = Field(1, ge=1)
     is_other: bool = False
     unit_price_override: Optional[float] = None
+    # 物料类型快照 (机械类/非机械类) — migration 017
+    # 后端从 materials 表读 material_type 自动写入, 客户端不传也不会报错 (Optional)
+    material_type: Optional[str] = Field(None, pattern="^(mechanical|electrical|other)$")
 
 
 class ModuleMaterialUpdate(BaseModel):
@@ -186,6 +189,7 @@ class TravelPersonTripUpdate(BaseModel):
 class MaterialCreate(BaseModel):
     item_no: Optional[str] = None  # 品号 (跨系统同步用, 允许为空)
     name: str = Field(..., min_length=1)
+    product_name: Optional[str] = None  # 产品名称 (产品线) — migration 018
     spec: Optional[str] = None
     brand: Optional[str] = None
     unit: Optional[str] = None
@@ -201,6 +205,7 @@ class MaterialCreate(BaseModel):
 class MaterialUpdate(BaseModel):
     item_no: Optional[str] = None  # 品号 (跨系统同步用, 允许为空)
     name: Optional[str] = None
+    product_name: Optional[str] = None  # 产品名称 (产品线) — migration 018
     spec: Optional[str] = None
     brand: Optional[str] = None
     unit: Optional[str] = None
