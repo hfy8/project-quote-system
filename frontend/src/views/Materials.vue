@@ -66,6 +66,12 @@
           :scrollbar-always-on="true"
           show-overflow-tooltip
         >
+          <el-table-column prop="product_name" label="产品名称" min-width="120" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span v-if="row.product_name">{{ row.product_name }}</span>
+              <span v-else style="color: #c0c4cc;">-</span>
+            </template>
+          </el-table-column>
           <el-table-column prop="name" label="品名" min-width="120">
             <template #default="{ row }">
               <div class="material-name">
@@ -158,6 +164,9 @@
       <el-form ref="formRef" :model="form" :rules="rules" label-width="80px" class="dialog-form">
         <el-form-item label="品名" prop="name">
           <el-input v-model="form.name" placeholder="请输入物料品名" />
+        </el-form-item>
+        <el-form-item label="产品名称" prop="product_name">
+          <el-input v-model="form.product_name" placeholder="如: 四轴机械手、点激光检测 (产品线/分类)" clearable />
         </el-form-item>
         <el-form-item label="品号" prop="item_no">
           <el-input v-model="form.item_no" placeholder="可留空, 跨系统同步用" maxlength="50" clearable />
@@ -314,6 +323,7 @@ const form = reactive({
   id: null,
   item_no: '',  // 品号 (跨系统同步用, 允许为空)
   name: '',
+  product_name: '',  // 产品名称 (产品线) — migration 018
   spec: '',
   brand: '',
   category: 'standard',
@@ -387,7 +397,7 @@ const handlePageChange = (page) => {
 
 const handleAdd = () => {
   dialogTitle.value = '新增物料'
-  Object.assign(form, { id: null, item_no: '', name: '', spec: '', brand: '', category: 'standard', material_type: 'other', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
+  Object.assign(form, { id: null, item_no: '', name: '', product_name: '', spec: '', brand: '', category: 'standard', material_type: 'other', unit: '', unit_price: 0, param1: '', param2: '', param3: '' })
   dialogVisible.value = true
 }
 
@@ -507,6 +517,8 @@ const parseExcel = (file) => {
       // 列索引映射
       const colIdx = {
         name: headers.findIndex(h => h.includes('品名')),
+        // 产品名称 (产品线) — migration 018, 注意排除"品名"列 (因为 "品名" includes "品名" 误匹配)
+        productName: headers.findIndex(h => h === '产品名称' || h.includes('产品')),
         itemNo: headers.findIndex(h => h.includes('品号')),
         spec: headers.findIndex(h => h.includes('规格')),
         // 部件分类 (大件/关键核心部件/其他件) — 注意必须排除"类型"列
@@ -554,6 +566,9 @@ const parseExcel = (file) => {
         // 物料类型 (机械类/非机械类) — migration 016, 没匹配到默认 'other'
         const typeRaw = String(cells[colIdx.materialType] || '').trim()
         const material_type = MATERIAL_TYPE_MAP[typeRaw] || 'other'
+        // 产品名称 (产品线) — migration 018, 留空归一为 null
+        const productName = colIdx.productName >= 0 ? String(cells[colIdx.productName] || '').trim() : ''
+        const product_name = productName || null
         const param1 = String(cells[colIdx.param1] || '').trim()
         const param2 = String(cells[colIdx.param2] || '').trim()
         const param3 = String(cells[colIdx.param3] || '').trim()
@@ -565,6 +580,7 @@ const parseExcel = (file) => {
         materials.push({
           item_no: itemNo,
           name: name || itemNo, // 回退
+          product_name,  // 产品名称 (产品线) — migration 018
           spec,
           brand: '',
           unit: 'pcs',
