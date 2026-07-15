@@ -98,6 +98,13 @@
           <el-table-column prop="brand" label="品牌" width="70">
             <template #default="{ row }">{{ row.brand || '-' }}</template>
           </el-table-column>
+          <el-table-column prop="material_type" label="类型" width="80">
+            <template #default="{ row }">
+              <span :class="['material-type-tag', row.material_type || 'other']">
+                {{ getMaterialTypeLabel(row.material_type) }}
+              </span>
+            </template>
+          </el-table-column>
           <el-table-column v-if="hasKeyFields" prop="param1" label="关键参数01" width="130">
             <template #default="{ row }"><span v-if="row.param1">{{ row.param1 }}</span></template>
           </el-table-column>
@@ -220,6 +227,13 @@
       <el-table-column prop="unit_price" label="单价" width="70" />
       <el-table-column label="分类" width="70">
         <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
+      </el-table-column>
+      <el-table-column label="类型" width="80">
+        <template #default="{ row }">
+          <span class="material-type-tag" :class="row.material_type || 'other'">
+            {{ getMaterialTypeLabel(row.material_type) }}
+          </span>
+        </template>
       </el-table-column>
       <el-table-column label="数量" width="120">
         <template #default="{ row }">
@@ -431,9 +445,11 @@ function confirmAddMaterials() {
   if (selectedMaterials.value.length === 0) {
     return
   }
+  // migration 017: 携带 material_type 快照, 后端 add_material_to_module 接收
   const materials = selectedMaterials.value.map(m => ({
     material_id: m.id,
     quantity: m._quantity || 1,
+    material_type: m.material_type || 'other',
   }))
   emit('add-materials', materialDialogModuleId.value, materials)
   materialDialogVisible.value = false
@@ -482,6 +498,12 @@ function getCategoryLabel(cat) {
   return map[cat] || cat || '-'
 }
 
+// 物料类型 (机械类/非机械类) — migration 017
+function getMaterialTypeLabel(t) {
+  const map = { mechanical: '机械类', electrical: '非机械类', other: '其他' }
+  return map[t] || t || '其他'
+}
+
 // ---------------------------------------------------------------------------
 // 导出无品号物料 (优选清单汇总表格式)
 // ---------------------------------------------------------------------------
@@ -510,16 +532,18 @@ const noItemNoMaterialsCount = computed(() => {
 
 function exportNoItemNoMaterials() {
   // 按"类型 -> 部件分类 -> 产品名称"排序收集
+  // migration 017: 类型列直接用 mm.material_type 快照, 不再从 module.module_type 推断
+  // (module_type 是"模块类型/项目部/电控部", 跟物料类型不同维度)
   const rows = []
   let serialNo = 0
-  // 按 module_type 排序: 机械类先, 然后非机械类
-  const sortedGroups = [...(props.groupedMaterials || [])].sort((a, b) => {
-    const order = { mechanical: 0, electrical: 1, other: 2 }
-    return (order[a.value] ?? 99) - (order[b.value] ?? 99)
-  })
+  // 物料类型 -> 模板"类型"列中文
+  const TYPE_TO_TEMPLATE = {
+    mechanical: '机械类',
+    electrical: '非机械类',
+    other: '其他',
+  }
 
-  for (const group of sortedGroups) {
-    const typeLabel = MODULE_TYPE_TO_TEMPLATE[group.value] || '非机械类'
+  for (const group of props.groupedMaterials || []) {
     for (const mod of group.module_list || []) {
       for (const m of mod.materials || []) {
         if (m.item_no && String(m.item_no).trim() !== '') continue
@@ -529,9 +553,11 @@ function exportNoItemNoMaterials() {
         const remark = [m.brand, params].filter(Boolean).join(' | ')
         rows.push({
           '序号': serialNo,
-          '类型': typeLabel,
+          // migration 017: 用物料自身 type 快照, 之前用 mod.module_type 推断是错的
+          '类型': TYPE_TO_TEMPLATE[m.material_type] || m.material_type || '其他',
           '部件分类': getCategoryLabel(m.category),
-          '产品名称': mod.name || '',
+          // migration 018: 产品名称 (产品线) 用 m.product_name 物料自身字段, 之前用 mod.name 是错的
+          '产品名称': m.product_name || '',
           '产品档次': '',  // 物料表无档次字段, 留空
           '选型关键因素1': m.param1 || '',
           '选型关键因素2': m.param2 || '',
@@ -598,3 +624,27 @@ function exportNoItemNoMaterials() {
   ElMessage.success(`已导出 ${rows.length} 条无品号物料`)
 }
 </script>
+
+<style scoped>
+/* 物料类型 (机械类/非机械类) — migration 017 */
+.material-type-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.material-type-tag.mechanical {
+  background: #e3f2fd;
+  color: #1565c0;
+}
+.material-type-tag.electrical {
+  background: #fff3e0;
+  color: #e65100;
+}
+.material-type-tag.other {
+  background: #f5f5f5;
+  color: #757575;
+}
+</style>
