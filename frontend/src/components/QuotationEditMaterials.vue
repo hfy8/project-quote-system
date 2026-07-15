@@ -286,7 +286,8 @@
 <script setup>
 import { ref, reactive, computed, watch } from 'vue'
 import { Download } from '@element-plus/icons-vue'
-import * as XLSX from 'xlsx'
+import * as XLSX from 'xlsx-js-style'
+import JSZip from 'jszip'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -615,16 +616,92 @@ function exportNoItemNoMaterials() {
     { wch: 28 },  // 备注
   ]
 
+  // === 样式 (用户要求 2026-07-15: 头固定+背景色, 1-2列固定+背景色, 字体加粗, 2-4列筛选) ===
+  // 浅灰色 (#D9D9D9) - 冻结列 (序号/类型) 数据底色
+  const FROZEN_COL_FILL = { patternType: 'solid', fgColor: { rgb: 'FFD9D9D9' } }
+  // 深蓝色 (#4472C4) - 表头底色 (Office 经典蓝)
+  const HEADER_FILL = { patternType: 'solid', fgColor: { rgb: 'FF4472C4' } }
+  // 白色字体 (深底色用白字)
+  const HEADER_FONT = { bold: true, color: { rgb: 'FFFFFFFF' }, name: '宋体', sz: 11 }
+  // 数据字体 (加粗)
+  const DATA_FONT = { bold: true, name: '宋体', sz: 11 }
+  // 边框
+  const BORDER = {
+    top: { style: 'thin', color: { rgb: 'FF000000' } },
+    bottom: { style: 'thin', color: { rgb: 'FF000000' } },
+    left: { style: 'thin', color: { rgb: 'FF000000' } },
+    right: { style: 'thin', color: { rgb: 'FF000000' } },
+  }
+
+  // 1. 表头样式: 深蓝底 + 白字加粗
+  const headerRow = aoa[0]
+  for (let c = 0; c < headerRow.length; c++) {
+    const addr = XLSX.utils.encode_cell({ r: 0, c })
+    if (ws[addr]) {
+      ws[addr].s = { fill: HEADER_FILL, font: HEADER_FONT, border: BORDER, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }
+    }
+  }
+
+  // 2. 数据行样式: 全部加粗 + 1-2 列 (序号/类型) 浅灰底
+  for (let r = 1; r < aoa.length; r++) {
+    for (let c = 0; c < headerRow.length; c++) {
+      const addr = XLSX.utils.encode_cell({ r, c })
+      if (!ws[addr]) continue
+      // 1-2 列 (序号 A, 类型 B) 加浅灰底
+      const fill = c <= 1 ? FROZEN_COL_FILL : undefined
+      ws[addr].s = {
+        font: DATA_FONT,
+        border: BORDER,
+        alignment: { horizontal: c <= 3 ? 'center' : 'left', vertical: 'center', wrapText: true },
+        ...(fill ? { fill } : {}),
+      }
+    }
+  }
+
+  // 3. 冻结: 第 1 行 + 第 1-2 列 (用户要求 2026-07-15: 表格头固定 + 第 1-2 列固定)
+  ws['!freeze'] = { xSplit: 2, ySplit: 1, topLeftCell: 'C2', activePane: 'bottomRight', state: 'frozen' }
+
+  // 4. 筛选: B 到 D 列 (用户要求 2026-07-15: 第 2-4 列有刷选)
+  //    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 1 }, e: { r: aoa.length - 1, c: 3 } }) }
+  //    ↑ xlsx 社区版对 !autofilter 支持不稳定, 改用 worksheet 对象的 !autofilter (数字签名)
+  ws['!autofilter'] = { ref: 'B1:D' + aoa.length }
+
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '无品号物料汇总')
 
-  // 文件名: 优选清单汇总表_报价单{id}_无品号_{YYYYMMDD_HHmm}.xlsx
+  // 文件名: 优选清单汇总表_无品号_{YYYYMMDD_HHmm}.xlsx
   const now = new Date()
   const pad = n => String(n).padStart(2, '0')
   const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}`
   const filename = `优选清单汇总表_无品号_${ts}.xlsx`
-  XLSX.writeFile(wb, filename)
-  ElMessage.success(`已导出 ${rows.length} 条无品号物料`)
+
+  // xlsx-js-style 社区版不支持冻结窗格写入, 用 JSZip 后处理 sheet1.xml 加 pane 元素
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' })
+  JSZip.loadAsync(buf).then(zip => {
+    return zip.file('xl/worksheets/sheet1.xml').async('string')
+  }).then(sheetXml => {
+    // 加冻结窗格: 第1行 + 前2列
+    const newSheetXml = sheetXml.replace(
+      '<sheetViews><sheetView workbookViewId="0"/>',
+      '<sheetViews><sheetView workbookViewId="0"><pane xSplit="2" ySplit="1" topLeftCell="C2" activePane="bottomRight" state="frozen"/></sheetView>'
+    )
+    return JSZip.loadAsync(buf).then(zip => {
+      zip.file('xl/worksheets/sheet1.xml', newSheetXml)
+      return zip.generateAsync({ type: 'blob' })
+    })
+  }).then(blob => {
+    // 下载
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+    ElMessage.success(`已导出 ${rows.length} 条无品号物料`)
+  }).catch(err => {
+    console.error('导出失败:', err)
+    ElMessage.error('导出失败: ' + (err.message || '未知错误'))
+  })
 }
 </script>
 
