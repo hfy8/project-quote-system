@@ -75,6 +75,11 @@ class ModuleMaterial(db.Model):
     # 添加物料时从 materials.material_type 读一次写入, 后续物料 type 改了也不影响历史报价单
     # 跟 operation_log 的 employee_no + cn_name 快照思路一致
     material_type = db.Column(db.String(20), nullable=False, default='other', index=True)
+    # 快照产品名称 (产品线) — migration 019
+    # 跟 material_type 一致, 防止物料表 product_name 修改影响历史报价单
+    product_name = db.Column(db.String(100), nullable=True, index=True)
+    # 快照部件分类 — migration 019
+    category = db.Column(db.String(20), nullable=True, index=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     material = db.relationship('Material', backref='module_materials')
@@ -105,11 +110,15 @@ class ModuleMaterial(db.Model):
             'unit_price': unit_price,
             'unit_price_override': float(self.unit_price_override) if self.unit_price_override else None,
             'is_other': self.is_other,
-            'material_category': m.category if m else None,
+            # 部件分类快照 (migration 019) - 优先用 self.category, 老数据无快照时回退到 m.category
+            'material_category': self.category or (m.category if m else None),
+            'category': self.category or (m.category if m else None),  # 导出 Excel 用
             'material_status': m.status if m else None,
             # 物料类型快照 (机械类/非机械类) — migration 017
             # mm 自身存的 type, 跟 m.material_type 可能不同 (历史快照)
             'material_type': self.material_type,
+            # 产品名称快照 (migration 019) - 优先用 self.product_name, 老数据无快照时回退到 m.product_name
+            'product_name': self.product_name or (m.product_name if m else None),
             # 关键参数
             'param1': m.param1 if m else None,
             'param2': m.param2 if m else None,

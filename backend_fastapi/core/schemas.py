@@ -84,7 +84,6 @@ class ModuleUpdate(BaseModel):
 
 
 class ModuleMaterialAdd(BaseModel):
-    """加物料到模块"""
     material_id: int
     quantity: int = Field(1, ge=1)
     is_other: bool = False
@@ -92,6 +91,9 @@ class ModuleMaterialAdd(BaseModel):
     # 物料类型快照 (机械类/非机械类) — migration 017
     # 后端从 materials 表读 material_type 自动写入, 客户端不传也不会报错 (Optional)
     material_type: Optional[str] = Field(None, pattern="^(mechanical|electrical|other)$")
+    # migration 019 - 产品名称/部件分类快照
+    product_name: Optional[str] = None
+    category: Optional[str] = Field(None, pattern="^(large|standard|other|大件|核心部件|其他件)$")
 
 
 class ModuleMaterialUpdate(BaseModel):
