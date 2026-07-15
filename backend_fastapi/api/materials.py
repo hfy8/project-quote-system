@@ -229,13 +229,15 @@ def import_materials(
     user_id: str = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """批量导入物料 - 支持 upsert (品号去重/品名+规格联合去重)
+    """批量导入物料 - 支持 upsert (按规格去重)
 
-    业务规则:
+    业务规则 (用户要求 2026-07-15):
       1. 有品号且 DB 已存在 → UPDATE (更新全部字段)
-      2. 有品号不存在, 但品名+规格已存在 → UPDATE
-      3. 无品号, 但品名+规格已存在 → UPDATE
-      4. 全新 → INSERT (有无品号均可)
+      2. 有品号不存在, 但规格已存在 → UPDATE (按规格匹配, 不看品名)
+      3. 无品号, 但规格已存在 → UPDATE (按规格匹配)
+      4. 全新 → INSERT
+
+    关键变更: 相同规格代表是同一个物料 (用户原话), 去重只看 spec 不看 name
     """
     _check_permission(db, int(user_id), 'material.create')
     from core.models import Material
@@ -254,20 +256,16 @@ def import_materials(
 
         try:
             existing = None
-            # 1. 有品号 → 按品号查找
+            # 1. 有品号 → 按品号查找 (最优先, 因为品号是跨系统唯一标识)
             if item_no:
                 existing = db.query(Material).filter(Material.item_no == item_no).first()
 
-            # 2. 品号不存在(或无品号) → 按品名+规格联合查找
+            # 2. 品号不存在(或无品号) → 按规格查找 (用户要求: 相同规格=同一物料)
             if not existing:
-                name = (m_data.get("name") or "").strip()
                 spec = (m_data.get("spec") or "").strip()
-                if name and spec:
+                if spec:
                     existing = db.query(Material).filter(
-                        and_(
-                            Material.name == name,
-                            Material.spec == spec,
-                        )
+                        Material.spec == spec
                     ).first()
 
             if existing:
