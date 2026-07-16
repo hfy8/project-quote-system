@@ -200,6 +200,14 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, pe
                 if not hasattr(mod, 'materials') or not mod.materials:
                     continue
                 for mm in mod.materials:
+                    # migration 020: 自制件用 mm.category 选 rate
+                    if mm.is_custom:
+                        cat = mm.category or 'standard'
+                        rate = (rate_large if cat == 'large'
+                                else (rate_standard if cat == 'standard' else rate_other))
+                        unit_amount = float(mm.unit_price_override or 0) * rate * float(mm.quantity or 1)
+                        group_subtotal += unit_amount
+                        continue
                     if not mm.material:
                         continue
                     rate = (rate_large if mm.material.category == 'large'
@@ -248,6 +256,14 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours, packing_entries, pe
             # 该模块的含系数小计
             module_subtotal = 0.0
             for mm in module.materials:
+                # migration 020: 自制件用 mm.category 选 rate
+                if mm.is_custom:
+                    cat = mm.category or 'standard'
+                    rate = (rate_large if cat == 'large'
+                            else (rate_standard if cat == 'standard' else rate_other))
+                    unit_amount = float(mm.unit_price_override or 0) * rate * float(mm.quantity or 1)
+                    module_subtotal += unit_amount
+                    continue
                 if not mm.material:
                     continue
                 rate = (rate_large if mm.material.category == 'large'

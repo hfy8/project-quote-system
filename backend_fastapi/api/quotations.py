@@ -2283,7 +2283,13 @@ def get_quotation_summary(
             module_amount_with_rate = 0.0
 
             for mm in module_materials:
-                if mm.is_other and mm.unit_price_override:
+                if mm.is_custom:
+                    # migration 020: 自制件 (字段全存在 custom_data JSONB / unit_price_override 里)
+                    # 自制件 category 必须 snapshot (前端传或默认 'standard')
+                    amount = float(mm.unit_price_override or 0) * float(mm.quantity or 1)
+                    category = (mm.category or 'standard')
+                    rate = float(fee_rates.get(category, default_rate))
+                elif mm.is_other and mm.unit_price_override:
                     amount = float(mm.unit_price_override)
                     category = 'other'
                     rate = float(fee_rates.get('other', default_rate))

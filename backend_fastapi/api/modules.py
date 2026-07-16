@@ -517,7 +517,9 @@ def get_module_summary(
 
     total_quantity = sum(m.quantity for m in materials)
     total_amount = sum(
-        float(m.unit_price_override) if m.is_other and m.unit_price_override
+        # migration 020: 自制件用 unit_price_override (= JSONB unit_price)
+        float(m.unit_price_override) * float(m.quantity or 1) if m.is_custom
+        else float(m.unit_price_override) if m.is_other and m.unit_price_override
         else m.quantity * float(m.material.unit_price) if m.material and m.material.unit_price
         else 0
         for m in materials

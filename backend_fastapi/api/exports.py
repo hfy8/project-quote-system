@@ -191,9 +191,15 @@ def calculate_totals_with_rates(quotation, modules, fees, labor_hours):
     for module in modules:
         if hasattr(module, 'materials') and module.materials:
             for mm in module.materials:
-                if not mm.material:
+                # migration 020: 自制件用 unit_price_override (已存 JSONB unit_price), 用 mm.category 选 rate
+                if mm.is_custom:
+                    cat = mm.category or 'standard'
+                    rate = (rate_large if cat == 'large'
+                            else (rate_standard if cat == 'standard' else rate_other))
+                    unit_amount = float(mm.unit_price_override or 0) * rate * float(mm.quantity or 1)
+                elif not mm.material:
                     continue
-                if mm.is_other:
+                elif mm.is_other:
                     unit_amount = float(mm.unit_price_override or float(mm.material.unit_price or 0))
                 else:
                     rate = (rate_large if mm.material.category == 'large'
@@ -692,6 +698,14 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours,
                 if not hasattr(mod, 'materials') or not mod.materials:
                     continue
                 for mm in mod.materials:
+                    # migration 020: 自制件用 mm.category 选 rate
+                    if mm.is_custom:
+                        cat = mm.category or 'standard'
+                        rate = (rate_large if cat == 'large'
+                                else (rate_standard if cat == 'standard' else rate_other))
+                        unit_amount = float(mm.unit_price_override or 0) * rate * float(mm.quantity or 1)
+                        group_subtotal += unit_amount
+                        continue
                     if not mm.material:
                         continue
                     rate = (rate_large if mm.material.category == 'large'
@@ -727,6 +741,14 @@ def _build_pdf_tables(quotation, modules, fees, labor_hours,
 
             module_subtotal = 0.0
             for mm in module.materials:
+                # migration 020: 自制件用 mm.category 选 rate
+                if mm.is_custom:
+                    cat = mm.category or 'standard'
+                    rate = (rate_large if cat == 'large'
+                            else (rate_standard if cat == 'standard' else rate_other))
+                    unit_amount = float(mm.unit_price_override or 0) * rate * float(mm.quantity or 1)
+                    module_subtotal += unit_amount
+                    continue
                 if not mm.material:
                     continue
                 rate = (rate_large if mm.material.category == 'large'
