@@ -730,26 +730,33 @@ def copy_modules_from_quotation(
     try:
         copied = []
         for src_mod in source_modules:
-            # 1. 新建模块
+            # 1. 新建模块 (含模块类型 + 所有元字段, 不能只在默认 'other')
             new_mod = Module(
                 quotation_id=quotation_id,
                 name=src_mod.name,
                 name_en=src_mod.name_en,
                 code=src_mod.code,
                 description=src_mod.description,
+                module_type=src_mod.module_type or 'other',  # 修复: 复制模块类型 (避免全归类"其他")
             )
             db.add(new_mod)
             db.flush()  # 拿到 new_mod.id
 
-            # 2. 复制物料
+            # 2. 复制物料 (含所有快照字段 + 自制件迁移字段)
             materials_count = 0
             for src_mm in src_mod.materials:
                 new_mm = ModuleMaterial(
                     module_id=new_mod.id,
                     material_id=src_mm.material_id,
                     is_other=src_mm.is_other,
+                    is_custom=src_mm.is_custom,  # migration 020
+                    custom_data=src_mm.custom_data,  # migration 020
                     quantity=src_mm.quantity,
                     unit_price_override=src_mm.unit_price_override,
+                    # 快照字段 (迁移 017/019): 物料类型/产品名称/部件分类
+                    material_type=src_mm.material_type,
+                    product_name=src_mm.product_name,
+                    category=src_mm.category,
                     selected_by_id=user_id,  # 当前用户作为选人
                 )
                 db.add(new_mm)
