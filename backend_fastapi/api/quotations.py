@@ -328,7 +328,10 @@ def _create_version_snapshot(db, quotation, operator_id, operation_type, remark=
                 'selected_by_id': mm.selected_by_id,
                 'category': mm.material.category if mm.material else 'standard',
                 'is_other': mm.is_other,
-                'unit_price_override': float(mm.unit_price_override) if mm.unit_price_override else None
+                'unit_price_override': float(mm.unit_price_override) if mm.unit_price_override else None,
+                # 自制件快照 — migration 020
+                'is_custom': mm.is_custom,
+                'custom_data': mm.custom_data,
             } for mm in db.query(ModuleMaterial).filter_by(module_id=m.id).all()]
         } for m in all_modules],
         'fees': [{

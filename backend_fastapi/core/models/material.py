@@ -80,12 +80,54 @@ class ModuleMaterial(db.Model):
     product_name = db.Column(db.String(100), nullable=True, index=True)
     # 快照部件分类 — migration 019
     category = db.Column(db.String(20), nullable=True, index=True)
+    # 自制件标记 — migration 020
+    # true 表示这个物料在原材料库没有, 是用户手动填写的 (品名/规格/单位/品牌/关键参数 全部用 custom_data JSONB 存)
+    # 自制件不进物料库, 不进"导出无品号物料"列表
+    is_custom = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    # 自制件字段 JSONB — migration 020
+    # 存: {name, spec, unit, brand, unit_price, param1, param2, param3}
+    # unit_price 也存 unit_price_override (传统字段), 这里存 JSONB 是便于整体序列化
+    custom_data = db.Column(db.JSON, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     material = db.relationship('Material', backref='module_materials')
     selected_by = db.relationship('User', backref='selected_materials')
 
     def to_dict(self):
+        # 自制件分支 (migration 020) - 物料字段全从 custom_data JSONB 扁平化
+        if self.is_custom:
+            cd = self.custom_data or {}
+            unit_price = float(cd.get('unit_price', 0) or 0)
+            return {
+                'id': self.id,
+                'module_id': self.module_id,
+                'material_id': None,
+                'is_custom': True,
+                'quantity': 1,
+                'selected_by_id': self.selected_by_id,
+                'selected_by_name': self.selected_by.real_name if self.selected_by else None,
+                'created_at': self.created_at.isoformat() if self.created_at else None,
+                # 从 JSONB 扁平化字段 (前端 el-table 不需要加新列)
+                'material_name': cd.get('name'),
+                'item_no': None,  # 自制件无品号 → 前端会跳过"导出无品号物料"
+                'specification': cd.get('spec'),
+                'brand': cd.get('brand'),
+                'unit': cd.get('unit'),
+                'unit_price': unit_price,
+                'unit_price_override': unit_price,
+                'is_other': False,
+                # 复用现有快照字段 (mm 自身存的, 不依赖 Material)
+                'material_category': self.category,
+                'category': self.category,
+                'material_status': None,
+                'material_type': self.material_type,
+                'product_name': self.product_name,
+                'param1': cd.get('param1'),
+                'param2': cd.get('param2'),
+                'param3': cd.get('param3'),
+                'subtotal': unit_price,  # 自制件数量固定 1
+            }
+        # 正常物料分支
         m = self.material
         if self.is_other and self.unit_price_override is not None:
             unit_price = float(self.unit_price_override)

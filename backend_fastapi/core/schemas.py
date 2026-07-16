@@ -84,22 +84,26 @@ class ModuleUpdate(BaseModel):
 
 
 class ModuleMaterialAdd(BaseModel):
-    material_id: int
+    material_id: Optional[int] = None  # 自制件时为 None
     quantity: int = Field(1, ge=1)
     is_other: bool = False
     unit_price_override: Optional[float] = None
     # 物料类型快照 (机械类/非机械类) — migration 017
-    # 后端从 materials 表读 material_type 自动写入, 客户端不传也不会报错 (Optional)
     material_type: Optional[str] = Field(None, pattern="^(mechanical|electrical|other)$")
     # migration 019 - 产品名称/部件分类快照
     product_name: Optional[str] = None
     category: Optional[str] = Field(None, pattern="^(large|standard|other|大件|核心部件|其他件)$")
+    # 自制件支持 — migration 020
+    is_custom: bool = False
+    custom_data: Optional[dict] = Field(None, description="自制件字段: {name, spec, unit, brand, unit_price, param1, param2, param3}")
 
 
 class ModuleMaterialUpdate(BaseModel):
     """改物料数量/单价"""
     quantity: Optional[int] = Field(None, ge=1)
     unit_price_override: Optional[float] = None
+    # 自制件支持 — migration 020 (编辑自制件单价或字段)
+    custom_data: Optional[dict] = None
 
 
 # ============== Fee ==============

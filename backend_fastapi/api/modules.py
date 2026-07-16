@@ -292,12 +292,14 @@ def get_module_materials(
         if col is not None:
             if sort_order == 'desc':
                 col = col.desc()
-            query = query.join(Material, ModuleMaterial.material_id == Material.id).order_by(col, ModuleMaterial.id)
+            # LEFT JOIN Material: 自制件 material_id=NULL 也能查到 (migration 020)
+            query = query.outerjoin(Material, ModuleMaterial.material_id == Material.id).order_by(col, ModuleMaterial.id)
     else:
         # 默认: 物料名升序 + 规格升序 + id (稳定排序)
-        query = query.join(Material, ModuleMaterial.material_id == Material.id).order_by(
-            Material.name.asc(),
-            Material.spec.asc(),
+        # LEFT JOIN: 自制件也要显示
+        query = query.outerjoin(Material, ModuleMaterial.material_id == Material.id).order_by(
+            Material.name.asc().nullslast(),
+            Material.spec.asc().nullslast(),
             ModuleMaterial.id.asc()
         )
 
@@ -326,9 +328,43 @@ def add_material_to_module(
     """
     from core.models import ModuleMaterial, Material, Module
 
-    # 查询模块名 + 物料名 (用于日志, 提前获取避免后续 expire)
-    mod_obj = db.query(Module).get(module_id)
-    module_name = mod_obj.name if mod_obj else f"#{module_id}"
+    # 预先查模块名 (两条分支都要用, 提前定义避免 UnboundLocalError)
+    _mod_obj = db.query(Module).get(module_id)
+    module_name = _mod_obj.name if _mod_obj else f"#{module_id}"
+    del _mod_obj
+
+    # 自制件分支 (migration 020): 不查 materials 表, 自定义字段全在 body 里
+    is_custom = bool(body.is_custom)
+    if is_custom:
+        # 自制件需要 core 字段
+        cd = body.custom_data or {}
+        if not cd.get('name') or not cd.get('unit') or cd.get('unit_price') is None:
+            return error_response('自制件必填品名/单位/单价', 400)
+        if body.material_id:
+            return error_response('自制件不允许传 material_id', 400)
+        mm = ModuleMaterial(
+            module_id=module_id,
+            material_id=None,
+            is_custom=True,
+            quantity=1,
+            unit_price_override=cd.get('unit_price'),
+            selected_by_id=user_id,
+            # 复用现有快照字段 (前端传或默认)
+            material_type=(body.material_type or 'other'),
+            product_name=body.product_name,
+            category=body.category,
+            custom_data=cd,
+        )
+        db.add(mm)
+        db.commit()
+        record_crud(
+            user_id, 'module', 'create',
+            f'添加自制件 {cd.get("name")} x 1{cd.get("unit")} (模块={module_name})',
+            resource_type='module_material', resource_id=str(mm.id),
+        )
+        return mm.to_dict()
+
+    # 正常物料分支: 查 materials 表
     material = db.query(Material).get(body.material_id)
     material_name = material.name if material else f"#{body.material_id}"
     material_unit = material.unit if material and material.unit else ""
@@ -394,6 +430,15 @@ def update_module_material(
 
     update_data = body.model_dump(exclude_unset=True)
     changed_fields = []
+    # 自制件场景: 更新 custom_data 时, 同步更新 unit_price_override 便于 SQL 聚合
+    if mm.is_custom and update_data.get('custom_data'):
+        new_cd = update_data['custom_data']
+        mm.custom_data = new_cd
+        if 'unit_price' in new_cd:
+            mm.unit_price_override = new_cd['unit_price']
+            update_data['unit_price_override'] = new_cd['unit_price']
+            changed_fields.append('unit_price_override')
+        changed_fields.append('custom_data')
     for field, value in update_data.items():
         # 特殊处理：is_other 时改 unit_price_override
         if field == "unit_price_override" and not mm.is_other:
