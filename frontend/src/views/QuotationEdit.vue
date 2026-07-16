@@ -110,6 +110,8 @@
             @add-materials="handleAddMaterials"
             @save-other-price="handleSaveOtherPrice"
             @load-materials="handleLoadMaterials"
+            @add-custom-material="handleAddCustomMaterial"
+            @update-custom-material="handleUpdateCustomMaterial"
           />
         </el-tab-pane>
 
@@ -1009,6 +1011,8 @@ const materialDialogVisible = ref(false)
 const addMaterialQuantity = ref(1)
 const selectedMaterials = ref([])
 const materialTableRef = ref(null)
+// migration 020: 当前添加物料的 module id
+const currentAddModuleId = ref(null)
 const materialFilter = reactive({
   keyword: '',
   category: '',
@@ -2123,6 +2127,43 @@ async function handleSaveOtherPrice(form) {
   }
 }
 
+// migration 020: 添加自制件
+async function handleAddCustomMaterial(payload) {
+  // payload: { is_custom: true, custom_data: {...}, material_type, category, product_name }
+  // 需要 currentModuleId, 这里取自 moduleMaterials 当前激活的
+  const moduleId = currentAddModuleId.value || (moduleMaterials.value?.[0]?.module_id)
+  if (!moduleId) {
+    ElMessage.error('无法确定模块ID, 请重新打开添加物料弹窗')
+    return
+  }
+  try {
+    await api.post(`/modules/${moduleId}/materials`, payload)
+    ElMessage.success('已添加自制件: ' + (payload.custom_data?.name || ''))
+    await loadModuleMaterials()
+    await summaryCompRef.value?.refresh?.()
+  } catch (error) {
+    ElMessage.error('添加自制件失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))
+  }
+}
+
+// migration 020: 更新自制件
+async function handleUpdateCustomMaterial(payload) {
+  // payload: { mmId, custom_data, material_type, category, product_name }
+  try {
+    await api.put(`/module_materials/${payload.mmId}`, {
+      custom_data: payload.custom_data,
+      material_type: payload.material_type,
+      category: payload.category,
+      product_name: payload.product_name,
+    })
+    ElMessage.success('已更新自制件')
+    await loadModuleMaterials()
+    await summaryCompRef.value?.refresh?.()
+  } catch (error) {
+    ElMessage.error('更新自制件失败: ' + (error?.response?.data?.detail || error?.message || '未知错误'))
+  }
+}
+
 // 分页改变
 async function onMaterialPageChange(page) {
   materialPage.value = page
@@ -2180,6 +2221,7 @@ watch(() => feeForm.fee_type, (newFeeType) => {
 // 显示添加物料弹窗（指定模块）
 async function showAddMaterialToModule(moduleId) {
   selectedModuleId.value = moduleId
+  currentAddModuleId.value = moduleId  // migration 020
   // 重置筛选条件 + 分页
   materialFilter.keyword = ''
   materialFilter.category = ''

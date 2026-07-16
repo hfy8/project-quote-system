@@ -84,7 +84,11 @@
         <el-table :data="getSortedMaterials(mod)" border style="width: 100%;" show-overflow-tooltip
           @sort-change="(sort) => onSortChange(mod.id, sort)">
           <el-table-column prop="material_name" label="物料名称" min-width="100" sortable="custom">
-            <template #default="{ row }">{{ row.material_name || '-' }}</template>
+            <template #default="{ row }">
+              <span>{{ row.material_name || '-' }}</span>
+              <!-- migration 020: 自制件徽章 -->
+              <span v-if="row.is_custom" class="custom-tag" title="自制件 (不参与导出无品号物料)">自制件</span>
+            </template>
           </el-table-column>
           <el-table-column prop="item_no" label="品号" min-width="110" sortable="custom">
             <template #default="{ row }">
@@ -143,9 +147,14 @@
               {{ row.selected_by_name || '-' }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="150" align="center">
+          <el-table-column label="操作" width="220" align="center">
             <template #default="{ row }">
-              <template v-if="row.is_other === true">
+              <template v-if="row.is_custom === true">
+                <!-- migration 020: 自制件编辑 -->
+                <el-button size="small" @click="openCustomEditDialog(row)">编辑</el-button>
+                <el-button size="small" type="danger" @click="$emit('delete-material', row.id)">删除</el-button>
+              </template>
+              <template v-else-if="row.is_other === true">
                 <el-button size="small" @click="editOtherMaterial(row)">改单价</el-button>
                 <el-button size="small" type="danger" @click="$emit('delete-material', row.id)">删除</el-button>
               </template>
@@ -164,105 +173,210 @@
 
   <!-- 添加物料弹窗 -->
   <el-dialog v-model="materialDialogVisible" title="添加物料" width="1300px">
-    <div class="material-filter-bar">
-      <el-input
-        v-model="localFilter.keyword"
-        placeholder="搜索品名/规格/品牌"
-        clearable
-        style="width: 200px;"
-        @input="onKeywordInput"
-        @clear="emitFilterChange"
-      />
-      <el-select
-        v-model="localFilter.category"
-        placeholder="分类"
-        clearable
-        style="width: 110px;"
-        @change="emitFilterChange"
-      >
-        <el-option label="大件" value="large" />
-        <el-option label="核心部件" value="standard" />
-        <el-option label="其他件" value="other" />
-      </el-select>
-      <el-select
-        v-model="localFilter.brand"
-        placeholder="品牌"
-        clearable
-        style="width: 110px;"
-        @change="emitFilterChange"
-      >
-        <el-option v-for="b in availableBrands" :key="b" :label="b" :value="b" />
-      </el-select>
-      <span style="margin-left:auto;color:#909399;font-size:13px;">共 {{ materialTotal }} 条</span>
-    </div>
-    <el-table
-      ref="materialTableRef"
-      :data="availableMaterials"
-      border
-      style="width: 100%; margin-top: 12px;"
-      max-height="450"
-      show-overflow-tooltip
-      @selection-change="handleMaterialSelection"
-    >
-      <el-table-column type="selection" width="45" />
-      <el-table-column prop="name" label="品名" min-width="120" />
-      <el-table-column prop="item_no" label="品号" min-width="110">
-        <template #default="{ row }">
-          <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
-          <span v-else style="color: #c0c4cc;">-</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="spec" label="规格" min-width="100" />
-      <el-table-column prop="brand" label="品牌" width="70" />
-      <el-table-column v-if="materialHasKeyParams" prop="param1" label="关键参数01" width="140">
-        <template #default="{ row }"><span v-if="row.param1" class="key-param">{{ row.param1 }}</span></template>
-      </el-table-column>
-      <el-table-column v-if="materialHasKeyParams" prop="param2" label="关键参数02" width="140">
-        <template #default="{ row }"><span v-if="row.param2" class="key-param">{{ row.param2 }}</span></template>
-      </el-table-column>
-      <el-table-column v-if="materialHasKeyParams" prop="param3" label="关键参数03" width="140">
-        <template #default="{ row }"><span v-if="row.param3" class="key-param">{{ row.param3 }}</span></template>
-      </el-table-column>
-      <el-table-column prop="unit" label="单位" width="60" />
-      <el-table-column prop="unit_price" label="单价" width="70" />
-      <el-table-column label="分类" width="70">
-        <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
-      </el-table-column>
-      <el-table-column label="类型" width="80">
-        <template #default="{ row }">
-          <span class="material-type-tag" :class="row.material_type || 'other'">
-            {{ getMaterialTypeLabel(row.material_type) }}
-          </span>
-        </template>
-      </el-table-column>
-      <el-table-column label="数量" width="120">
-        <template #default="{ row }">
-          <span v-if="row.name === '其他'">1 <span style="color:#999;font-size:12px">(不可改)</span></span>
-          <el-input-number
-            v-else
-            v-model="row._quantity"
-            :min="1"
-            size="small"
-            controls-position="right"
-            :disabled="!selectedMaterials.includes(row)"
+    <!-- 顶部 tab 切换: 选择原材料 / 添加自制件 — migration 020 -->
+    <el-tabs v-model="addDialogTab" class="add-dialog-tabs">
+      <el-tab-pane label="选择原材料" name="raw">
+        <div class="material-filter-bar">
+          <el-input
+            v-model="localFilter.keyword"
+            placeholder="搜索品名/规格/品牌"
+            clearable
+            style="width: 200px;"
+            @input="onKeywordInput"
+            @clear="emitFilterChange"
           />
-        </template>
-      </el-table-column>
-    </el-table>
-    <div class="material-pagination">
-      <el-pagination
-        v-model:current-page="localPage"
-        v-model:page-size="localPageSize"
-        :total="materialTotal"
-        :page-sizes="[20, 50, 100, 200]"
-        layout="total, sizes, prev, pager, next, jumper"
-        @current-change="emitPageChange"
-        @size-change="emitPageChange"
-      />
-    </div>
+          <el-select
+            v-model="localFilter.category"
+            placeholder="分类"
+            clearable
+            style="width: 110px;"
+            @change="emitFilterChange"
+          >
+            <el-option label="大件" value="large" />
+            <el-option label="核心部件" value="standard" />
+            <el-option label="其他件" value="other" />
+          </el-select>
+          <el-select
+            v-model="localFilter.brand"
+            placeholder="品牌"
+            clearable
+            style="width: 110px;"
+            @change="emitFilterChange"
+          >
+            <el-option v-for="b in availableBrands" :key="b" :label="b" :value="b" />
+          </el-select>
+          <span style="margin-left:auto;color:#909399;font-size:13px;">共 {{ materialTotal }} 条</span>
+        </div>
+        <el-table
+          ref="materialTableRef"
+          :data="availableMaterials"
+          border
+          style="width: 100%; margin-top: 12px;"
+          max-height="450"
+          show-overflow-tooltip
+          @selection-change="handleMaterialSelection"
+        >
+          <el-table-column type="selection" width="45" />
+          <el-table-column prop="name" label="品名" min-width="120" />
+          <el-table-column prop="item_no" label="品号" min-width="110">
+            <template #default="{ row }">
+              <span v-if="row.item_no" style="font-family: monospace;">{{ row.item_no }}</span>
+              <span v-else style="color: #c0c4cc;">-</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="spec" label="规格" min-width="100" />
+          <el-table-column prop="brand" label="品牌" width="70" />
+          <el-table-column v-if="materialHasKeyParams" prop="param1" label="关键参数01" width="140">
+            <template #default="{ row }"><span v-if="row.param1" class="key-param">{{ row.param1 }}</span></template>
+          </el-table-column>
+          <el-table-column v-if="materialHasKeyParams" prop="param2" label="关键参数02" width="140">
+            <template #default="{ row }"><span v-if="row.param2" class="key-param">{{ row.param2 }}</span></template>
+          </el-table-column>
+          <el-table-column v-if="materialHasKeyParams" prop="param3" label="关键参数03" width="140">
+            <template #default="{ row }"><span v-if="row.param3" class="key-param">{{ row.param3 }}</span></template>
+          </el-table-column>
+          <el-table-column prop="unit" label="单位" width="60" />
+          <el-table-column prop="unit_price" label="单价" width="70" />
+          <el-table-column label="分类" width="70">
+            <template #default="{ row }">{{ getCategoryLabel(row.category) }}</template>
+          </el-table-column>
+          <el-table-column label="类型" width="80">
+            <template #default="{ row }">
+              <span class="material-type-tag" :class="row.material_type || 'other'">
+                {{ getMaterialTypeLabel(row.material_type) }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="数量" width="120">
+            <template #default="{ row }">
+              <span v-if="row.name === '其他'">1 <span style="color:#999;font-size:12px">(不可改)</span></span>
+              <el-input-number
+                v-else
+                v-model="row._quantity"
+                :min="1"
+                size="small"
+                controls-position="right"
+                :disabled="!selectedMaterials.includes(row)"
+              />
+            </template>
+          </el-table-column>
+        </el-table>
+        <div class="material-pagination">
+          <el-pagination
+            v-model:current-page="localPage"
+            v-model:page-size="localPageSize"
+            :total="materialTotal"
+            :page-sizes="[20, 50, 100, 200]"
+            layout="total, sizes, prev, pager, next, jumper"
+            @current-change="emitPageChange"
+            @size-change="emitPageChange"
+          />
+        </div>
+      </el-tab-pane>
+
+      <!-- 自制件 tab — migration 020 -->
+      <el-tab-pane label="添加自制件" name="custom">
+        <div class="custom-form-tip">
+          <el-alert type="info" :closable="false" show-icon>
+            <template #title>
+              自制件：物料库没有的物料, 由报价员手动填写完整信息 (品名/规格/单位/单价/类型等)
+              <br />添加后仅本次报价单使用, 不进入物料库, 不参与"导出无品号物料"
+            </template>
+          </el-alert>
+        </div>
+        <el-form :model="customForm" :rules="customFormRules" ref="customFormRef" label-width="100px" class="custom-form">
+          <el-form-item label="品名" prop="name">
+            <el-input v-model="customForm.name" placeholder="例: 外购电机支架" maxlength="100" show-word-limit />
+          </el-form-item>
+          <el-form-item label="规格" prop="spec">
+            <el-input v-model="customForm.spec" placeholder="例: 50×30×2mm" maxlength="200" />
+          </el-form-item>
+          <el-form-item label="单位" prop="unit">
+            <el-input v-model="customForm.unit" placeholder="个/件/套" maxlength="20" style="width: 120px;" />
+          </el-form-item>
+          <el-form-item label="单价" prop="unit_price">
+            <el-input-number v-model="customForm.unit_price" :min="0" :precision="2" :step="10" style="width: 180px;" />
+            <span style="margin-left:8px;color:#909399;font-size:12px;">自制件数量固定为 1</span>
+          </el-form-item>
+          <el-form-item label="类型" prop="material_type">
+            <el-select v-model="customForm.material_type" placeholder="请选择" style="width: 180px;">
+              <el-option label="机械类" value="mechanical" />
+              <el-option label="非机械类" value="electrical" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="部件分类" prop="category">
+            <el-select v-model="customForm.category" placeholder="请选择" style="width: 180px;">
+              <el-option label="大件" value="large" />
+              <el-option label="核心部件" value="standard" />
+              <el-option label="其他件" value="other" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="产品名称">
+            <el-input v-model="customForm.product_name" placeholder="产品线 (可空)" maxlength="100" />
+          </el-form-item>
+          <el-form-item label="品牌">
+            <el-input v-model="customForm.brand" placeholder="可空" maxlength="50" style="width: 200px;" />
+          </el-form-item>
+          <el-form-item label="关键参数1">
+            <el-input v-model="customForm.param1" placeholder="可空" maxlength="100" />
+          </el-form-item>
+          <el-form-item label="关键参数2">
+            <el-input v-model="customForm.param2" placeholder="可空" maxlength="100" />
+          </el-form-item>
+          <el-form-item label="关键参数3">
+            <el-input v-model="customForm.param3" placeholder="可空" maxlength="100" />
+          </el-form-item>
+        </el-form>
+      </el-tab-pane>
+    </el-tabs>
     <template #footer>
       <el-button @click="closeAddMaterialDialog">取消</el-button>
-      <el-button type="primary" @click="confirmAddMaterials">确定添加</el-button>
+      <!-- 不同 tab 不同按钮 -->
+      <el-button v-if="addDialogTab === 'raw'" type="primary" @click="confirmAddMaterials">确定添加 ({{ selectedMaterials.length }})</el-button>
+      <el-button v-else type="primary" @click="confirmAddCustomMaterial">确定添加自制件</el-button>
+    </template>
+  </el-dialog>
+
+  <!-- 自制件编辑弹窗 — migration 020 -->
+  <el-dialog v-model="customEditDialogVisible" title="编辑自制件" width="600px">
+    <el-form :model="customEditForm" label-width="100px">
+      <el-form-item label="品名">
+        <el-input v-model="customEditForm.name" maxlength="100" />
+      </el-form-item>
+      <el-form-item label="规格">
+        <el-input v-model="customEditForm.spec" maxlength="200" />
+      </el-form-item>
+      <el-form-item label="单位">
+        <el-input v-model="customEditForm.unit" maxlength="20" style="width: 120px;" />
+      </el-form-item>
+      <el-form-item label="单价">
+        <el-input-number v-model="customEditForm.unit_price" :min="0" :precision="2" :step="10" style="width: 180px;" />
+      </el-form-item>
+      <el-form-item label="类型">
+        <el-select v-model="customEditForm.material_type" style="width: 180px;">
+          <el-option label="机械类" value="mechanical" />
+          <el-option label="非机械类" value="electrical" />
+          <el-option label="其他" value="other" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="部件分类">
+        <el-select v-model="customEditForm.category" style="width: 180px;">
+          <el-option label="大件" value="large" />
+          <el-option label="核心部件" value="standard" />
+          <el-option label="其他件" value="other" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="产品名称">
+        <el-input v-model="customEditForm.product_name" maxlength="100" />
+      </el-form-item>
+      <el-form-item label="品牌">
+        <el-input v-model="customEditForm.brand" maxlength="50" style="width: 200px;" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="customEditDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="confirmSaveCustomEdit">保存</el-button>
     </template>
   </el-dialog>
 
@@ -317,7 +431,139 @@ const emit = defineEmits([
   'save-other-price',
   'load-materials',
   'go-to-pending-reviews',
+  'add-custom-material',  // migration 020
+  'update-custom-material',  // migration 020
 ])
+
+// ---------------------------------------------------------------------------
+// 自制件 — migration 020
+// ---------------------------------------------------------------------------
+const addDialogTab = ref('raw')
+const customFormRef = ref(null)
+const customForm = reactive({
+  name: '',
+  spec: '',
+  unit: '',
+  unit_price: 0,
+  material_type: 'other',
+  category: 'standard',
+  product_name: '',
+  brand: '',
+  param1: '',
+  param2: '',
+  param3: '',
+})
+const customFormRules = {
+  name: [{ required: true, message: '请输入品名', trigger: 'blur' }],
+  unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
+  unit_price: [{ required: true, message: '请输入单价', trigger: 'blur' }],
+  material_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
+  category: [{ required: true, message: '请选择部件分类', trigger: 'change' }],
+}
+
+// 自制件编辑
+const customEditDialogVisible = ref(false)
+const customEditForm = reactive({
+  mmId: null,
+  name: '',
+  spec: '',
+  unit: '',
+  unit_price: 0,
+  material_type: 'other',
+  category: 'standard',
+  product_name: '',
+  brand: '',
+})
+const customEditTarget = ref(null)  // 当前编辑的 mm 对象
+
+function openCustomEditDialog(mm) {
+  customEditTarget.value = mm
+  customEditForm.mmId = mm.id
+  customEditForm.name = mm.material_name || ''
+  customEditForm.spec = mm.specification || ''
+  customEditForm.unit = mm.unit || ''
+  customEditForm.unit_price = mm.unit_price || 0
+  customEditForm.material_type = mm.material_type || 'other'
+  customEditForm.category = mm.category || 'standard'
+  customEditForm.product_name = mm.product_name || ''
+  customEditForm.brand = mm.brand || ''
+  customEditDialogVisible.value = true
+}
+
+function confirmSaveCustomEdit() {
+  if (!customEditForm.name || !customEditForm.unit) {
+    ElMessage.warning('品名和单位必填')
+    return
+  }
+  emit('update-custom-material', {
+    mmId: customEditForm.mmId,
+    custom_data: {
+      name: customEditForm.name,
+      spec: customEditForm.spec,
+      unit: customEditForm.unit,
+      brand: customEditForm.brand,
+      unit_price: customEditForm.unit_price,
+      // 保留原 param1/2/3 (不在编辑弹窗里改)
+      param1: customEditTarget.value?.param1 || '',
+      param2: customEditTarget.value?.param2 || '',
+      param3: customEditTarget.value?.param3 || '',
+    },
+    material_type: customEditForm.material_type,
+    category: customEditForm.category,
+    product_name: customEditForm.product_name,
+  })
+  customEditDialogVisible.value = false
+}
+
+function confirmAddCustomMaterial() {
+  customFormRef.value?.validate((valid) => {
+    if (!valid) return
+    emit('add-custom-material', {
+      is_custom: true,
+      custom_data: {
+        name: customForm.name,
+        spec: customForm.spec,
+        unit: customForm.unit,
+        brand: customForm.brand,
+        unit_price: customForm.unit_price,
+        param1: customForm.param1,
+        param2: customForm.param2,
+        param3: customForm.param3,
+      },
+      material_type: customForm.material_type,
+      category: customForm.category,
+      product_name: customForm.product_name,
+    })
+    // 重置表单
+    customForm.name = ''
+    customForm.spec = ''
+    customForm.unit = ''
+    customForm.unit_price = 0
+    customForm.material_type = 'other'
+    customForm.category = 'standard'
+    customForm.product_name = ''
+    customForm.brand = ''
+    customForm.param1 = ''
+    customForm.param2 = ''
+    customForm.param3 = ''
+    addDialogTab.value = 'raw'  // 切回 raw tab
+    closeAddMaterialDialog()
+  })
+}
+
+// 打开添加物料 dialog — migration 020 加了 tab 重置
+function openAddMaterialDialog(moduleId) {
+  addDialogTab.value = 'raw'  // 默认回到原材料 tab
+  materialDialogModuleId.value = moduleId
+  localFilter.keyword = ''
+  localFilter.category = ''
+  localFilter.brand = ''
+  localPage.value = 1
+  localPageSize.value = 50
+  selectedMaterials.value = []
+  materialDialogVisible.value = true
+  emitLoadMaterials()
+}
 
 // ---------------------------------------------------------------------------
 // Module filter (v-model pattern)
@@ -420,18 +666,6 @@ function emitLoadMaterials() {
   })
 }
 
-function openAddMaterialDialog(moduleId) {
-  materialDialogModuleId.value = moduleId
-  localFilter.keyword = ''
-  localFilter.category = ''
-  localFilter.brand = ''
-  localPage.value = 1
-  localPageSize.value = 50
-  selectedMaterials.value = []
-  materialDialogVisible.value = true
-  emitLoadMaterials()
-}
-
 function closeAddMaterialDialog() {
   materialDialogVisible.value = false
   selectedMaterials.value.forEach(m => { m._quantity = 1 })
@@ -523,7 +757,8 @@ const noItemNoMaterialsCount = computed(() => {
   for (const group of props.groupedMaterials || []) {
     for (const mod of group.module_list || []) {
       for (const m of mod.materials || []) {
-        // is_other=true 的"其他类物料"也没品号, 一并导出
+        // migration 020: 自制件不进"无品号导出" (用户明确需求)
+        if (m.is_custom) continue
         if (!m.item_no || String(m.item_no).trim() === '') {
           count++
         }
@@ -549,6 +784,8 @@ function exportNoItemNoMaterials() {
   for (const group of props.groupedMaterials || []) {
     for (const mod of group.module_list || []) {
       for (const m of mod.materials || []) {
+        // migration 020: 自制件不进"无品号导出" (用户明确需求)
+        if (m.is_custom) continue
         if (m.item_no && String(m.item_no).trim() !== '') continue
         serialNo++
         // 备注: param1/2/3 + 品牌, 用"/"分隔
@@ -725,5 +962,33 @@ function exportNoItemNoMaterials() {
 .material-type-tag.other {
   background: #f5f5f5;
   color: #757575;
+}
+
+/* 自制件徽章 — migration 020 */
+.custom-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  background: linear-gradient(135deg, #ffd54f, #ffa726);
+  color: #5d4037;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* 自制件表单 tip + 样式 — migration 020 */
+.custom-form-tip {
+  margin-bottom: 16px;
+}
+.custom-form {
+  max-width: 700px;
+  padding-top: 8px;
+}
+.add-dialog-tabs {
+  margin: -20px 0 0 0;
+}
+.add-dialog-tabs :deep(.el-tabs__header) {
+  margin-bottom: 16px;
 }
 </style>
