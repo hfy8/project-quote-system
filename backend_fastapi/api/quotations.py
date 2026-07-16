@@ -319,14 +319,19 @@ def _create_version_snapshot(db, quotation, operator_id, operation_type, remark=
             'materials': [{
                 'id': mm.id,
                 'material_id': mm.material_id,
-                'name': mm.material.name if mm.material else None,
-                'item_no': mm.material.item_no if mm.material else None,  # 品号 (跨系统同步用)
-                'brand': mm.material.brand if mm.material else None,
-                'spec': mm.material.spec if mm.material else None,
-                'unit_price': float(mm.material.unit_price) if mm.material and mm.material.unit_price else 0,
+                # migration 020: 自制件 material=None, 用 is_custom 分支 (从 unit_price_override 或 custom_data 取)
+                'name': (mm.custom_data.get('name') if mm.is_custom else None) or (mm.material.name if mm.material else None),
+                'item_no': mm.material.item_no if mm.material else None,  # 自制件无品号 = None
+                'brand': (mm.custom_data.get('brand') if mm.is_custom else None) or (mm.material.brand if mm.material else None),
+                'spec': (mm.custom_data.get('spec') if mm.is_custom else None) or (mm.material.spec if mm.material else None),
+                # unit_price: 自制件用 unit_price_override (=JSONB unit_price), 否则用 Material.unit_price
+                'unit_price': float(mm.unit_price_override or 0) if mm.is_custom else (
+                    float(mm.material.unit_price) if mm.material and mm.material.unit_price else 0
+                ),
                 'quantity': float(mm.quantity),
                 'selected_by_id': mm.selected_by_id,
-                'category': mm.material.category if mm.material else 'standard',
+                # category: 自制件用 mm.category 快照, 否则用 Material.category
+                'category': mm.category if mm.is_custom else (mm.material.category if mm.material else 'standard'),
                 'is_other': mm.is_other,
                 'unit_price_override': float(mm.unit_price_override) if mm.unit_price_override else None,
                 # 自制件快照 — migration 020

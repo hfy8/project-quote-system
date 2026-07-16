@@ -1041,10 +1041,16 @@ def calculate_version_totals(data):
     for module in modules:
         for mm in module.get('materials', []):
             is_other = mm.get('is_other', False)
+            is_custom = mm.get('is_custom', False)
             if is_other:
                 up = float(mm.get('unit_price_override', 0) or 0)
                 if up == 0:
                     up = float(mm.get('unit_price', 0) or 0)
+            elif is_custom:
+                # migration 020: 自制件用 unit_price_override (= JSONB unit_price)
+                up = float(mm.get('unit_price', 0) or 0)
+                if up == 0:
+                    up = float(mm.get('unit_price_override', 0) or 0)
             else:
                 up = float(mm.get('unit_price', 0) or 0)
             amount = up * float(mm.get('quantity', 0) or 0)
