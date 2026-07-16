@@ -700,6 +700,84 @@ def search_scheme_no(
     }, status_code=200)
 
 
+# ---- 无权限接口: 通过方案号查报价单人力工时 (外部集成/数据导出用) ----
+
+@router.get("/quotations/by-scheme/{scheme_no}/labor-hours")
+def get_labor_hours_by_scheme_no(
+    scheme_no: str,
+    db=Depends(get_db),
+    include_children: bool = Query(False, description="线体报价单: 是否聚合所有子报价单的工时"),
+):
+    """根据方案号查报价单的人力工时信息（无需登录校验，方便外部系统对接）
+
+    - 主报价单: 按 scheme_no 精确匹配 (parent_id IS NULL)
+    - include_children=true: 线体报价单额外返回每个子报价单的工时
+
+    返回结构:
+    {
+        "scheme_no": "CS26001",
+        "quotation": {"id": 15, "name": "...", "type": "single|line"},
+        "labor_total": {"hours": 240.0, "amount": 48000.0},
+        "labor_hours": [
+            {"id": 1, "name": "机械设计", "labor_type": "design",
+             "labor_type_label": "设计", "hours": 240.0, "unit_price": 200.0, "total": 48000.0},
+            ...
+        ],
+        "children": [...]  # 仅 include_children=true 且 type=line 时
+    }
+    """
+    if not scheme_no or not scheme_no.strip():
+        raise HTTPException(status_code=400, detail="scheme_no 不能为空")
+
+    quotation = (
+        db.query(Quotation)
+        .filter(Quotation.scheme_no == scheme_no.strip(), Quotation.parent_id.is_(None))
+        .first()
+    )
+    if not quotation:
+        raise HTTPException(status_code=404, detail=f"方案号 {scheme_no} 未找到对应报价单")
+
+    labor_hours = [lh.to_dict() for lh in db.query(LaborHour).filter(
+        LaborHour.quotation_id == quotation.id
+    ).order_by(LaborHour.id).all()]
+    total_hours = sum(float(lh.get('hours') or 0) for lh in labor_hours)
+    total_amount = sum(float(lh.get('total') or 0) for lh in labor_hours)
+
+    result = {
+        "scheme_no": scheme_no,
+        "quotation": {
+            "id": quotation.id,
+            "name": quotation.name,
+            "type": quotation.type,
+            "status": quotation.status,
+        },
+        "labor_total": {
+            "hours": round(total_hours, 2),
+            "amount": round(total_amount, 2),
+        },
+        "labor_hours": labor_hours,
+    }
+
+    # 线体报价单 + include_children: 聚合子报价单
+    if include_children and quotation.type == 'line' and quotation.children.count() > 0:
+        children_data = []
+        for child in quotation.children:
+            child_lh = [lh.to_dict() for lh in db.query(LaborHour).filter(
+                LaborHour.quotation_id == child.id
+            ).order_by(LaborHour.id).all()]
+            children_data.append({
+                "quotation": {"id": child.id, "name": child.name, "scheme_no": child.scheme_no},
+                "labor_total": {
+                    "hours": round(sum(float(lh.get('hours') or 0) for lh in child_lh), 2),
+                    "amount": round(sum(float(lh.get('total') or 0) for lh in child_lh), 2),
+                },
+                "labor_hours": child_lh,
+            })
+        result["children"] = children_data
+
+    return JSONResponse(content=result, status_code=200)
+
+
 # ---- 趋势统计（按月聚合 + 散点）----
 
 @router.get("/quotations/trends")
