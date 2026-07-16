@@ -448,7 +448,7 @@ const customForm = reactive({
   material_type: 'other',
   category: 'standard',
   product_name: '',
-  brand: '',
+  brand: 'RS',
   param1: '',
   param2: '',
   param3: '',
