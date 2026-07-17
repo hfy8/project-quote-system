@@ -364,15 +364,24 @@ def sync_users_from_employees():
 
     try:
         # 确保所有 role 记录存在 (避免 role='project' 但 roles 表里没记录导致前端报错)
+        # 兼容历史: 已有 code='manage' 的"项目"角色, 不重复创建 project
         for code, name, desc in [
             ('admin', '管理员', '系统管理员'),
             ('business', '业务员', '销售/业务/方案部'),
-            ('project', '项目角色', '项目部'),
+            ('project', '项目角色', '项目部 (历史 code=manage 已合并)'),
             ('purchaser', '采购员', '采购相关'),
             ('viewer', '普通用户', '其他部门'),
         ]:
             if not Role.query.filter_by(code=code).first():
                 db.session.add(Role(code=code, name=name, description=desc))
+        # 历史数据迁移: code='manage' 重命名为 'project' (0 用户, 安全)
+        manage_role = Role.query.filter_by(code='manage').first()
+        if manage_role and not Role.query.filter_by(code='project').first():
+            manage_role.code = 'project'
+            manage_role.name = '项目角色'
+            manage_role.description = '项目部 (从 manage 迁移)'
+        # 已有用户 role='manage' 的也升级为 'project'
+        User.query.filter(User.role == 'manage').update({User.role: 'project'})
         db.session.commit()
 
         # 标记所有非admin用户为未同步
@@ -466,7 +475,7 @@ def sync_users_from_employees():
         db.session.rollback()
 
 
-def sync_all():
+def sync_all(app=None):
     """执行全部同步任务"""
     logger.info("=" * 50)
     logger.info("开始执行数据同步任务...")
