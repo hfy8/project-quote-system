@@ -339,7 +339,7 @@ const userPosition = computed(() => authStore.userInfo?.position_name || '')
 const roleLabel = computed(() => {
   // 优先用 position_name (更精确: 副总经理/经理/总监/业务员...)
   if (userPosition.value) return userPosition.value
-  const map = { admin: '管理员', business: '业务员', purchaser: '采购员', viewer: '只读' }
+  const map = { admin: '管理员', business: '业务员', project: '项目', purchaser: '采购员', viewer: '只读' }
   return map[userRole.value] || '用户'
 })
 const permissions = computed(() => authStore.userInfo?.permissions || [])

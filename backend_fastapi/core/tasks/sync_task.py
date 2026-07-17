@@ -349,6 +349,7 @@ def sync_users_from_employees():
 
     角色规则:
       - 销售/业务/方案 部员工 (部门名称含"销售"/"业务"/"方案") -> 'business' 业务员
+      - 项目部员工 (部门名称含"项目") -> 'project' 项目角色
       - 其他部门 -> 'viewer' 普通用户 (默认无业务权限)
       - 手工创建的 admin 账号保留
 
@@ -356,12 +357,24 @@ def sync_users_from_employees():
           所以本函数只信部门名称, 不信 dept_type。
     """
     from db import db
-    from core.models import User, Employee, Department
+    from core.models import User, Employee, Department, Role
     from werkzeug.security import generate_password_hash
 
     logger.info("开始同步用户数据...")
 
     try:
+        # 确保所有 role 记录存在 (避免 role='project' 但 roles 表里没记录导致前端报错)
+        for code, name, desc in [
+            ('admin', '管理员', '系统管理员'),
+            ('business', '业务员', '销售/业务/方案部'),
+            ('project', '项目角色', '项目部'),
+            ('purchaser', '采购员', '采购相关'),
+            ('viewer', '普通用户', '其他部门'),
+        ]:
+            if not Role.query.filter_by(code=code).first():
+                db.session.add(Role(code=code, name=name, description=desc))
+        db.session.commit()
+
         # 标记所有非admin用户为未同步
         User.query.filter(User.username != 'admin').update({User.sync_flag: False})
         db.session.commit()
@@ -380,17 +393,35 @@ def sync_users_from_employees():
                 Department.is_active == True
             ).all()
         }
+        # 项目部: 部门名称含"项目"字样 (注意 "项目交付部" "项目管理部" 等都包含"项目")
+        # 但要排除误匹配: "项目申报" "项目申报部" 也算项目类 (符合用户期望)
+        project_keywords = ('项目',)
+        project_dept_ids = {
+            d.id for d in Department.query.filter(
+                db.or_(*[Department.name.like(f'%{kw}%') for kw in project_keywords]),
+                Department.is_active == True
+            ).all()
+        }
 
         def is_business_dept(emp):
             return emp.dept_id in business_dept_ids if emp.dept_id else False
+
+        def is_project_dept(emp):
+            return emp.dept_id in project_dept_ids if emp.dept_id else False
 
         count = 0
         for emp in employees:
             # 查找是否已有用户账号
             user = User.query.filter_by(username=emp.employee_no).first()
 
-            # 计算角色
-            role = 'business' if is_business_dept(emp) else 'viewer'
+            # 计算角色: 项目部 > 销售/业务/方案部 > 默认 viewer
+            # (业务部和项目部可能重叠 — 含"项目"的销售部; 此时优先业务, 因为业务有更高权限)
+            if is_project_dept(emp):
+                role = 'project'
+            elif is_business_dept(emp):
+                role = 'business'
+            else:
+                role = 'viewer'
 
             if not user:
                 # 创建新用户
