@@ -83,7 +83,7 @@
         </el-table-column>
         <el-table-column prop="role" label="角色">
           <template #default="{ row }">
-            <span class="role-badge" :class="row.role">
+            <span class="role-badge" :class="getRoleTagClass(row.role)">
               {{ getRoleName(row.role) }}
             </span>
           </template>
@@ -236,6 +236,12 @@ const getRoleName = (role) => {
   const found = roleList.value.find(r => r.code === role)
   if (found) return found.name
   return roleNames[role] || role
+}
+
+// 已知 role code 集合 (与 .role-badge.<code> CSS 一一对应, 未识别返回 'unknown' 用 warning 色)
+const KNOWN_ROLE_CODES = new Set(['admin', 'business', 'project', 'purchaser', 'viewer'])
+const getRoleTagClass = (role) => {
+  return KNOWN_ROLE_CODES.has(role) ? role : 'unknown'
 }
 
 const getAvatar = (username) => {
@@ -525,9 +531,12 @@ onMounted(async () => {
 
 .role-badge.admin { background: var(--color-danger-bg); color: var(--color-danger); }
 .role-badge.manager { background: #FEF3C7; color: #D97706; }
+.role-badge.project { background: #EDE9FE; color: #7C3AED; }
 .role-badge.business { background: var(--color-primary-light); color: var(--color-primary); }
 .role-badge.purchaser { background: #DBEAFE; color: #2563EB; }
 .role-badge.viewer { background: var(--color-info-bg); color: var(--color-info); }
+/* fallback: 任何未识别的 role code (含 'manage' 历史值) 用 warning 警示色 */
+.role-badge.unknown { background: #FEF3C7; color: #D97706; border: 1px dashed #D97706; }
 
 .status-badge {
   display: inline-block;
