@@ -83,7 +83,7 @@
         </div>
         <el-table :data="getSortedMaterials(mod)" border style="width: 100%;" show-overflow-tooltip
           @sort-change="(sort) => onSortChange(mod.id, sort)">
-          <el-table-column prop="material_name" label="物料名称" min-width="100" sortable="custom">
+          <el-table-column prop="material_name" label="品名" min-width="100" sortable="custom">
             <template #default="{ row }">
               <span>{{ row.material_name || '-' }}</span>
               <!-- migration 020: 自制件徽章 -->
