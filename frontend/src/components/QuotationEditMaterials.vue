@@ -375,6 +375,15 @@
       <el-form-item label="品牌">
         <el-input v-model="customEditForm.brand" maxlength="50" style="width: 200px;" />
       </el-form-item>
+      <el-form-item label="关键参数1">
+        <el-input v-model="customEditForm.param1" maxlength="100" placeholder="例: 10mm" />
+      </el-form-item>
+      <el-form-item label="关键参数2">
+        <el-input v-model="customEditForm.param2" maxlength="100" placeholder="例: 50kg" />
+      </el-form-item>
+      <el-form-item label="关键参数3">
+        <el-input v-model="customEditForm.param3" maxlength="100" placeholder="例: 不锈钢304" />
+      </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="customEditDialogVisible = false">取消</el-button>
@@ -477,6 +486,9 @@ const customEditForm = reactive({
   category: 'standard',
   product_name: '',
   brand: '',
+  param1: '',
+  param2: '',
+  param3: '',
 })
 const customEditTarget = ref(null)  // 当前编辑的 mm 对象
 
@@ -491,6 +503,9 @@ function openCustomEditDialog(mm) {
   customEditForm.category = mm.category || 'standard'
   customEditForm.product_name = mm.product_name || ''
   customEditForm.brand = mm.brand || ''
+  customEditForm.param1 = mm.param1 || ''
+  customEditForm.param2 = mm.param2 || ''
+  customEditForm.param3 = mm.param3 || ''
   customEditDialogVisible.value = true
 }
 
@@ -507,10 +522,10 @@ function confirmSaveCustomEdit() {
       unit: customEditForm.unit,
       brand: customEditForm.brand,
       unit_price: customEditForm.unit_price,
-      // 保留原 param1/2/3 (不在编辑弹窗里改)
-      param1: customEditTarget.value?.param1 || '',
-      param2: customEditTarget.value?.param2 || '',
-      param3: customEditTarget.value?.param3 || '',
+      // param1/2/3 现在可在编辑弹窗里改
+      param1: customEditForm.param1 || '',
+      param2: customEditForm.param2 || '',
+      param3: customEditForm.param3 || '',
     },
     material_type: customEditForm.material_type,
     category: customEditForm.category,
