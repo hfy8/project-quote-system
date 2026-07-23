@@ -146,8 +146,9 @@ def _init_module_material_total():
             func.coalesce(
                 func.sum(
                     case(
-                        # migration 020: 自制件用 unit_price_override (已存 JSONB 的 unit_price)
-                        (ModuleMaterial.is_custom, ModuleMaterial.unit_price_override.cast(Numeric)),
+                        # migration 020: 自制件用 unit_price_override * quantity (支持多数量)
+                        (ModuleMaterial.is_custom,
+                         ModuleMaterial.unit_price_override.cast(Numeric) * ModuleMaterial.quantity),
                         (ModuleMaterial.is_other & ModuleMaterial.unit_price_override.isnot(None),
                          ModuleMaterial.unit_price_override.cast(Numeric)),
                         else_=ModuleMaterial.quantity * func.coalesce(Material.unit_price, 0)

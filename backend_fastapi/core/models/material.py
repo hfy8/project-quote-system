@@ -98,12 +98,13 @@ class ModuleMaterial(db.Model):
         if self.is_custom:
             cd = self.custom_data or {}
             unit_price = float(cd.get('unit_price', 0) or 0)
+            qty = self.quantity if self.quantity else 1
             return {
                 'id': self.id,
                 'module_id': self.module_id,
                 'material_id': None,
                 'is_custom': True,
-                'quantity': 1,
+                'quantity': qty,
                 'selected_by_id': self.selected_by_id,
                 'selected_by_name': self.selected_by.real_name if self.selected_by else None,
                 'created_at': self.created_at.isoformat() if self.created_at else None,
@@ -125,7 +126,7 @@ class ModuleMaterial(db.Model):
                 'param1': cd.get('param1'),
                 'param2': cd.get('param2'),
                 'param3': cd.get('param3'),
-                'subtotal': unit_price,  # 自制件数量固定 1
+                'subtotal': qty * unit_price,  # 自制件支持数量
             }
         # 正常物料分支
         m = self.material

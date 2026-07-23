@@ -296,7 +296,9 @@
           </el-form-item>
           <el-form-item label="单价" prop="unit_price">
             <el-input-number v-model="customForm.unit_price" :min="0" :precision="2" :step="10" style="width: 180px;" />
-            <span style="margin-left:8px;color:#909399;font-size:12px;">自制件数量固定为 1</span>
+          </el-form-item>
+          <el-form-item label="数量" prop="quantity">
+            <el-input-number v-model="customForm.quantity" :min="1" :step="1" style="width: 180px;" />
           </el-form-item>
           <el-form-item label="类型" prop="material_type">
             <el-select v-model="customForm.material_type" placeholder="请选择" style="width: 180px;">
@@ -445,6 +447,7 @@ const customForm = reactive({
   spec: '',
   unit: '',
   unit_price: 0,
+  quantity: 1,
   material_type: 'other',
   category: 'standard',
   product_name: '',
@@ -457,6 +460,7 @@ const customFormRules = {
   name: [{ required: true, message: '请输入品名', trigger: 'blur' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
   unit_price: [{ required: true, message: '请输入单价', trigger: 'blur' }],
+  quantity: [{ required: true, message: '请输入数量', trigger: 'blur' }],
   material_type: [{ required: true, message: '请选择类型', trigger: 'change' }],
   category: [{ required: true, message: '请选择部件分类', trigger: 'change' }],
 }
@@ -520,6 +524,7 @@ function confirmAddCustomMaterial() {
     if (!valid) return
     emit('add-custom-material', {
       is_custom: true,
+      quantity: customForm.quantity,
       custom_data: {
         name: customForm.name,
         spec: customForm.spec,
@@ -539,10 +544,11 @@ function confirmAddCustomMaterial() {
     customForm.spec = ''
     customForm.unit = ''
     customForm.unit_price = 0
+    customForm.quantity = 1
     customForm.material_type = 'other'
     customForm.category = 'standard'
     customForm.product_name = ''
-    customForm.brand = ''
+    customForm.brand = 'RS'
     customForm.param1 = ''
     customForm.param2 = ''
     customForm.param3 = ''

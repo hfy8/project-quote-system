@@ -346,7 +346,7 @@ def add_material_to_module(
             module_id=module_id,
             material_id=None,
             is_custom=True,
-            quantity=1,
+            quantity=body.quantity if body.quantity is not None else 1,
             unit_price_override=cd.get('unit_price'),
             selected_by_id=user_id,
             # 复用现有快照字段 (前端传或默认)
@@ -359,7 +359,7 @@ def add_material_to_module(
         db.commit()
         record_crud(
             user_id, 'module', 'create',
-            f'添加自制件 {cd.get("name")} x 1{cd.get("unit")} (模块={module_name})',
+            f'添加自制件 {cd.get("name")} x {mm.quantity}{cd.get("unit")} (模块={module_name})',
             resource_type='module_material', resource_id=str(mm.id),
         )
         return mm.to_dict()
