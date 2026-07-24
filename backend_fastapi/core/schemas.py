@@ -102,6 +102,11 @@ class ModuleMaterialUpdate(BaseModel):
     """改物料数量/单价"""
     quantity: Optional[int] = Field(None, ge=1)
     unit_price_override: Optional[float] = None
+    # 物料类型快照 (机械类/非机械类) — migration 017
+    material_type: Optional[str] = Field(None, pattern="^(mechanical|electrical|other)$")
+    # migration 019 - 产品名称/部件分类快照
+    product_name: Optional[str] = None
+    category: Optional[str] = Field(None, pattern="^(large|standard|other|大件|核心部件|其他件)$")
     # 自制件支持 — migration 020 (编辑自制件单价或字段)
     custom_data: Optional[dict] = None
 
