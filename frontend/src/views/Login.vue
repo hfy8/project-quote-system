@@ -83,7 +83,7 @@
           </el-form>
 
           <div class="login-footer">
-            <p>默认账号: <span>admin</span> / <span>admin123</span></p>
+            <p>初始账号: <span>工号</span> / 初始密码: <span>123456</span></p>
           </div>
         </div>
       </div>
